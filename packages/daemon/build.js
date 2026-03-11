@@ -37,6 +37,12 @@ const SKIP_ZIP = process.argv.includes('--skip-zip');
 async function build() {
   console.log(`Building Abbenay daemon for ${PLATFORM}-${ARCH}...`);
 
+  // ── 0. Preflight: verify SEA prerequisites before doing any work ──────
+  console.log('[preflight] Checking SEA prerequisites...');
+  const nodeBase = findNodeBase();
+  const postjectBin = findPostject();
+  console.log('[preflight] OK — node base and postject ready\n');
+
   // ── 1. Clean & Setup ──────────────────────────────────────────────────
   if (fs.existsSync(PLATFORM_DIR)) {
     fs.rmSync(PLATFORM_DIR, { recursive: true });
@@ -188,13 +194,10 @@ async function build() {
 
   console.log('[4/5] Injecting blob into node binary...');
 
-  const nodeBase = findNodeBase();
   const seaBinary = path.join(PLATFORM_DIR, EXE_NAME);
 
   fs.copyFileSync(nodeBase, seaBinary);
   fs.chmodSync(seaBinary, 0o755);
-
-  const postjectBin = findPostject();
   const sentinel = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
   const machoFlag = PLATFORM === 'darwin' ? ' --macho-segment-name NODE_SEA' : '';
   execSync(

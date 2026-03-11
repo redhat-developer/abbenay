@@ -1,6 +1,9 @@
 # Build output
 dist/
 
+# Bootstrap tools (downloaded by ./bootstrap.sh)
+.build-tools/
+
 # Node.js
 node_modules/
 out/

@@ -14,7 +14,10 @@
     "build:install": "node build.js --code-install",
     "build:workspaces": "npm run build --workspaces",
     "clean": "rm -rf dist .build-venv && npm run clean --workspaces",
-    "test": "npm run test --workspaces"
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "ci:build": "node build.js --skip-proto",
+    "ci:package-python": "cd packages/python && uvx hatch build"
   },
   "devDependencies": {
     "typescript": "^5.3.3"
