@@ -97,7 +97,7 @@ export function isDaemonRunning(): boolean {
         
         // Also verify socket exists
         return fs.existsSync(SOCKET_FILE);
-    } catch (e) {
+    } catch (_e) {
         // process.kill throws if process doesn't exist
         return false;
     }
@@ -319,7 +319,7 @@ export class DaemonClient {
         if (this.clientId && this.client) {
             try {
                 await this.client.unregister({ clientId: this.clientId });
-            } catch (e) {
+            } catch (_e) {
                 // Ignore errors during unregister
             }
             this.clientId = null;
@@ -346,7 +346,7 @@ export class DaemonClient {
             const client = this.getClient();
             const response = await client.healthCheck({});
             return response.healthy;
-        } catch (e) {
+        } catch (_e) {
             return false;
         }
     }

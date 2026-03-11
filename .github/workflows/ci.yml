@@ -13,7 +13,7 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Bootstrap
         run: ./bootstrap.sh
@@ -52,7 +52,7 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Bootstrap
         run: ./bootstrap.sh
@@ -64,13 +64,13 @@ jobs:
         run: npm run ci:build
 
       - name: Upload SEA artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abbenay-daemon-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/${{ matrix.platform }}-${{ matrix.arch }}/
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abbenay-vsix-${{ matrix.platform }}-${{ matrix.arch }}
           path: packages/vscode/*.vsix
@@ -79,7 +79,7 @@ jobs:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Bootstrap
         run: ./bootstrap.sh
@@ -88,7 +88,7 @@ jobs:
         run: npm run ci:package-python
 
       - name: Upload Python artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abbenay-client-python
           path: packages/python/dist/
