@@ -13,3 +13,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+      - id: audit
+        name: audit allowlist
+        entry: node scripts/audit-check.js
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        files: (^|/)package(-lock)?\.json$
