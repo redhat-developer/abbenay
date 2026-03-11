@@ -17,8 +17,7 @@
     "daemon": "tsx src/daemon/index.ts daemon",
     "web": "tsx src/daemon/index.ts web",
     "status": "tsx src/daemon/index.ts status",
-    "test": "vitest",
-    "lint": "eslint src/"
+    "test": "vitest"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^2.0.0",

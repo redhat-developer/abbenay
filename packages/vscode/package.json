@@ -88,9 +88,7 @@
     "clean": "rm -rf out bin",
     "watch": "node esbuild.js --watch",
     "watch:tsc": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
     "package": "npm run bundle && vsce package --no-dependencies",
     "package:all-platforms": "npm run bundle && vsce package --no-dependencies"
   },

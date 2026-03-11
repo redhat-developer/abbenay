@@ -285,9 +285,8 @@ export class DaemonClient {
     /**
      * Register this VS Code extension as a client
      */
-    async register(capabilities: string[] = ['chat', 'tools']): Promise<string> {
+    async register(_capabilities: string[] = ['chat', 'tools']): Promise<string> {
         const client = this.getClient();
-        const extensionVersion = vscode.extensions.getExtension('abbenay.abbenay-provider')?.packageJSON?.version || '0.1.0';
         
         // Get workspace path from VS Code
         const workspaceFolders = vscode.workspace.workspaceFolders;
