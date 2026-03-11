@@ -1,0 +1,2158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Abbenay Dashboard</title>
+  
+  <!-- Red Hat Design System -->
+  <link rel="stylesheet" href="https://ux.redhat.com/assets/css/red-hat-font.css">
+  <link rel="stylesheet" href="https://jspm.dev/@rhds/tokens/css/global.css">
+  
+  <!-- RHDS Web Components -->
+  <script type="module" src="https://jspm.dev/@rhds/elements/rh-card/rh-card.js"></script>
+  <script type="module" src="https://jspm.dev/@rhds/elements/rh-button/rh-button.js"></script>
+  <script type="module" src="https://jspm.dev/@rhds/elements/rh-tabs/rh-tabs.js"></script>
+  <script type="module" src="https://jspm.dev/@rhds/elements/rh-badge/rh-badge.js"></script>
+  <script type="module" src="https://jspm.dev/@rhds/elements/rh-spinner/rh-spinner.js"></script>
+  <script type="module" src="https://jspm.dev/@rhds/elements/rh-tag/rh-tag.js"></script>
+  <script type="module" src="https://jspm.dev/@rhds/elements/rh-alert/rh-alert.js"></script>
+  
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3/dist/cdn.min.js"></script>
+  
+  <style>
+    :root {
+      --rh-space-lg: 24px;
+      --rh-space-md: 16px;
+      --rh-space-sm: 8px;
+      --rh-space-xs: 4px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Red Hat Text', 'RedHatText', sans-serif;
+      background-color: var(--rh-color-surface-lighter, #f2f2f2);
+      color: var(--rh-color-text-primary, #151515);
+    }
+    .header-bar {
+      background-color: var(--rh-color-surface-darkest, #151515);
+      color: var(--rh-color-text-primary-on-dark, #ffffff);
+      padding: 12px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .header-bar h1 {
+      margin: 0;
+      font-family: 'Red Hat Display', 'RedHatDisplay', sans-serif;
+      font-size: 1.5rem; font-weight: 500;
+    }
+    .header-actions { display: flex; align-items: center; gap: 16px; }
+    .header-btn {
+      background: transparent; color: #FFFFFF; border: 1px solid #FFFFFF;
+      border-radius: 3px; padding: 4px 12px; font-size: 14px; font-weight: 500;
+      height: 32px; display: inline-flex; align-items: center; gap: 8px;
+      cursor: pointer; transition: background-color 0.2s;
+    }
+    .header-btn:hover { background: rgba(255,255,255,0.1); }
+    .header-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .header-btn svg { width: 14px; height: 14px; }
+    .version-badge {
+      background-color: transparent; color: #D2D2D2; border: 1px solid #4D4D4D;
+      border-radius: 3px; padding: 2px 8px; font-size: 12px;
+      height: 24px; display: inline-flex; align-items: center;
+    }
+    main { padding: var(--rh-space-lg); max-width: 1400px; margin: 0 auto; }
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: var(--rh-space-md); margin-bottom: var(--rh-space-lg);
+    }
+    .stat-card {
+      background: #fff; border-radius: 3px; padding: var(--rh-space-lg);
+      border: 1px solid #d2d2d2;
+    }
+    .stat-card h3 { margin: 0 0 var(--rh-space-sm) 0; font-size: 0.875rem; font-weight: 500; color: #6a6e73; }
+    .stat-card .value {
+      font-family: 'Red Hat Display', 'RedHatDisplay', sans-serif;
+      font-size: 2rem; font-weight: 500;
+    }
+    .providers-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: var(--rh-space-md);
+    }
+    .provider-card {
+      background: #fff; border-radius: 3px; padding: var(--rh-space-md) var(--rh-space-lg);
+      border: 1px solid #d2d2d2;
+    }
+    .provider-card.configured { border-left: 4px solid #3e8635; }
+    .provider-card.unhealthy { border-left: 4px solid #f0ab00; }
+    .provider-card.policy-builtin { border-left: 4px solid #06c; }
+    .provider-card.policy-custom  { border-left: 4px solid #3e8635; }
+    .provider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-sm); }
+    .provider-name { font-family: 'Red Hat Display', sans-serif; font-weight: 500; font-size: 1.125rem; }
+    .provider-meta { font-size: 0.8rem; color: #6a6e73; margin-bottom: var(--rh-space-md); }
+    .provider-meta code { background: #f0f0f0; padding: 1px 4px; border-radius: 2px; font-size: 0.75rem; }
+    .provider-actions { display: flex; gap: var(--rh-space-sm); flex-wrap: wrap; }
+    
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      padding: 0.5rem 0.875rem; font-size: 0.875rem;
+      font-family: 'Red Hat Text', sans-serif; font-weight: 500;
+      border: none; border-radius: 3px; cursor: pointer; white-space: nowrap;
+      transition: background-color 0.2s;
+    }
+    .btn-primary { background: #ee0000; color: white; }
+    .btn-primary:hover { background: #a30000; }
+    .btn-secondary { background: #f0f0f0; color: #151515; border: 1px solid #d2d2d2; }
+    .btn-secondary:hover { background: #e0e0e0; }
+    .btn-danger { background: #151515; color: white; }
+    .btn-danger:hover { background: #292929; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-sm { padding: 0.375rem 0.625rem; font-size: 0.8rem; }
+    
+    /* Status tags */
+    .status-tag { display: inline-block; padding: 2px 8px; font-size: 12px; font-weight: 500; border-radius: 3px; }
+    .status-tag.configured { background: #e7f1e4; color: #1e4f18; border: 1px solid #3e8635; }
+    .status-tag.not-configured { background: #f0f0f0; color: #151515; border: 1px solid #d2d2d2; }
+    .status-tag.key-missing { background: #fdf7e7; color: #795600; border: 1px solid #f0ab00; }
+    .engine-badge { display: inline-block; padding: 1px 6px; font-size: 11px; font-weight: 500; border-radius: 3px; background: #e7f1fa; color: #0066cc; border: 1px solid #b8daff; }
+    .source-pill { display: inline-block; padding: 1px 6px; font-size: 10px; font-weight: 500; border-radius: 3px; }
+    .source-pill.user { background: #f0f0f0; color: #6a6e73; border: 1px solid #d2d2d2; }
+    .source-pill.workspace { background: #e7f1fa; color: #004080; border: 1px solid #b8daff; }
+    
+    /* Form elements */
+    .form-group { margin-bottom: var(--rh-space-md); }
+    .form-group label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: var(--rh-space-sm); }
+    input, select, textarea {
+      width: 100%; padding: 0.5rem 0.75rem; font-size: 0.875rem;
+      font-family: 'Red Hat Text', sans-serif;
+      border: 1px solid #d2d2d2; border-radius: 3px; background: #fff;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #ee0000; box-shadow: 0 0 0 1px #ee0000; }
+    
+    /* Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal {
+      background: white; border-radius: 8px; width: 90%; max-width: 900px; max-height: 85vh;
+      display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .modal-header {
+      padding: var(--rh-space-md) var(--rh-space-lg);
+      border-bottom: 1px solid #d2d2d2;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-header h2 {
+      margin: 0; font-family: 'Red Hat Display', sans-serif; font-size: 1.25rem; font-weight: 500;
+    }
+    .modal-body { flex: 1; overflow-y: auto; padding: var(--rh-space-lg); }
+    .modal-footer {
+      padding: var(--rh-space-md) var(--rh-space-lg);
+      border-top: 1px solid #d2d2d2;
+      display: flex; justify-content: flex-end; gap: var(--rh-space-sm); align-items: center;
+    }
+    
+    /* Step indicators */
+    .step-indicators { display: flex; gap: 8px; align-items: center; }
+    .step-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #d2d2d2;
+      transition: background 0.2s;
+    }
+    .step-dot.active { background: #ee0000; width: 10px; height: 10px; }
+    .step-dot.completed { background: #3e8635; }
+    
+    /* Engine tiles */
+    .engine-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: var(--rh-space-sm);
+    }
+    .engine-tile {
+      padding: var(--rh-space-md); border: 1px solid #d2d2d2; border-radius: 3px;
+      cursor: pointer; text-align: center; transition: all 0.15s;
+    }
+    .engine-tile:hover { border-color: #8a8d90; background: #fafafa; }
+    .engine-tile.selected { border: 2px solid #ee0000; background: #fff; }
+    .engine-tile .tile-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
+    .engine-tile .tile-hint { font-size: 0.75rem; color: #6a6e73; }
+    
+    /* Dual list model selector */
+    .dual-list { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--rh-space-sm); min-height: 350px; }
+    .dual-list-panel {
+      border: 1px solid #d2d2d2; border-radius: 3px; overflow-y: auto; max-height: 400px;
+    }
+    .dual-list-panel-header {
+      padding: 8px 12px; background: #f0f0f0; font-weight: 500; font-size: 0.85rem;
+      color: #6a6e73; position: sticky; top: 0; z-index: 1;
+      border-bottom: 1px solid #d2d2d2;
+    }
+    .dual-list-actions {
+      display: flex; flex-direction: column; justify-content: center; gap: var(--rh-space-sm);
+    }
+    .model-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .model-item:hover { background: #f8f8f8; }
+    .model-item.selected { background: #e7f1fa; }
+    .model-item .model-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    
+    /* Inline param editor */
+    .param-editor {
+      padding: 12px; margin: 0 8px 8px; background: #f8f8f8;
+      border: 1px solid #e0e0e0; border-radius: 3px;
+    }
+    .param-row { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+    .param-field { flex: 1; min-width: 120px; }
+    .param-field label { font-size: 0.75rem; font-weight: 500; color: #6a6e73; display: block; margin-bottom: 2px; }
+    .param-field input, .param-field select { font-size: 0.8rem; padding: 4px 6px; }
+    .param-field textarea { font-size: 0.8rem; padding: 4px 6px; resize: vertical; min-height: 50px; }
+    
+    /* Capability tags */
+    .cap-tag { display: inline-block; padding: 1px 6px; font-size: 0.65rem; font-weight: 500; border-radius: 8px; margin-right: 2px; }
+    .cap-tag.tools { background: #f2fce4; color: #3e8635; }
+    .cap-tag.vision { background: #fdf7e7; color: #795600; }
+    
+    /* Chat */
+    .chat-container {
+      height: 400px; overflow-y: auto; background: #f0f0f0;
+      border: 1px solid #d2d2d2; border-radius: 3px; padding: var(--rh-space-md);
+    }
+    .chat-message { margin-bottom: var(--rh-space-md); padding: var(--rh-space-md); border-radius: 3px; }
+    .chat-message.user { background: #ee0000; color: white; margin-left: 3rem; }
+    .chat-message.assistant { background: #fff; border: 1px solid #d2d2d2; margin-right: 3rem; }
+    .chat-message.approval-card { background: #fff3cd; border: 2px solid #e6a817; margin-right: 3rem; }
+    .chat-message strong { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+    .streaming-cursor::after { content: '\25cb'; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+    .empty-state { text-align: center; padding: 3rem; color: #6a6e73; }
+    
+    /* Config modal tiles */
+    .rh-tile {
+      display: flex; gap: 12px; padding: 16px; border: 1px solid #d2d2d2;
+      border-radius: 3px; cursor: pointer; transition: all 0.15s;
+    }
+    .rh-tile:hover { border-color: #8a8d90; background: #fafafa; }
+    .rh-tile--selected { border: 2px solid #ee0000; background: #fff; }
+    .rh-tile-radio { padding-top: 2px; }
+    .rh-tile-radio input { accent-color: #ee0000; width: 16px; height: 16px; }
+    .rh-tile-content { flex: 1; }
+    .rh-tile-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+    .rh-tile-desc { font-size: 0.85rem; color: #6a6e73; margin-bottom: 8px; }
+    .rh-tile-path {
+      display: block; font-size: 0.8rem; color: #6a6e73; background: #f0f0f0;
+      padding: 4px 8px; border-radius: 3px; font-family: 'Red Hat Mono', monospace;
+      overflow-wrap: break-word; word-break: break-all;
+    }
+    .rh-form-group { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0; }
+    .rh-form-label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; }
+    .rh-helper-text { font-size: 0.75rem; color: #6a6e73; margin: 6px 0 0 0; }
+    .rh-modal { background: #fff; border-radius: 3px; width: 400px; max-width: 90vw; box-shadow: 0 4px 24px rgba(0,0,0,0.25); }
+    .rh-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid #d2d2d2; }
+    .rh-modal-header h3 { margin: 0; font-size: 1.125rem; font-weight: 600; }
+    .rh-close-btn { background: none; border: none; font-size: 1.25rem; color: #6a6e73; cursor: pointer; padding: 4px; }
+    .rh-close-btn:hover { color: #151515; }
+    .rh-modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    .rh-modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid #d2d2d2; }
+    .rh-btn { padding: 8px 16px; border-radius: 3px; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
+    .rh-btn--primary { background: #ee0000; color: #fff; border: none; }
+    .rh-btn--primary:hover { background: #a30000; }
+    .rh-btn--primary:disabled { background: #d2d2d2; cursor: not-allowed; }
+    .rh-btn--secondary { background: #fff; color: #151515; border: 1px solid #d2d2d2; }
+    .rh-btn--secondary:hover { background: #f0f0f0; }
+    
+    .form-row { display: flex; gap: var(--rh-space-sm); align-items: flex-end; }
+    .form-row .form-group { flex: 1; margin-bottom: 0; }
+    .rh-toggle-group-mini { display: inline-flex; background: #f0f0f0; border-radius: 3px; padding: 2px; gap: 1px; }
+    .rh-toggle-item { padding: 4px 8px; border: none; background: transparent; color: #151515; font-family: 'Red Hat Text', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; border-radius: 2px; }
+    .rh-toggle-item.selected { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    
+    @media (max-width: 900px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .providers-grid { grid-template-columns: 1fr; }
+      .dual-list { grid-template-columns: 1fr; }
+    }
+    [x-cloak] { display: none !important; }
+    
+    /* ── Tooltip (info icon ⓘ) — global fixed tooltip ── */
+    .label-row { display: flex; align-items: center; gap: 4px; }
+    .info-tip {
+      display: inline-flex;
+      align-items: center;
+      cursor: help;
+    }
+    .info-tip .info-icon {
+      font-size: 0.7rem;
+      font-style: normal;
+      color: #6a6e73;
+      width: 14px; height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #d2d2d2;
+      border-radius: 50%;
+      line-height: 1;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .info-tip:hover .info-icon {
+      color: #06c;
+      border-color: #06c;
+    }
+
+
+    #global-tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #f0f0f0;
+      font-size: 0.75rem;
+      font-weight: 400;
+      line-height: 1.4;
+      padding: 6px 10px;
+      border-radius: 4px;
+      white-space: normal;
+      max-width: 300px;
+      z-index: 100000;
+      pointer-events: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      opacity: 0;
+      transition: opacity 0.12s ease;
+    }
+    #global-tooltip.visible { opacity: 1; }
+    #global-tooltip::after {
+      content: '';
+      position: absolute;
+      border: 5px solid transparent;
+    }
+    #global-tooltip.arrow-bottom::after {
+      top: 100%; left: 50%; transform: translateX(-50%);
+      border-top-color: #1a1a1a;
+    }
+    #global-tooltip.arrow-top::after {
+      bottom: 100%; left: 50%; transform: translateX(-50%);
+      border-bottom-color: #1a1a1a;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Global tooltip (fixed position, outside modal overflow) -->
+<div id="global-tooltip" class="arrow-bottom"></div>
+<script>
+  window.showTip = function(el) {
+    const tip = document.getElementById('global-tooltip');
+    const text = el.getAttribute('data-tip');
+    if (!text) return;
+    tip.textContent = text;
+    tip.className = 'arrow-bottom visible';
+    const rect = el.getBoundingClientRect();
+    // Temporarily show to measure
+    tip.style.left = '0'; tip.style.top = '0';
+    const tipRect = tip.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - tipRect.width / 2;
+    let top = rect.top - tipRect.height - 8;
+    // If it would go above viewport, show below instead
+    if (top < 4) {
+      top = rect.bottom + 8;
+      tip.className = 'arrow-top visible';
+    }
+    // Keep within horizontal viewport bounds
+    if (left < 4) left = 4;
+    if (left + tipRect.width > window.innerWidth - 4) left = window.innerWidth - tipRect.width - 4;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  };
+  window.hideTip = function() {
+    const tip = document.getElementById('global-tooltip');
+    tip.classList.remove('visible');
+  };
+</script>
+
+<div x-data="dashboard()" x-init="init()">
+  <!-- Header -->
+  <header class="header-bar">
+    <h1>Abbenay Dashboard</h1>
+    <div class="header-actions">
+      <button class="header-btn" @click="openConfigModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"/>
+        </svg>
+        <span x-text="configLocation === 'all' ? 'All' : configLocation === 'user' ? 'User' : 'Workspace'"></span>
+      </button>
+      <span class="version-badge" x-show="status.version" x-text="'v' + status.version"></span>
+      <button class="header-btn" @click="refresh()" :disabled="loading">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" :class="{ 'spin': loading }">
+          <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+          <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+        </svg>
+        <span x-show="!loading">Refresh</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h3>Daemon Status</h3>
+        <div class="value" x-text="status.connectedClients !== undefined ? 'Running' : '\u2014'"></div>
+        <div style="font-size: 0.75rem; color: #6a6e73; margin-top: 0.25rem;">
+          <span x-text="(status.connectedClients || 0) + ' clients'"></span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Models Enabled</h3>
+        <div class="value" x-text="models.length"></div>
+      </div>
+      <div class="stat-card">
+        <h3>Providers</h3>
+        <div class="value" x-text="Object.keys(providerConfig).length"></div>
+        <div style="font-size: 0.75rem; color: #6a6e73; margin-top: 0.25rem;">virtual instances</div>
+      </div>
+      <div class="stat-card">
+        <h3>Tools</h3>
+        <div class="value" x-text="allTools.length"></div>
+        <div style="font-size: 0.75rem; color: #6a6e73; margin-top: 0.25rem;">registered</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <rh-tabs>
+      <rh-tab slot="tab">Providers</rh-tab>
+      <rh-tab-panel>
+        <div style="padding: var(--rh-space-lg);">
+          <!-- Add Provider button -->
+          <div style="margin-bottom: var(--rh-space-md);">
+            <span style="display: inline-block;"
+                  :data-tip="configLocation === 'all' ? 'Switch to User or Workspace to add a new provider' : ''"
+                  @mouseenter="configLocation === 'all' && showTip($el)"
+                  @mouseleave="hideTip()">
+              <button class="btn btn-primary" @click="openWizard()" :disabled="configLocation === 'all'"
+                      :style="configLocation === 'all' ? 'pointer-events: none;' : ''">+ Add Provider</button>
+            </span>
+          </div>
+
+          <template x-if="Object.keys(providerConfig).length === 0">
+            <div class="empty-state">
+              <p>No providers configured. Click "Add Provider" to get started.</p>
+            </div>
+          </template>
+          
+          <div class="providers-grid">
+            <template x-for="[provId, provCfg] in Object.entries(providerConfig)" :key="provId">
+              <div class="provider-card" :class="{ configured: getProviderStatus(provId) === 'configured', unhealthy: getProviderStatus(provId) === 'key-missing' }">
+                <div class="provider-header">
+                  <span class="provider-name" x-text="provId"></span>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <template x-if="provCfg._source">
+                      <span class="source-pill" :class="provCfg._source === 'user' ? 'user' : 'workspace'"
+                            x-text="provCfg._source === 'user' ? 'User' : provCfg._source.split('/').pop()"></span>
+                    </template>
+                    <span class="engine-badge" x-text="provCfg.engine"></span>
+                    <span class="status-tag" :class="getProviderStatus(provId)" x-text="getProviderStatusText(provId)"></span>
+                  </div>
+                </div>
+                <div class="provider-meta">
+                  <span>ID: <code x-text="provId"></code></span>
+                  <template x-if="provCfg.base_url">
+                    <span> &middot; URL: <code x-text="provCfg.base_url"></code></span>
+                  </template>
+                  <span> &middot; <span x-text="Object.keys(provCfg.models || {}).length"></span> model(s)</span>
+                </div>
+                <div class="provider-actions">
+                  <button class="btn btn-secondary btn-sm" @click="openEditWizard(provId)">Edit</button>
+                  <button class="btn btn-danger btn-sm" @click="deleteProvider(provId)">Delete</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </rh-tab-panel>
+
+      <rh-tab slot="tab">Models</rh-tab>
+      <rh-tab-panel>
+        <div style="padding: var(--rh-space-lg);">
+          <template x-if="models.length === 0">
+            <div class="empty-state"><p>No models enabled. Add a provider and select models.</p></div>
+          </template>
+          <template x-if="models.length > 0">
+            <table style="width: 100%; border-collapse: collapse; background: #fff; border-radius: 3px;">
+              <thead>
+                <tr style="background: #f0f0f0;">
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Composite ID</th>
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Provider</th>
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Engine</th>
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Params</th>
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Capabilities</th>
+                  <th style="width: 48px; padding: 0.75rem 0.5rem; border-bottom: 1px solid #d2d2d2;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="model in models" :key="model.id">
+                  <tr style="border-bottom: 1px solid #f0f0f0;">
+                    <td style="padding: 0.5rem 1rem; font-family: 'Red Hat Mono', monospace; font-size: 0.8rem;" x-text="model.id"></td>
+                    <td style="padding: 0.5rem 1rem;" x-text="model.provider"></td>
+                    <td style="padding: 0.5rem 1rem;"><span class="engine-badge" x-text="model.engine"></span></td>
+                    <td style="padding: 0.5rem 1rem; font-size: 0.8rem; color: #6a6e73;" x-text="formatParams(model.params)"></td>
+                    <td style="padding: 0.5rem 1rem;">
+                      <span x-show="model.capabilities?.tools" class="cap-tag tools">Tools</span>
+                      <span x-show="model.capabilities?.vision" class="cap-tag vision">Vision</span>
+                    </td>
+                    <td style="padding: 0.5rem 0.5rem; text-align: center;">
+                      <button @click="openModelConfig(model)" title="Configure model parameters"
+                              style="background: none; border: none; cursor: pointer; padding: 4px; color: #6a6e73; font-size: 1rem; line-height: 1; transition: color 0.15s;"
+                              onmouseover="this.style.color='#06c'" onmouseout="this.style.color='#6a6e73'">&#9881;</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
+        </div>
+      </rh-tab-panel>
+
+      <rh-tab slot="tab">Chat</rh-tab>
+      <rh-tab-panel>
+        <div style="padding: var(--rh-space-lg);">
+          <div class="form-row" style="margin-bottom: var(--rh-space-md);">
+            <div class="form-group" style="max-width: 400px;">
+              <label>Model</label>
+              <select x-model="selectedModel">
+                <option value="">Select a model...</option>
+                <template x-for="model in models" :key="model.id">
+                  <option :value="model.id" x-text="model.id"></option>
+                </template>
+              </select>
+            </div>
+            <button class="btn btn-secondary" @click="chatMessages = []" :disabled="chatMessages.length === 0">Clear</button>
+          </div>
+          <div class="chat-container" id="chat-messages">
+            <template x-if="chatMessages.length === 0">
+              <div class="empty-state">
+                <template x-if="models.length === 0"><p>Enable some models first, then start chatting!</p></template>
+                <template x-if="models.length > 0"><p>Select a model and start chatting!</p></template>
+              </div>
+            </template>
+            <template x-for="(msg, i) in chatMessages" :key="i">
+              <div class="chat-message" :class="msg.role">
+                <strong x-text="msg.role === 'user' ? 'You' : 'Assistant'"></strong>
+                <div x-html="msg.content" :class="{ 'streaming-cursor': msg.streaming }"></div>
+              </div>
+            </template>
+            <template x-if="pendingApproval">
+              <div class="chat-message approval-card">
+                <strong>Tool Approval Required</strong>
+                <div style="margin: 8px 0;">
+                  <span>The model wants to run </span>
+                  <code x-text="pendingApproval.toolName" style="font-weight: 600;"></code>
+                </div>
+                <details style="margin-bottom: 8px;">
+                  <summary style="cursor: pointer; font-size: 0.9em; color: #666;">Show arguments</summary>
+                  <pre style="margin-top: 4px; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 0.85em; overflow-x: auto;" x-text="JSON.stringify(pendingApproval.args, null, 2)"></pre>
+                </details>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-primary" @click="resolveApproval('allow')">Allow</button>
+                  <button class="btn btn-secondary" @click="resolveApproval('deny')">Deny</button>
+                  <button class="btn btn-secondary" @click="resolveApproval('abort')" style="color: #c00;">Abort All</button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div class="form-row" style="margin-top: var(--rh-space-md);">
+            <div class="form-group">
+              <textarea x-model="chatInput" @keydown.enter.prevent="sendMessage()" :disabled="chatStreaming"
+                        placeholder="Type a message... (Enter to send)" rows="2"></textarea>
+            </div>
+            <button class="btn btn-primary" style="align-self: flex-end;"
+                    @click="sendMessage()" :disabled="chatStreaming || !selectedModel || !chatInput.trim()">
+              <span x-text="chatStreaming ? 'Sending...' : 'Send'"></span>
+            </button>
+          </div>
+        </div>
+      </rh-tab-panel>
+
+      <!-- ═══════════ MCP SERVERS TAB ═══════════ -->
+      <rh-tab slot="tab">MCP Servers</rh-tab>
+      <rh-tab-panel>
+        <div style="padding: var(--rh-space-lg);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-md);">
+            <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
+              MCP servers provide tools to the LLM. Configure them in <code>~/.config/abbenay/config.yaml</code> under <code>mcp_servers</code>.
+            </p>
+            <button class="btn btn-secondary btn-sm" @click="loadMcpServers()">Refresh</button>
+          </div>
+
+          <template x-if="mcpServers.length === 0">
+            <div class="empty-state">
+              <p>No MCP servers configured.</p>
+              <p style="font-size: 0.85rem; color: #6a6e73;">Add servers to your config under <code>mcp_servers:</code></p>
+            </div>
+          </template>
+
+          <template x-if="mcpServers.length > 0">
+            <table style="width: 100%; border-collapse: collapse; background: #fff; border-radius: 3px;">
+              <thead>
+                <tr style="background: #f0f0f0;">
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Name</th>
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Transport</th>
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Status</th>
+                  <th style="text-align: center; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Tools</th>
+                  <th style="text-align: center; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Enabled</th>
+                  <th style="text-align: center; padding: 0.75rem 0.5rem; border-bottom: 1px solid #d2d2d2;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="srv in mcpServers" :key="srv.id">
+                  <tr style="border-bottom: 1px solid #f0f0f0;">
+                    <td style="padding: 0.5rem 1rem; font-weight: 500;" x-text="srv.id"></td>
+                    <td style="padding: 0.5rem 1rem;">
+                      <span class="engine-badge" x-text="srv.transport || 'stdio'"></span>
+                    </td>
+                    <td style="padding: 0.5rem 1rem;">
+                      <span class="status-tag" :class="srv.status === 'connected' ? 'configured' : srv.status === 'error' ? 'key-missing' : 'not-configured'"
+                            x-text="srv.status || 'unknown'"></span>
+                      <span x-show="srv.error" style="font-size: 0.75rem; color: #c9190b; display: block; margin-top: 2px;" x-text="srv.error"></span>
+                    </td>
+                    <td style="padding: 0.5rem 1rem; text-align: center;" x-text="srv.toolCount || 0"></td>
+                    <td style="padding: 0.5rem 1rem; text-align: center;">
+                      <label style="cursor: pointer;">
+                        <input type="checkbox" :checked="srv.enabled !== false" @change="toggleMcpServer(srv.id, $event.target.checked)"
+                               style="width: auto; accent-color: #3e8635;">
+                      </label>
+                    </td>
+                    <td style="padding: 0.5rem 0.5rem; text-align: center;">
+                      <button class="btn btn-secondary btn-sm" @click="reconnectMcpServer(srv.id)"
+                              :disabled="srv.status === 'connected'" title="Reconnect">Reconnect</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
+        </div>
+      </rh-tab-panel>
+
+      <!-- ═══════════ POLICIES TAB ═══════════ -->
+      <rh-tab slot="tab">Policies</rh-tab>
+      <rh-tab-panel>
+        <div style="padding: var(--rh-space-lg);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-md);">
+            <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
+              Policies are named behavioral bundles (sampling, output, reliability) assigned to models.
+              Built-in policies are read-only. Duplicate one to create a custom variant.
+            </p>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" @click="openNewPolicy()">+ New Policy</button>
+              <button class="btn btn-secondary btn-sm" @click="loadPolicies()">Refresh</button>
+            </div>
+          </div>
+
+          <template x-if="allPolicies.length === 0">
+            <div class="empty-state"><p>No policies loaded.</p></div>
+          </template>
+
+          <template x-if="allPolicies.length > 0">
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+              <template x-for="pol in allPolicies" :key="pol.name">
+                <div class="provider-card" :class="pol.builtin ? 'policy-builtin' : 'policy-custom'" style="padding: 16px;">
+                  <div class="provider-header" style="margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span class="provider-name" x-text="pol.name"></span>
+                      <span class="source-pill" :class="pol.builtin ? 'user' : 'workspace'"
+                            x-text="pol.builtin ? 'Built-in' : 'Custom'"></span>
+                    </div>
+                    <div style="display: flex; gap: 6px;">
+                      <template x-if="!pol.builtin">
+                        <button class="btn btn-secondary btn-sm" @click="openEditPolicy(pol)"
+                                title="Edit policy">Edit</button>
+                      </template>
+                      <button class="btn btn-secondary btn-sm" @click="duplicatePolicy(pol.name)"
+                              title="Duplicate as custom policy">Duplicate</button>
+                      <template x-if="!pol.builtin">
+                        <button class="btn btn-sm" style="background: #c9190b; color: #fff; border-color: #a30000;"
+                                @click="deletePolicy(pol.name)">Delete</button>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div style="font-size: 0.8rem; color: #6a6e73; line-height: 1.5;">
+                    <template x-if="pol.config.sampling">
+                      <div style="margin-bottom: 4px;">
+                        <strong>Sampling:</strong>
+                        <span x-show="pol.config.sampling.temperature != null" x-text="'temp=' + pol.config.sampling.temperature" style="margin-left: 4px;"></span>
+                        <span x-show="pol.config.sampling.top_p != null" x-text="'top_p=' + pol.config.sampling.top_p" style="margin-left: 4px;"></span>
+                        <span x-show="pol.config.sampling.top_k != null" x-text="'top_k=' + pol.config.sampling.top_k" style="margin-left: 4px;"></span>
+                      </div>
+                    </template>
+                    <template x-if="pol.config.output">
+                      <div style="margin-bottom: 4px;">
+                        <strong>Output:</strong>
+                        <span x-show="pol.config.output.max_tokens != null" x-text="'max=' + pol.config.output.max_tokens" style="margin-left: 4px;"></span>
+                        <span x-show="pol.config.output.format" x-text="'format=' + pol.config.output.format" style="margin-left: 4px;"></span>
+                      </div>
+                    </template>
+                    <template x-if="pol.config.output?.system_prompt_snippet">
+                      <div style="margin-bottom: 4px; font-style: italic; color: #8a8d90; max-height: 2.4em; overflow: hidden; text-overflow: ellipsis;"
+                           :title="pol.config.output.system_prompt_snippet"
+                           x-text="pol.config.output.system_prompt_snippet"></div>
+                    </template>
+                    <template x-if="pol.config.reliability">
+                      <div>
+                        <strong>Reliability:</strong>
+                        <span x-show="pol.config.reliability.retry_on_invalid_json" style="margin-left: 4px;">json-retry</span>
+                        <span x-show="pol.config.reliability.timeout != null" x-text="'timeout=' + pol.config.reliability.timeout" style="margin-left: 4px;"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </rh-tab-panel>
+
+      <!-- ═══════════ TOOLS TAB ═══════════ -->
+      <rh-tab slot="tab">Tools</rh-tab>
+      <rh-tab-panel>
+        <div style="padding: var(--rh-space-lg);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-md);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
+                <span x-text="filteredTools.length"></span> tools registered
+                <span x-show="toolSourceFilter" style="color: #004080;">
+                  (filtered by <strong x-text="toolSourceFilter"></strong>)
+                </span>
+              </p>
+              <input type="text" x-model="toolSearch" placeholder="Search tools..." 
+                     style="max-width: 250px; padding: 4px 8px; font-size: 0.85rem;">
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <select x-model="toolSourceFilter" style="width: auto; padding: 4px 8px; font-size: 0.85rem;">
+                <option value="">All sources</option>
+                <template x-for="src in toolSources" :key="src">
+                  <option :value="src" x-text="src"></option>
+                </template>
+              </select>
+              <button class="btn btn-secondary btn-sm" @click="loadTools()">Refresh</button>
+            </div>
+          </div>
+
+          <template x-if="allTools.length === 0">
+            <div class="empty-state"><p>No tools registered. Connect VS Code or configure MCP servers to see tools.</p></div>
+          </template>
+
+          <template x-if="allTools.length > 0">
+            <div style="overflow-x: auto;">
+              <table style="width: 100%; border-collapse: collapse; background: #fff; border-radius: 3px;">
+                <thead>
+                  <tr style="background: #f0f0f0;">
+                    <th @click="sortToolsBy('originalName')" style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2; cursor: pointer; user-select: none;">
+                      Name <span x-text="toolSortCol === 'originalName' ? (toolSortAsc ? '&#9650;' : '&#9660;') : ''"></span>
+                    </th>
+                    <th @click="sortToolsBy('source')" style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2; cursor: pointer; user-select: none;">
+                      Source <span x-text="toolSortCol === 'source' ? (toolSortAsc ? '&#9650;' : '&#9660;') : ''"></span>
+                    </th>
+                    <th @click="sortToolsBy('description')" style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2; cursor: pointer; user-select: none; max-width: 400px;">
+                      Description <span x-text="toolSortCol === 'description' ? (toolSortAsc ? '&#9650;' : '&#9660;') : ''"></span>
+                    </th>
+                    <th style="text-align: center; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2; min-width: 120px;">Policy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="tool in filteredTools" :key="tool.name">
+                    <tr style="border-bottom: 1px solid #f0f0f0;">
+                      <td style="padding: 0.5rem 1rem; font-family: 'Red Hat Mono', monospace; font-size: 0.8rem;" x-text="tool.originalName"></td>
+                      <td style="padding: 0.5rem 1rem;">
+                        <span class="source-pill" :class="tool.sourceType === 'vscode' ? 'workspace' : 'user'"
+                              x-text="tool.source"></span>
+                      </td>
+                      <td style="padding: 0.5rem 1rem; font-size: 0.8rem; color: #6a6e73; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                          x-text="tool.description || '—'" :title="tool.description"></td>
+                      <td style="padding: 0.5rem 1rem; text-align: center;">
+                        <select :value="getToolPolicy(tool.name)" @change="setToolPolicy(tool.name, $event.target.value)"
+                                style="width: auto; padding: 2px 6px; font-size: 0.8rem;">
+                          <option value="always">Always</option>
+                          <option value="ask">Ask (soon)</option>
+                          <option value="disable">Disable</option>
+                        </select>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+        </div>
+      </rh-tab-panel>
+    </rh-tabs>
+  </main>
+
+  <!-- ═══════════ ADD PROVIDER WIZARD MODAL ═══════════ -->
+  <div class="modal-backdrop" x-show="wizardOpen" x-cloak @click.self="wizardOpen = false">
+    <div class="modal" @click.stop>
+      <div class="modal-header">
+        <h2 x-text="wizardFromModelsTab ? 'Configure Model' : (wizardStep === 3 && wizardEditingModel ? 'Configure Model' : wizardEditMode ? (wizardStep === 2 ? 'Edit Provider' : 'Select Models') : (wizardStep === 1 ? 'Choose Engine' : wizardStep === 2 ? 'Configure Provider' : 'Select Models'))"></h2>
+        <div class="step-indicators" x-show="!wizardFromModelsTab">
+          <div class="step-dot" x-show="!wizardEditMode" :class="{ active: wizardStep === 1, completed: wizardStep > 1 }"></div>
+          <div class="step-dot" :class="{ active: wizardStep === 2, completed: wizardStep > 2 }"></div>
+          <div class="step-dot" :class="{ active: wizardStep === 3 }"></div>
+        </div>
+      </div>
+      
+      <div class="modal-body">
+        <!-- Step 1: Engine Picker -->
+        <template x-if="wizardStep === 1">
+          <div>
+            <p style="color: #6a6e73; margin: 0 0 16px;">Choose an engine (API implementation) for your new provider instance.</p>
+            <div class="engine-grid">
+              <template x-for="engine in [...engines].sort((a, b) => a.id.localeCompare(b.id))" :key="engine.id">
+                <div class="engine-tile" :class="{ selected: wizardEngine === engine.id }" @click="wizardEngine = engine.id">
+                  <div class="tile-name" x-text="engine.id"></div>
+                  <div class="tile-hint" x-text="engine.requiresKey ? 'API key required' : 'No key needed'"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+        
+        <!-- Step 2: Provider Config -->
+        <template x-if="wizardStep === 2">
+          <div>
+            <div class="form-group">
+              <label>Provider Name (unique ID)</label>
+              <input type="text" x-model="wizardName" :placeholder="wizardEngine" 
+                     pattern="[a-z0-9][a-z0-9._-]*" style="font-family: 'Red Hat Mono', monospace;"
+                     :disabled="wizardEditMode" :style="wizardEditMode ? 'background: #f0f0f0;' : ''">
+              <small x-show="!wizardEditMode" style="color: #6a6e73; display: block; margin-top: 4px;">Lowercase, alphanumeric, dots, hyphens, underscores. No spaces or slashes.</small>
+            </div>
+            <div class="form-group">
+              <label>Base URL</label>
+              <input type="text" x-model="wizardBaseUrl" :placeholder="getEngineDefaultUrl(wizardEngine) || 'https://...'"
+                     style="font-family: 'Red Hat Mono', monospace; font-size: 0.85rem;">
+            </div>
+            
+            <!-- API Key (only for key-required engines) -->
+            <template x-if="engineRequiresKey(wizardEngine)">
+              <div>
+                <div class="form-group">
+                  <label>API Key Source</label>
+                  <div class="rh-toggle-group-mini">
+                    <button type="button" class="rh-toggle-item" :class="{ selected: wizardKeySource === 'keychain' }" @click="wizardKeySource = 'keychain'">Keychain</button>
+                    <button type="button" class="rh-toggle-item" :class="{ selected: wizardKeySource === 'env' }" @click="wizardKeySource = 'env'">Env Var</button>
+                  </div>
+                </div>
+                <template x-if="wizardKeySource === 'keychain'">
+                  <div class="form-group">
+                    <label>API Key Value</label>
+                    <input type="password" x-model="wizardApiKey" 
+                           :placeholder="wizardEditMode && wizardHasExistingKey ? '••••• (leave blank to keep current)' : 'Enter API key'">
+                  </div>
+                </template>
+                <template x-if="wizardKeySource === 'env'">
+                  <div class="form-group">
+                    <label>Environment Variable</label>
+                    <input type="text" x-model="wizardEnvVar" :placeholder="getEngineDefaultEnvVar(wizardEngine)">
+                  </div>
+                </template>
+              </div>
+            </template>
+            
+            <!-- Save location inherited from global config location selector -->
+          </div>
+        </template>
+        
+        <!-- Step 3: Model Selector (dual-list) — or Model Config (view flip) -->
+        <template x-if="wizardStep === 3">
+          <div>
+            <!-- ── View A: Dual-list model selector ── -->
+            <template x-if="!wizardEditingModel">
+              <div>
+                <div style="margin-bottom: 12px;">
+                  <input type="text" placeholder="Search models..." x-model="wizardModelSearch" style="max-width: 300px;">
+                </div>
+                <div class="dual-list">
+                  <!-- Left: Available -->
+                  <div class="dual-list-panel">
+                    <div class="dual-list-panel-header" x-text="'Available (' + filteredAvailableModels.length + ')'"></div>
+                    <template x-for="m in filteredAvailableModels" :key="m.id">
+                      <div class="model-item" :class="{ selected: wizardLeftSelected.has(m.id) }" @click="toggleLeftSelect(m.id)">
+                        <div class="model-name" x-text="m.id"></div>
+                        <div style="display: flex; gap: 2px;">
+                          <span x-show="m.capabilities?.tools" class="cap-tag tools">T</span>
+                          <span x-show="m.capabilities?.vision" class="cap-tag vision">V</span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                  
+                  <!-- Center: Actions -->
+                  <div class="dual-list-actions">
+                    <button class="btn btn-secondary btn-sm" @click="addSelectedModels()">Add &rarr;</button>
+                    <button class="btn btn-secondary btn-sm" @click="removeSelectedModels()">&larr; Remove</button>
+                  </div>
+                  
+                  <!-- Right: Enabled -->
+                  <div class="dual-list-panel">
+                    <div class="dual-list-panel-header" x-text="'Enabled (' + Object.keys(wizardEnabledModels).length + ')'"></div>
+                    <template x-for="[name, cfg] in Object.entries(wizardEnabledModels)" :key="name">
+                      <div class="model-item" :class="{ selected: wizardRightSelected.has(name) }" @click="toggleRightSelect(name)">
+                        <div class="model-name" x-text="name"></div>
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                          <span x-show="cfg.temperature != null || cfg.top_p != null || cfg.system_prompt" 
+                                style="font-size: 0.65rem; color: #6a6e73;" title="Has custom parameters">&#9881;</span>
+                          <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem;" 
+                                  @click.stop="wizardEditingModel = name">Configure</button>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- ── View B: Full-width model configuration (view flip) ── -->
+            <template x-if="wizardEditingModel">
+              <div>
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #d2d2d2;">
+                  <button class="btn btn-secondary btn-sm" 
+                          @click="wizardFromModelsTab ? (wizardOpen = false, wizardFromModelsTab = false, wizardEditingModel = null) : (wizardEditingModel = null)" 
+                          style="display: flex; align-items: center; gap: 4px;">
+                    &larr; <span x-text="wizardFromModelsTab ? 'Back to Models tab' : 'Back to models'"></span>
+                  </button>
+                  <h3 style="margin: 0; font-size: 1rem; font-weight: 600;" x-text="'Configure: ' + wizardEditingModel"></h3>
+                </div>
+
+                <div x-data="{ get modelName() { return $data.wizardEditingModel }, get cfg() { return $data.wizardEnabledModels[$data.wizardEditingModel] || {} } }">
+                  <!-- Identity -->
+                  <div class="param-row" style="margin-bottom: 16px;">
+                    <div class="param-field" style="flex: 2;">
+                      <div class="label-row">
+                        <label>Virtual Name</label>
+                        <span class="info-tip" data-tip="A unique alias for this model within the provider. Customize it to reflect your configuration." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                      </div>
+                      <input type="text" :value="modelName" 
+                             @change="renameModel(modelName, $event.target.value)"
+                             placeholder="Auto from model ID" style="font-family: 'Red Hat Mono', monospace;">
+                    </div>
+                    <div class="param-field" style="flex: 2;">
+                      <div class="label-row">
+                        <label>Engine Model ID</label>
+                        <span class="info-tip" data-tip="The actual model identifier sent to the engine API. This cannot be changed." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                      </div>
+                      <input type="text" :value="cfg.model_id || modelName" disabled 
+                             style="font-family: 'Red Hat Mono', monospace; background: #f0f0f0;">
+                    </div>
+                  </div>
+
+                  <!-- Policy -->
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <span style="font-size: 0.8rem; font-weight: 600; color: #6a6e73;">Policy:</span>
+                    <select :value="cfg.policy || ''" @change="setModelPolicy(modelName, $event.target.value)"
+                            style="width: auto; padding: 4px 8px; font-size: 0.85rem; border-radius: 3px; border: 1px solid #d2d2d2;">
+                      <option value="">None (use defaults)</option>
+                      <template x-for="pol in allPolicies" :key="pol.name">
+                        <option :value="pol.name" x-text="pol.name + (pol.builtin ? '' : ' (custom)')"></option>
+                      </template>
+                    </select>
+                    <span x-show="cfg.policy" style="font-size: 0.75rem; color: #6a6e73; font-style: italic;">
+                      Policy sets defaults; fields below override it.
+                    </span>
+                  </div>
+
+                  <!-- Sampling Parameters -->
+                  <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+                    <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">Sampling Parameters</legend>
+                    <div class="param-row">
+                      <div class="param-field">
+                        <div class="label-row">
+                          <label>Temperature</label>
+                          <span class="info-tip" data-tip="Controls randomness: Lower (0.1) is focused and factual; Higher (0.8+) is creative and diverse." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        </div>
+                        <input type="number" min="0" max="2" step="0.1" :value="cfg.temperature" 
+                               @input="updateModelParam(modelName, 'temperature', $event.target.value ? parseFloat($event.target.value) : undefined)" 
+                               placeholder="engine default">
+                      </div>
+                      <div class="param-field">
+                        <div class="label-row">
+                          <label>Top P</label>
+                          <span class="info-tip" data-tip="Limits selection to the most likely tokens whose cumulative probability is P. Lower values are more precise." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        </div>
+                        <input type="number" min="0" max="1" step="0.05" :value="cfg.top_p" 
+                               @input="updateModelParam(modelName, 'top_p', $event.target.value ? parseFloat($event.target.value) : undefined)" 
+                               placeholder="engine default">
+                      </div>
+                      <div class="param-field">
+                        <div class="label-row">
+                          <label>Top K</label>
+                          <span class="info-tip" data-tip="Limits the model to considering only the top K most likely next tokens to prevent atypical word choices." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        </div>
+                        <input type="number" min="0" step="1" :value="cfg.top_k"
+                               @input="updateModelParam(modelName, 'top_k', $event.target.value ? parseInt($event.target.value) : undefined)" 
+                               placeholder="engine default">
+                      </div>
+                    </div>
+                    <div class="param-row" style="margin-top: 12px;">
+                      <div class="param-field">
+                        <div class="label-row">
+                          <label>Max Tokens</label>
+                          <span class="info-tip" data-tip="Sets the absolute maximum length of the generated response." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        </div>
+                        <input type="number" min="1" step="1" :value="cfg.max_tokens"
+                               @input="updateModelParam(modelName, 'max_tokens', $event.target.value ? parseInt($event.target.value) : undefined)" 
+                               placeholder="engine default">
+                      </div>
+                      <div class="param-field">
+                        <div class="label-row">
+                          <label>Timeout (ms)</label>
+                          <span class="info-tip" data-tip="The maximum time in milliseconds to wait for a response before the request is canceled." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        </div>
+                        <input type="number" min="0" step="1000" :value="cfg.timeout"
+                               @input="updateModelParam(modelName, 'timeout', $event.target.value ? parseInt($event.target.value) : undefined)" 
+                               placeholder="engine default">
+                      </div>
+                    </div>
+                  </fieldset>
+
+                  <!-- System Prompt -->
+                  <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+                    <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">System Prompt</legend>
+                    <div style="margin-bottom: 8px;">
+                      <div class="label-row" style="margin-bottom: 4px;">
+                        <label style="font-size: 0.8rem; font-weight: 500;">Prompt</label>
+                        <span class="info-tip" data-tip="Sets the core persona and fundamental rules for the model to follow throughout the conversation." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                      </div>
+                      <textarea :value="cfg.system_prompt || ''" rows="4"
+                                @input="updateModelParam(modelName, 'system_prompt', $event.target.value || undefined)"
+                                placeholder="Optional system prompt applied to every request using this model..."
+                                style="width: 100%; resize: vertical;"></textarea>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <div class="label-row">
+                        <label style="font-size: 0.8rem; font-weight: 500;">Merge Mode</label>
+                        <span class="info-tip" data-tip="Prepend: inserted before the request's system message. Replace: overrides it entirely." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                      </div>
+                      <select :value="cfg.system_prompt_mode || 'prepend'" 
+                              @change="updateModelParam(modelName, 'system_prompt_mode', $event.target.value)"
+                              style="width: auto;">
+                        <option value="prepend">Prepend</option>
+                        <option value="replace">Replace</option>
+                      </select>
+                    </div>
+                  </fieldset>
+
+                  <!-- Add Variant removed — user can add same model again from Available list -->
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+      
+      <div class="modal-footer">
+        <span style="flex: 1; font-size: 0.85rem; color: #6a6e73;" x-show="wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab"
+              x-text="Object.keys(wizardEnabledModels).length + ' model(s) enabled'"></span>
+        <!-- Cancel / Back to models button -->
+        <button class="btn btn-secondary" 
+                @click="wizardFromModelsTab ? (wizardOpen = false, wizardFromModelsTab = false, wizardEditingModel = null) : (wizardEditingModel ? (wizardEditingModel = null) : (wizardOpen = false))" 
+                x-text="wizardFromModelsTab ? (wizardEditingModel ? '← Back to Models tab' : 'Close') : (wizardEditingModel ? '← Back to models' : 'Cancel')"></button>
+        <!-- Back (step navigation) — hidden when from Models tab -->
+        <button class="btn btn-secondary" x-show="!wizardFromModelsTab && wizardStep > 1 && !(wizardEditMode && wizardStep === 2) && !wizardEditingModel" @click="wizardStep--">Back</button>
+        <!-- Next — hidden when from Models tab -->
+        <button class="btn btn-primary" x-show="!wizardFromModelsTab && wizardStep < 3 && !wizardEditingModel" @click="wizardNext()" 
+                :disabled="wizardStep === 1 && !wizardEngine">Next</button>
+        <!-- Save — show in wizard flow (step 3, not editing model) OR from Models tab when editing a model -->
+        <button class="btn btn-primary" x-show="(wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab) || (wizardFromModelsTab && wizardEditingModel)" @click="wizardSave()">Save</button>
+    </div>
+  </div>
+
+  <!-- Edit Provider and Model Selector modals removed — "Edit" button reuses the wizard at step 2 -->
+
+  <!-- ═══════════ POLICY EDITOR MODAL ═══════════ -->
+  <template x-if="editingPolicy">
+  <div class="modal-backdrop" x-show="editingPolicy" x-cloak @click.self="cancelEditPolicy()">
+    <div class="modal" @click.stop style="max-width: 700px;">
+      <div class="modal-header">
+        <h2 x-text="editingPolicy.isNew ? 'New Policy' : ('Edit Policy: ' + editingPolicy.name)"></h2>
+        <button style="background: none; border: none; font-size: 1.25rem; cursor: pointer; color: #6a6e73;" @click="cancelEditPolicy()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 24px;">
+        <!-- Name -->
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">Policy Name</label>
+          <input type="text" x-model="editingPolicy.name" :disabled="!editingPolicy?.isNew"
+                 placeholder="my-policy" style="width: 100%;"
+                 :style="!editingPolicy?.isNew ? 'background: #f0f0f0; cursor: not-allowed;' : ''">
+        </div>
+
+        <!-- Sampling -->
+        <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+          <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">Sampling</legend>
+          <div class="param-row">
+            <div class="param-field">
+              <label>Temperature</label>
+              <input type="number" min="0" max="2" step="0.05"
+                     :value="editingPolicy?.config?.sampling?.temperature"
+                     @input="editingPolicy.config.sampling = editingPolicy.config.sampling || {}; editingPolicy.config.sampling.temperature = $event.target.value ? parseFloat($event.target.value) : undefined"
+                     placeholder="not set">
+            </div>
+            <div class="param-field">
+              <label>Top P</label>
+              <input type="number" min="0" max="1" step="0.05"
+                     :value="editingPolicy?.config?.sampling?.top_p"
+                     @input="editingPolicy.config.sampling = editingPolicy.config.sampling || {}; editingPolicy.config.sampling.top_p = $event.target.value ? parseFloat($event.target.value) : undefined"
+                     placeholder="not set">
+            </div>
+            <div class="param-field">
+              <label>Top K</label>
+              <input type="number" min="0" step="1"
+                     :value="editingPolicy?.config?.sampling?.top_k"
+                     @input="editingPolicy.config.sampling = editingPolicy.config.sampling || {}; editingPolicy.config.sampling.top_k = $event.target.value ? parseInt($event.target.value) : undefined"
+                     placeholder="not set">
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Output -->
+        <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+          <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">Output</legend>
+          <div class="param-row">
+            <div class="param-field">
+              <label>Max Tokens</label>
+              <input type="number" min="1" step="1"
+                     :value="editingPolicy?.config?.output?.max_tokens"
+                     @input="editingPolicy.config.output = editingPolicy.config.output || {}; editingPolicy.config.output.max_tokens = $event.target.value ? parseInt($event.target.value) : undefined"
+                     placeholder="not set">
+            </div>
+            <div class="param-field">
+              <label>Format</label>
+              <select :value="editingPolicy?.config?.output?.format || ''"
+                      @change="editingPolicy.config.output = editingPolicy.config.output || {}; editingPolicy.config.output.format = $event.target.value || undefined">
+                <option value="">not set</option>
+                <option value="text">text</option>
+                <option value="json_only">json_only</option>
+                <option value="markdown">markdown</option>
+              </select>
+            </div>
+            <div class="param-field">
+              <label>Prompt Mode</label>
+              <select :value="editingPolicy?.config?.output?.system_prompt_mode || ''"
+                      @change="editingPolicy.config.output = editingPolicy.config.output || {}; editingPolicy.config.output.system_prompt_mode = $event.target.value || undefined">
+                <option value="">prepend (default)</option>
+                <option value="prepend">prepend</option>
+                <option value="append">append</option>
+                <option value="replace">replace</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top: 12px;">
+            <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">System Prompt Snippet</label>
+            <textarea x-model="editingPolicy.config.output.system_prompt_snippet"
+                      placeholder="Optional snippet prepended/appended to the model's system prompt..."
+                      rows="3" style="width: 100%; resize: vertical;"></textarea>
+          </div>
+        </fieldset>
+
+        <!-- Context -->
+        <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+          <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">Context</legend>
+          <div class="param-row">
+            <div class="param-field">
+              <label>Context Threshold</label>
+              <input type="number" min="0" max="1" step="0.05"
+                     :value="editingPolicy?.config?.context?.context_threshold"
+                     @input="editingPolicy.config.context = editingPolicy.config.context || {}; editingPolicy.config.context.context_threshold = $event.target.value ? parseFloat($event.target.value) : undefined"
+                     placeholder="not set">
+            </div>
+            <div class="param-field">
+              <label>Compression</label>
+              <select :value="editingPolicy?.config?.context?.compression_strategy || ''"
+                      @change="editingPolicy.config.context = editingPolicy.config.context || {}; editingPolicy.config.context.compression_strategy = $event.target.value || undefined">
+                <option value="">not set</option>
+                <option value="none">none</option>
+                <option value="truncate">truncate</option>
+                <option value="rolling_summary">rolling_summary</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Tool -->
+        <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+          <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">Tool</legend>
+          <div class="param-row">
+            <div class="param-field">
+              <label>Max Tool Iterations</label>
+              <input type="number" min="0" step="1"
+                     :value="editingPolicy?.config?.tool?.max_tool_iterations"
+                     @input="editingPolicy.config.tool = editingPolicy.config.tool || {}; editingPolicy.config.tool.max_tool_iterations = $event.target.value ? parseInt($event.target.value) : undefined"
+                     placeholder="not set">
+            </div>
+            <div class="param-field">
+              <label>Tool Mode</label>
+              <select :value="editingPolicy?.config?.tool?.tool_mode || ''"
+                      @change="editingPolicy.config.tool = editingPolicy.config.tool || {}; editingPolicy.config.tool.tool_mode = $event.target.value || undefined">
+                <option value="">not set</option>
+                <option value="auto">auto</option>
+                <option value="ask">ask</option>
+                <option value="none">none</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Reliability -->
+        <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+          <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">Reliability</legend>
+          <div class="param-row">
+            <div class="param-field" style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" :checked="editingPolicy?.config?.reliability?.retry_on_invalid_json"
+                     @change="editingPolicy.config.reliability = editingPolicy.config.reliability || {}; editingPolicy.config.reliability.retry_on_invalid_json = $event.target.checked || undefined"
+                     style="width: auto; accent-color: #3e8635;">
+              <label style="margin: 0;">Retry on invalid JSON</label>
+            </div>
+            <div class="param-field">
+              <label>Timeout (seconds)</label>
+              <input type="number" min="0" step="1"
+                     :value="editingPolicy?.config?.reliability?.timeout"
+                     @input="editingPolicy.config.reliability = editingPolicy.config.reliability || {}; editingPolicy.config.reliability.timeout = $event.target.value ? parseInt($event.target.value) : undefined"
+                     placeholder="not set">
+            </div>
+          </div>
+        </fieldset>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="cancelEditPolicy()">Cancel</button>
+        <button class="btn" style="background: #ee0000; color: #fff; border-color: #a30000;" @click="saveEditingPolicy()">Save Policy</button>
+      </div>
+    </div>
+  </div>
+  </template>
+
+  <!-- ═══════════ CONFIG LOCATION MODAL ═══════════ -->
+  <div class="modal-backdrop" x-show="showConfigModal" x-cloak @click.self="showConfigModal = false"
+       style="z-index: 1100;">
+    <div class="rh-modal" @click.stop>
+      <div class="rh-modal-header">
+        <h3>Save config to</h3>
+        <button class="rh-close-btn" @click="showConfigModal = false">&times;</button>
+      </div>
+      <div class="rh-modal-body">
+        <div class="rh-tile" :class="{ 'rh-tile--selected': configLocation === 'all' }" 
+             @click="configLocation = 'all'; workspacePath = (!workspacePath && connectedWorkspaces.length > 0) ? connectedWorkspaces[0] : workspacePath">
+          <div class="rh-tile-radio"><input type="radio" name="cfg" value="all" x-model="configLocation"></div>
+          <div class="rh-tile-content">
+            <div class="rh-tile-title">All (Merged)</div>
+            <div class="rh-tile-desc">Combined view — shows providers from all sources. Edits save to the original scope.</div>
+            <template x-if="configLocation === 'all' && connectedWorkspaces.length > 0">
+              <div style="margin-top: 8px;">
+                <code class="rh-tile-path" x-text="'Includes workspace: ' + (workspacePath ? workspacePath.split('/').pop() : 'none')"></code>
+              </div>
+            </template>
+            <template x-if="configLocation === 'all' && connectedWorkspaces.length === 0">
+              <div style="margin-top: 8px;">
+                <p class="rh-helper-text">No VS Code workspace connected. Showing user config only.</p>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div class="rh-tile" :class="{ 'rh-tile--selected': configLocation === 'user' }" @click="configLocation = 'user'">
+          <div class="rh-tile-radio"><input type="radio" name="cfg" value="user" x-model="configLocation"></div>
+          <div class="rh-tile-content">
+            <div class="rh-tile-title">User (Global)</div>
+            <div class="rh-tile-desc">Settings apply to all projects</div>
+            <code class="rh-tile-path" x-text="userConfigPath"></code>
+          </div>
+        </div>
+        <div class="rh-tile" :class="{ 'rh-tile--selected': configLocation === 'workspace' }" @click="configLocation = 'workspace'">
+          <div class="rh-tile-radio"><input type="radio" name="cfg" value="workspace" x-model="configLocation"></div>
+          <div class="rh-tile-content">
+            <div class="rh-tile-title">Workspace (Project)</div>
+            <div class="rh-tile-desc">Settings specific to this project</div>
+            <div class="rh-form-group" x-show="configLocation === 'workspace'" x-transition @click.stop>
+              <label class="rh-form-label">Workspace Path</label>
+              <template x-if="connectedWorkspaces.length > 0">
+                <select x-model="workspacePath" style="width: 100%; padding: 8px; border: 1px solid #d2d2d2; border-radius: 3px;">
+                  <option value="">Select workspace...</option>
+                  <template x-for="ws in connectedWorkspaces" :key="ws">
+                    <option :value="ws" x-text="ws"></option>
+                  </template>
+                </select>
+              </template>
+              <template x-if="connectedWorkspaces.length === 0">
+                <div>
+                  <input type="text" x-model="workspacePath" placeholder="/path/to/workspace">
+                  <p class="rh-helper-text">No VS Code connected. Enter path manually.</p>
+                </div>
+              </template>
+              <code class="rh-tile-path" x-show="workspacePath" x-text="workspacePath + '/.config/abbenay/config.yaml'" style="margin-top: 8px;"></code>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="rh-modal-footer">
+        <button class="rh-btn rh-btn--secondary" @click="showConfigModal = false">Cancel</button>
+        <button class="rh-btn rh-btn--primary" @click="applyConfigLocation()"
+                :disabled="(configLocation === 'workspace' && !workspacePath)">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function dashboard() {
+  return {
+    loading: false,
+    status: {},
+    engines: [],
+    models: [],
+    providerConfig: {},  // Full config: { providerId: { engine, models: {...}, ... } }
+    
+    // Config location
+    configLocation: 'user',
+    workspacePath: '',
+    userConfigPath: '',
+    showConfigModal: false,
+    connectedWorkspaces: [],
+    
+    // Chat
+    selectedModel: '',
+    chatInput: '',
+    chatMessages: [],
+    chatStreaming: false,
+    activeChatId: null,
+    pendingApproval: null,
+    
+    // MCP Servers
+    mcpServers: [],
+    
+    // Tools
+    allTools: [],
+    toolSearch: '',
+    toolSourceFilter: '',
+    toolSortCol: 'originalName',
+    toolSortAsc: true,
+    toolPolicy: {},  // { toolName: 'always' | 'ask' | 'disable' }
+    
+    // Policies
+    allPolicies: [],  // [{ name, builtin, config }]
+    editingPolicy: null,  // { name, isNew, config: { sampling, output, context, tool, reliability } }
+    
+    // ── Wizard state ──
+    wizardOpen: false,
+    wizardStep: 1,
+    wizardEngine: '',
+    wizardName: '',
+    
+    wizardBaseUrl: '',
+    wizardKeySource: 'keychain',
+    wizardApiKey: '',
+    wizardHasExistingKey: false,
+    wizardEnvVar: '',
+    wizardTarget: 'user',
+    wizardModelSearch: '',
+    wizardDiscoveredModels: [],
+    wizardEnabledModels: {},   // { modelName: { model_id?, temperature?, ... } }
+    wizardLeftSelected: new Set(),
+    wizardRightSelected: new Set(),
+    wizardEditingModel: null,
+    
+    // ── Edit mode (reuses wizard) ──
+    wizardEditMode: false,    // true when editing existing provider (vs creating new)
+    wizardEditId: '',         // provider ID being edited
+    wizardFromModelsTab: false,  // true when opened from Models tab (configure icon)
+    
+    // ── Init ──
+    async init() {
+      try {
+        const resp = await fetch('/api/config?location=user');
+        const data = await resp.json();
+        this.userConfigPath = data.path || '';
+      } catch {}
+      try {
+        const resp = await fetch('/api/engines');
+        const data = await resp.json();
+        this.engines = data.engines || [];
+      } catch {}
+      // Auto-detect connected workspaces and default to "all" if one exists
+      try {
+        const wsResp = await fetch('/api/workspaces');
+        this.connectedWorkspaces = (await wsResp.json()).workspaces || [];
+        if (this.connectedWorkspaces.length > 0) {
+          this.workspacePath = this.connectedWorkspaces[0];
+          this.configLocation = 'all';
+        }
+      } catch {}
+      await this.loadConfig();
+      await this.refresh();
+      // Load MCP servers, tools, and policies in background
+      this.loadMcpServers();
+      this.loadTools();
+      this.loadPolicies();
+    },
+    
+    // ── Config helpers ──
+    getConfigLocation() {
+      if (this.configLocation === 'all') return 'all';
+      return this.configLocation === 'workspace' && this.workspacePath ? this.workspacePath : 'user';
+    },
+    
+    async loadConfig() {
+      try {
+        if (this.configLocation === 'all') {
+          // Fetch both user and workspace configs, merge client-side with source tags
+          const userResp = await fetch('/api/config?location=user');
+          const userData = await userResp.json();
+          const userProviders = userData.config?.providers || {};
+          
+          // Tag user providers
+          const merged = {};
+          for (const [id, cfg] of Object.entries(userProviders)) {
+            merged[id] = { ...cfg, _source: 'user' };
+          }
+          
+          // If workspace is selected, fetch and overlay workspace providers
+          if (this.workspacePath) {
+            const wsResp = await fetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
+            const wsData = await wsResp.json();
+            const wsProviders = wsData.config?.providers || {};
+            for (const [id, cfg] of Object.entries(wsProviders)) {
+              merged[id] = { ...cfg, _source: this.workspacePath };
+            }
+          }
+          
+          this.providerConfig = merged;
+        } else {
+          const loc = this.getConfigLocation();
+          const resp = await fetch(`/api/config?location=${encodeURIComponent(loc)}`);
+          const data = await resp.json();
+          this.providerConfig = data.config?.providers || {};
+        }
+      } catch (e) { console.error('Failed to load config:', e); }
+    },
+    
+    async saveFullConfig() {
+      try {
+        if (this.configLocation === 'all') {
+          // In "all" mode, split providers back to their original scopes and save each
+          const userProviders = {};
+          const wsProviders = {};
+          for (const [id, cfg] of Object.entries(this.providerConfig)) {
+            const clean = { ...cfg };
+            const source = clean._source || 'user';
+            delete clean._source;
+            if (source === 'user') {
+              userProviders[id] = clean;
+            } else {
+              wsProviders[id] = clean;
+            }
+          }
+          // Read-modify-write user config to preserve mcp_servers, tool_policy, etc.
+          const userExist = await fetch('/api/config?location=user');
+          const userExistData = await userExist.json();
+          const userConfig = userExistData.config || {};
+          userConfig.providers = userProviders;
+          await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: 'user', config: userConfig }),
+          });
+          // Save workspace config if we have one
+          if (this.workspacePath && Object.keys(wsProviders).length > 0) {
+            const wsExist = await fetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
+            const wsExistData = await wsExist.json();
+            const wsConfig = wsExistData.config || {};
+            wsConfig.providers = wsProviders;
+            await fetch('/api/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ location: this.workspacePath, config: wsConfig }),
+            });
+          }
+        } else {
+          const loc = this.getConfigLocation();
+          // Read existing config first to preserve mcp_servers, tool_policy, etc.
+          const existResp = await fetch(`/api/config?location=${encodeURIComponent(loc)}`);
+          const existData = await existResp.json();
+          const existConfig = existData.config || {};
+          // Strip _source tags before saving
+          const clean = {};
+          for (const [id, cfg] of Object.entries(this.providerConfig)) {
+            const c = { ...cfg };
+            delete c._source;
+            clean[id] = c;
+          }
+          existConfig.providers = clean;
+          await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: loc, config: existConfig }),
+          });
+        }
+      } catch (e) { console.error('Failed to save config:', e); }
+    },
+    
+    async refresh() {
+      this.loading = true;
+      try {
+        const loc = this.getConfigLocation();
+        const wsParam = this.workspacePath ? `?workspace=${encodeURIComponent(this.workspacePath)}` : '';
+        const modelsUrl = (loc === 'all' || loc !== 'user') ? `/api/models${wsParam}` : '/api/models';
+        const [statusRes, modelsRes] = await Promise.all([fetch('/api/status'), fetch(modelsUrl)]);
+        this.status = await statusRes.json();
+        const modelsData = await modelsRes.json();
+        this.models = modelsData.models || [];
+      } catch (e) { console.error('Refresh failed:', e); }
+      this.loading = false;
+    },
+    
+    // ── Provider status helpers ──
+    getProviderStatus(provId) {
+      const cfg = this.providerConfig[provId];
+      if (!cfg) return 'not-configured';
+      const engine = this.engines.find(e => e.id === cfg.engine);
+      if (engine && !engine.requiresKey) return 'configured';
+      if (cfg.api_key_keychain_name || cfg.api_key_env_var_name) return 'configured';
+      return 'key-missing';
+    },
+    getProviderStatusText(provId) {
+      const s = this.getProviderStatus(provId);
+      if (s === 'configured') return 'Ready';
+      if (s === 'key-missing') return 'Key missing';
+      return 'Not configured';
+    },
+    
+    // ── Engine helpers ──
+    getEngineDisplayName(engineId) { return engineId; },
+    getEngineDefaultUrl(engineId) { return this.engines.find(e => e.id === engineId)?.defaultBaseUrl || ''; },
+    getEngineDefaultEnvVar(engineId) { return this.engines.find(e => e.id === engineId)?.defaultEnvVar || `${(engineId || '').toUpperCase()}_API_KEY`; },
+    engineRequiresKey(engineId) { const e = this.engines.find(e => e.id === engineId); return e ? e.requiresKey : true; },
+    
+    formatParams(params) {
+      if (!params) return 'default';
+      const parts = [];
+      if (params.policy) parts.push(`policy=${params.policy}`);
+      if (params.temperature != null) parts.push(`temp=${params.temperature}`);
+      if (params.top_p != null) parts.push(`top_p=${params.top_p}`);
+      if (params.top_k != null) parts.push(`top_k=${params.top_k}`);
+      if (params.max_tokens != null) parts.push(`max=${params.max_tokens}`);
+      if (params.system_prompt) parts.push('sys_prompt');
+      return parts.length > 0 ? parts.join(', ') : 'default';
+    },
+    
+    // ── Config location modal ──
+    async openConfigModal() {
+      try {
+        const resp = await fetch('/api/workspaces');
+        this.connectedWorkspaces = (await resp.json()).workspaces || [];
+      } catch { this.connectedWorkspaces = []; }
+      this.showConfigModal = true;
+    },
+    async applyConfigLocation() {
+      await this.loadConfig();
+      await this.refresh();
+      this.showConfigModal = false;
+    },
+    
+    // ── Add Provider Wizard ──
+    openWizard() {
+      this.showConfigModal = false; // Close config modal if open
+      this.wizardOpen = true;
+      this.wizardStep = 1;
+      this.wizardEditMode = false;
+      this.wizardEditId = '';
+      this.wizardFromModelsTab = false;
+      this.wizardEngine = '';
+      this.wizardName = '';
+      this.wizardBaseUrl = '';
+      this.wizardKeySource = 'keychain';
+      this.wizardApiKey = '';
+      this.wizardHasExistingKey = false;
+      this.wizardEnvVar = '';
+      this.wizardTarget = this.configLocation;
+      this.wizardModelSearch = '';
+      this.wizardDiscoveredModels = [];
+      this.wizardEnabledModels = {};
+      this.wizardLeftSelected = new Set();
+      this.wizardRightSelected = new Set();
+      this.wizardEditingModel = null;
+    },
+    
+    async openEditWizard(provId) {
+      this.showConfigModal = false; // Close config modal if open
+      const cfg = this.providerConfig[provId] || {};
+      this.wizardOpen = true;
+      this.wizardStep = 2;  // Skip engine selection — go straight to provider config
+      this.wizardEditMode = true;
+      this.wizardEditId = provId;
+      this.wizardFromModelsTab = false;
+      this.wizardEngine = cfg.engine || provId;
+      this.wizardName = provId;
+      this.wizardBaseUrl = cfg.base_url || '';
+      this.wizardKeySource = cfg.api_key_env_var_name ? 'env' : 'keychain';
+      this.wizardApiKey = '';  // Don't pre-fill key for security
+      this.wizardHasExistingKey = !!(cfg.api_key_keychain_name);  // Track if key is already set
+      this.wizardEnvVar = cfg.api_key_env_var_name || '';
+      this.wizardTarget = this.configLocation;
+      this.wizardModelSearch = '';
+      this.wizardDiscoveredModels = [];
+      this.wizardEnabledModels = JSON.parse(JSON.stringify(cfg.models || {}));
+      this.wizardLeftSelected = new Set();
+      this.wizardRightSelected = new Set();
+      this.wizardEditingModel = null;
+    },
+    
+    async openModelConfig(model) {
+      // Reuse openEditWizard to load the provider's config into wizard state
+      await this.openEditWizard(model.provider);
+      // Jump directly to step 3 model config view
+      this.wizardStep = 3;
+      // The model's virtual name is model.name; find it in the enabled models
+      this.wizardEditingModel = model.name;
+      this.wizardFromModelsTab = true;
+      // Discover models so the dual-list has data if user clicks "Back to models"
+      try {
+        const params = new URLSearchParams();
+        params.set('providerId', model.provider);
+        const url = `/api/discover-models/${encodeURIComponent(model.engine)}?${params}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        this.wizardDiscoveredModels = data.models || [];
+      } catch (e) { console.error('Discovery failed:', e); }
+    },
+    
+    async wizardNext() {
+      if (this.wizardStep === 1) {
+        if (!this.wizardEngine) return;
+        // Auto-fill name and display name from engine if empty
+        if (!this.wizardName) this.wizardName = this.wizardEngine;
+        // If name already exists, suggest a suffix
+        if (this.providerConfig[this.wizardName]) {
+          let i = 2;
+          while (this.providerConfig[`${this.wizardEngine}-${i}`]) i++;
+          this.wizardName = `${this.wizardEngine}-${i}`;
+        }
+        this.wizardStep = 2;
+      } else if (this.wizardStep === 2) {
+        if (!this.wizardName) return;
+        // Discover models for Step 3
+        try {
+          const params = new URLSearchParams();
+          if (this.wizardApiKey) params.set('apiKey', this.wizardApiKey);
+          if (this.wizardBaseUrl) params.set('baseUrl', this.wizardBaseUrl);
+          // In edit mode without a new key, tell backend to resolve from config
+          if (this.wizardEditMode && !this.wizardApiKey) {
+            params.set('providerId', this.wizardEditId);
+          }
+          const url = `/api/discover-models/${encodeURIComponent(this.wizardEngine)}?${params}`;
+          const resp = await fetch(url);
+          const data = await resp.json();
+          this.wizardDiscoveredModels = data.models || [];
+        } catch (e) { console.error('Discovery failed:', e); }
+        this.wizardStep = 3;
+      }
+    },
+    
+    async wizardSave() {
+      const name = this.wizardName;
+      if (!name || !this.wizardEngine) return;
+      
+      // In edit mode, start from the existing config to preserve fields we don't touch
+      const existingCfg = this.wizardEditMode ? (this.providerConfig[this.wizardEditId] || {}) : {};
+      
+      const provCfg = {
+        ...existingCfg,
+        engine: this.wizardEngine,
+        models: { ...this.wizardEnabledModels },
+      };
+      delete provCfg.display_name;
+      if (this.wizardBaseUrl) provCfg.base_url = this.wizardBaseUrl;
+      else delete provCfg.base_url;
+      
+      // Handle API key
+      if (this.engineRequiresKey(this.wizardEngine)) {
+        if (this.wizardKeySource === 'keychain' && this.wizardApiKey) {
+          // User entered a new key — save it
+          const keychainName = existingCfg.api_key_keychain_name || `${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
+          try {
+            await fetch(`/api/secrets/${keychainName}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ value: this.wizardApiKey }),
+            });
+          } catch {}
+          provCfg.api_key_keychain_name = keychainName;
+          delete provCfg.api_key_env_var_name;
+        } else if (this.wizardKeySource === 'keychain' && !this.wizardApiKey && this.wizardEditMode) {
+          // Edit mode, no new key entered — keep existing keychain setting
+        } else if (this.wizardKeySource === 'env') {
+          provCfg.api_key_env_var_name = this.wizardEnvVar || this.getEngineDefaultEnvVar(this.wizardEngine);
+          delete provCfg.api_key_keychain_name;
+        }
+      }
+      
+      // If provider was renamed in edit mode, remove old key
+      if (this.wizardEditMode && this.wizardEditId !== name) {
+        delete this.providerConfig[this.wizardEditId];
+      }
+      
+      // Save to config
+      this.providerConfig[name] = provCfg;
+      this.providerConfig = { ...this.providerConfig };
+      await this.saveFullConfig();
+      await this.refresh();
+      this.wizardOpen = false;
+    },
+    
+    // ── Dual-list helpers ──
+    get filteredAvailableModels() {
+      const enabled = new Set(Object.keys(this.wizardEnabledModels));
+      // Also match by model_id for virtual-named entries
+      const enabledModelIds = new Set(
+        Object.values(this.wizardEnabledModels).map(cfg => cfg.model_id).filter(Boolean)
+      );
+      return this.wizardDiscoveredModels.filter(m => {
+        if (enabled.has(m.id) || enabledModelIds.has(m.id)) {
+          // Allow adding again (variants)
+        }
+        const search = this.wizardModelSearch.toLowerCase();
+        if (search && !m.id.toLowerCase().includes(search)) {
+          return false;
+        }
+        return true;
+      });
+    },
+    
+    toggleLeftSelect(id) {
+      if (this.wizardLeftSelected.has(id)) this.wizardLeftSelected.delete(id);
+      else this.wizardLeftSelected.add(id);
+      this.wizardLeftSelected = new Set(this.wizardLeftSelected);
+    },
+    toggleRightSelect(name) {
+      if (this.wizardRightSelected.has(name)) this.wizardRightSelected.delete(name);
+      else this.wizardRightSelected.add(name);
+      this.wizardRightSelected = new Set(this.wizardRightSelected);
+    },
+    
+    addSelectedModels() {
+      for (const id of this.wizardLeftSelected) {
+        // Key = engine model ID (default name), value = {} (default params)
+        // If already exists, auto-name with suffix
+        let name = id;
+        if (this.wizardEnabledModels[name]) {
+          let i = 1;
+          while (this.wizardEnabledModels[`${id}-${i}`]) i++;
+          name = `${id}-${i}`;
+          this.wizardEnabledModels[name] = { model_id: id };
+        } else {
+          this.wizardEnabledModels[name] = {};
+        }
+      }
+      this.wizardEnabledModels = { ...this.wizardEnabledModels };
+      this.wizardLeftSelected = new Set();
+    },
+    
+    removeSelectedModels() {
+      for (const name of this.wizardRightSelected) {
+        delete this.wizardEnabledModels[name];
+      }
+      this.wizardEnabledModels = { ...this.wizardEnabledModels };
+      this.wizardRightSelected = new Set();
+    },
+    
+    // toggleParamEditor removed — model config now uses the "view flip" pattern
+    
+    updateModelParam(name, param, value) {
+      if (!this.wizardEnabledModels[name]) return;
+      if (value === undefined || value === '') {
+        delete this.wizardEnabledModels[name][param];
+      } else {
+        this.wizardEnabledModels[name][param] = value;
+      }
+      this.wizardEnabledModels = { ...this.wizardEnabledModels };
+    },
+    
+    // (presets replaced by policy system)
+    
+    renameModel(oldName, newName) {
+      if (!newName || newName === oldName || this.wizardEnabledModels[newName]) return;
+      const cfg = this.wizardEnabledModels[oldName];
+      // If the old name was the engine model ID and no model_id set, record it
+      if (!cfg.model_id && oldName !== newName) {
+        cfg.model_id = oldName;
+      }
+      delete this.wizardEnabledModels[oldName];
+      this.wizardEnabledModels[newName] = cfg;
+      this.wizardEnabledModels = { ...this.wizardEnabledModels };
+      if (this.wizardEditingModel === oldName) this.wizardEditingModel = newName;
+    },
+    
+    addVariant(name) {
+      const cfg = this.wizardEnabledModels[name];
+      const modelId = cfg?.model_id || name;
+      let i = 1;
+      while (this.wizardEnabledModels[`${modelId}-${i}`]) i++;
+      const newName = `${modelId}-${i}`;
+      this.wizardEnabledModels[newName] = { model_id: modelId };
+      this.wizardEnabledModels = { ...this.wizardEnabledModels };
+      this.wizardEditingModel = newName;
+    },
+    
+    // Edit Provider and Model Selector functions removed — "Edit" reuses the wizard
+    
+    // ── Delete provider ──
+    async deleteProvider(provId) {
+      if (!confirm(`Delete provider "${provId}"?`)) return;
+      const cfg = this.providerConfig[provId];
+      if (cfg?.api_key_keychain_name) {
+        try { await fetch(`/api/secrets/${cfg.api_key_keychain_name}`, { method: 'DELETE' }); } catch {}
+      }
+      delete this.providerConfig[provId];
+      this.providerConfig = { ...this.providerConfig };
+      await this.saveFullConfig();
+      await this.refresh();
+    },
+    
+    // ── MCP Servers ──
+    async loadMcpServers() {
+      try {
+        const resp = await fetch('/api/mcp-servers');
+        const data = await resp.json();
+        this.mcpServers = data.mcp_servers || [];
+      } catch (e) { console.error('Failed to load MCP servers:', e); }
+    },
+    
+    async reconnectMcpServer(serverId) {
+      try {
+        await fetch(`/api/mcp-servers/${encodeURIComponent(serverId)}/reconnect`, { method: 'POST' });
+        await this.loadMcpServers();
+      } catch (e) { console.error('Reconnect failed:', e); }
+    },
+    
+    async toggleMcpServer(serverId, enabled) {
+      try {
+        // Load current config, toggle the server's enabled flag, save back
+        const resp = await fetch('/api/config?location=user');
+        const data = await resp.json();
+        const config = data.config || {};
+        if (config.mcp_servers && config.mcp_servers[serverId]) {
+          config.mcp_servers[serverId].enabled = enabled;
+          await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: 'user', config }),
+          });
+          await this.loadMcpServers();
+          await this.loadTools();
+        }
+      } catch (e) { console.error('Toggle MCP server failed:', e); }
+    },
+    
+    // ── Tools ──
+    async loadTools() {
+      try {
+        const resp = await fetch('/api/tools');
+        const data = await resp.json();
+        this.allTools = data.tools || [];
+        
+        // Load tool policy from config
+        const cfgResp = await fetch('/api/config?location=user');
+        const cfgData = await cfgResp.json();
+        const policy = cfgData.config?.tool_policy || {};
+        this.toolPolicy = {};
+        for (const name of (policy.disabled_tools || [])) {
+          this.toolPolicy[name] = 'disable';
+        }
+        for (const name of (policy.require_approval || [])) {
+          this.toolPolicy[name] = 'ask';
+        }
+        for (const name of (policy.auto_approve || [])) {
+          this.toolPolicy[name] = 'always';
+        }
+      } catch (e) { console.error('Failed to load tools:', e); }
+    },
+    
+    get toolSources() {
+      const sources = new Set(this.allTools.map(t => t.source));
+      return [...sources].sort();
+    },
+    
+    get filteredTools() {
+      let tools = this.allTools;
+      if (this.toolSourceFilter) {
+        tools = tools.filter(t => t.source === this.toolSourceFilter);
+      }
+      if (this.toolSearch) {
+        const q = this.toolSearch.toLowerCase();
+        tools = tools.filter(t => 
+          (t.originalName || '').toLowerCase().includes(q) || 
+          (t.description || '').toLowerCase().includes(q) ||
+          (t.source || '').toLowerCase().includes(q)
+        );
+      }
+      // Sort
+      const col = this.toolSortCol;
+      const asc = this.toolSortAsc;
+      tools = [...tools].sort((a, b) => {
+        const av = (a[col] || '').toLowerCase();
+        const bv = (b[col] || '').toLowerCase();
+        return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+      });
+      return tools;
+    },
+    
+    sortToolsBy(col) {
+      if (this.toolSortCol === col) {
+        this.toolSortAsc = !this.toolSortAsc;
+      } else {
+        this.toolSortCol = col;
+        this.toolSortAsc = true;
+      }
+    },
+    
+    getToolPolicy(toolName) {
+      return this.toolPolicy[toolName] || 'always';
+    },
+    
+    async setToolPolicy(toolName, policy) {
+      this.toolPolicy[toolName] = policy;
+      // Rebuild the tool_policy config arrays
+      const disabled_tools = [];
+      const require_approval = [];
+      const auto_approve = [];
+      for (const [name, p] of Object.entries(this.toolPolicy)) {
+        if (p === 'disable') disabled_tools.push(name);
+        else if (p === 'ask') require_approval.push(name);
+        else if (p === 'always') auto_approve.push(name);
+      }
+      // Only write non-default entries (default is 'always', so no need to save those)
+      const tool_policy = {};
+      if (disabled_tools.length > 0) tool_policy.disabled_tools = disabled_tools;
+      if (require_approval.length > 0) tool_policy.require_approval = require_approval;
+      // auto_approve is the default, only include if explicitly set
+      if (auto_approve.length > 0) tool_policy.auto_approve = auto_approve;
+      
+      try {
+        // Read current config, update tool_policy, save
+        const resp = await fetch('/api/config?location=user');
+        const data = await resp.json();
+        const config = data.config || {};
+        config.tool_policy = tool_policy;
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ location: 'user', config }),
+        });
+      } catch (e) { console.error('Failed to save tool policy:', e); }
+    },
+    
+    // ── Policies ──
+    async loadPolicies() {
+      try {
+        const resp = await fetch('/api/policies');
+        const data = await resp.json();
+        this.allPolicies = data.policies || [];
+      } catch (e) { console.error('Failed to load policies:', e); }
+    },
+    
+    async duplicatePolicy(name) {
+      const src = this.allPolicies.find(p => p.name === name);
+      if (!src) return;
+      let newName = name + '-custom';
+      let i = 2;
+      while (this.allPolicies.find(p => p.name === newName)) {
+        newName = name + '-custom-' + i++;
+      }
+      try {
+        await fetch('/api/policies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName, config: JSON.parse(JSON.stringify(src.config)) }),
+        });
+        await this.loadPolicies();
+      } catch (e) { console.error('Failed to duplicate policy:', e); }
+    },
+    
+    async deletePolicy(name) {
+      if (!confirm(`Delete custom policy "${name}"?`)) return;
+      try {
+        await fetch(`/api/policies/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        await this.loadPolicies();
+      } catch (e) { console.error('Failed to delete policy:', e); }
+    },
+    
+    formatPolicyFields(config) {
+      if (!config) return '';
+      const parts = [];
+      if (config.sampling?.temperature != null) parts.push(`temp=${config.sampling.temperature}`);
+      if (config.sampling?.top_p != null) parts.push(`top_p=${config.sampling.top_p}`);
+      if (config.sampling?.top_k != null) parts.push(`top_k=${config.sampling.top_k}`);
+      if (config.output?.max_tokens != null) parts.push(`max=${config.output.max_tokens}`);
+      if (config.output?.format) parts.push(`format=${config.output.format}`);
+      if (config.output?.system_prompt_snippet) parts.push('snippet');
+      if (config.reliability?.retry_on_invalid_json) parts.push('json-retry');
+      if (config.reliability?.timeout != null) parts.push(`timeout=${config.reliability.timeout}`);
+      return parts.join(', ');
+    },
+    
+    setModelPolicy(modelName, policyName) {
+      if (!this.wizardEnabledModels[modelName]) return;
+      const cfg = this.wizardEnabledModels[modelName];
+      if (policyName) {
+        cfg.policy = policyName;
+      } else {
+        delete cfg.policy;
+      }
+      this.wizardEnabledModels = { ...this.wizardEnabledModels };
+    },
+
+    openNewPolicy() {
+      this.editingPolicy = {
+        name: '',
+        isNew: true,
+        config: { sampling: {}, output: {}, context: {}, tool: {}, reliability: {} },
+      };
+    },
+
+    openEditPolicy(pol) {
+      this.editingPolicy = {
+        name: pol.name,
+        isNew: false,
+        config: JSON.parse(JSON.stringify({
+          sampling: pol.config.sampling || {},
+          output: pol.config.output || {},
+          context: pol.config.context || {},
+          tool: pol.config.tool || {},
+          reliability: pol.config.reliability || {},
+        })),
+      };
+    },
+
+    async saveEditingPolicy() {
+      if (!this.editingPolicy) return;
+      const name = (this.editingPolicy.name || '').trim();
+      if (!name) { alert('Policy name is required.'); return; }
+      if (/[^a-zA-Z0-9_-]/.test(name)) { alert('Policy name may only contain letters, digits, hyphens, and underscores.'); return; }
+
+      const cfg = JSON.parse(JSON.stringify(this.editingPolicy.config));
+      const clean = (obj) => { if (!obj) return undefined; const k = Object.keys(obj).filter(k => obj[k] != null); return k.length ? Object.fromEntries(k.map(k => [k, obj[k]])) : undefined; };
+      const payload = {};
+      const s = clean(cfg.sampling); if (s) payload.sampling = s;
+      const o = clean(cfg.output);   if (o) payload.output = o;
+      const c = clean(cfg.context);  if (c) payload.context = c;
+      const t = clean(cfg.tool);     if (t) payload.tool = t;
+      const r = clean(cfg.reliability); if (r) payload.reliability = r;
+
+      try {
+        const resp = await fetch('/api/policies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, config: payload }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { alert(data.error || 'Failed to save policy'); return; }
+        this.editingPolicy = null;
+        await this.loadPolicies();
+      } catch (e) { console.error('Failed to save policy:', e); alert('Failed to save policy.'); }
+    },
+
+    cancelEditPolicy() {
+      this.editingPolicy = null;
+    },
+    
+    // ── Chat ──
+    async sendMessage() {
+      if (!this.chatInput.trim() || !this.selectedModel || this.chatStreaming) return;
+      const userMessage = this.chatInput.trim();
+      this.chatInput = '';
+      this.chatStreaming = true;
+      this.pendingApproval = null;
+      this.chatMessages.push({ role: 'user', content: userMessage });
+      const idx = this.chatMessages.length;
+      this.chatMessages.push({ role: 'assistant', content: '', streaming: true });
+      const messages = this.chatMessages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
+      messages.push({ role: 'user', content: userMessage });
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: this.selectedModel, messages }),
+        });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              if (line === 'data: [DONE]') continue;
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.type === 'chat_started') {
+                  this.activeChatId = data.chatId;
+                } else if (data.type === 'text') {
+                  this.chatMessages[idx].content += data.content;
+                } else if (data.type === 'tool') {
+                  if (!data.done) {
+                    this.chatMessages[idx].content += `\n\n🔧 **Tool call:** \`${data.name}\`\n\`\`\`json\n${JSON.stringify(data.call?.params || {}, null, 2)}\n\`\`\`\n`;
+                  } else {
+                    const result = typeof data.call?.result === 'string' ? data.call.result : JSON.stringify(data.call?.result || {}, null, 2);
+                    this.chatMessages[idx].content += `\n✅ **Result:**\n\`\`\`\n${result}\n\`\`\`\n\n`;
+                  }
+                } else if (data.type === 'approval_request') {
+                  this.pendingApproval = {
+                    chatId: data.chatId,
+                    requestId: data.requestId,
+                    toolName: data.toolName,
+                    args: data.args,
+                  };
+                  this.chatMessages[idx].content += `\n\n⏸️ **Waiting for approval:** \`${data.toolName}\`\n`;
+                } else if (data.type === 'approval_result') {
+                  const icon = data.decision === 'allow' ? '✅' : '❌';
+                  this.chatMessages[idx].content += `${icon} Tool ${data.decision}ed\n`;
+                  this.pendingApproval = null;
+                } else if (data.type === 'error') {
+                  this.chatMessages[idx].content += `\n\n**Error:** ${data.error}\n`;
+                } else if (data.type === 'done') {
+                  this.chatMessages[idx].streaming = false;
+                }
+              } catch {}
+            }
+          }
+          const container = document.getElementById('chat-messages');
+          if (container) container.scrollTop = container.scrollHeight;
+        }
+      } catch (e) {
+        this.chatMessages[idx].content = `Error: ${e.message}`;
+        this.chatMessages[idx].streaming = false;
+      }
+      this.chatStreaming = false;
+      this.pendingApproval = null;
+      this.activeChatId = null;
+    },
+
+    async resolveApproval(decision) {
+      if (!this.pendingApproval || !this.activeChatId) return;
+      const { chatId, requestId } = this.pendingApproval;
+      try {
+        await fetch(`/api/chat/${chatId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId, decision }),
+        });
+      } catch (e) {
+        console.error('Failed to send approval:', e);
+      }
+    },
+  };
+}
+</script>
+
+</body>
+</html>

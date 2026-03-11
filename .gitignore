@@ -1,0 +1,33 @@
+# Build output
+dist/
+
+# Node.js
+node_modules/
+out/
+*.tsbuildinfo
+
+# VS Code Extension
+*.vsix
+.vscode-test/
+packages/vscode/bin/
+
+# Daemon
+packages/daemon/dist/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.build-venv/
+*.egg-info/
+.pytest_cache/
