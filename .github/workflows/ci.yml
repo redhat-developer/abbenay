@@ -24,8 +24,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Install Xvfb
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+
+      - name: Disable GPU acceleration
+        run: |
+          mkdir -p ~/.vscode
+          echo '{ "disable-hardware-acceleration": true }' > ~/.vscode/argv.json
+
       - name: Test
-        run: npm test
+        run: xvfb-run -a npm test
 
   build:
     needs: lint-and-test
