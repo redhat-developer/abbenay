@@ -1,0 +1,63 @@
+{
+  "name": "@abbenay/daemon",
+  "version": "0.1.0",
+  "description": "Abbenay daemon - unified AI service",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "abbenay": "dist/index.js",
+    "aby": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:sea": "node build.js",
+    "build:sea:js-only": "node build.js --js-only",
+    "dev": "tsx src/daemon/index.ts",
+    "start": "node dist/daemon/index.js",
+    "daemon": "tsx src/daemon/index.ts daemon",
+    "web": "tsx src/daemon/index.ts web",
+    "status": "tsx src/daemon/index.ts status",
+    "test": "vitest",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^2.0.0",
+    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/cohere": "^3.0.0",
+    "@ai-sdk/deepseek": "^2.0.0",
+    "@ai-sdk/fireworks": "^2.0.0",
+    "@ai-sdk/google": "^3.0.0",
+    "@ai-sdk/groq": "^3.0.0",
+    "@ai-sdk/mcp": "^1.0.0",
+    "@ai-sdk/mistral": "^3.0.0",
+    "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/openai-compatible": "^2.0.0",
+    "@ai-sdk/perplexity": "^1.0.0",
+    "@ai-sdk/togetherai": "^1.0.0",
+    "@ai-sdk/xai": "^3.0.0",
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.13",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "ai": "^6.0.0",
+    "commander": "^12.1.0",
+    "express": "^4.21.0",
+    "js-yaml": "^4.1.0",
+    "keytar": "^7.9.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "esbuild": "^0.23.0",
+    "postject": "^1.0.0-alpha.6",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

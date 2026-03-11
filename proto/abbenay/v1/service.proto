@@ -1,0 +1,1151 @@
+// Abbenay Daemon gRPC Service Definition
+// 
+// This is the contract for all Abbenay clients (VS Code, Python, Node.js, CLI)
+// to communicate with the central Abbenay daemon.
+
+syntax = "proto3";
+
+package abbenay.v1;
+
+// We define our own Empty and Timestamp to avoid protoc include path issues.
+// These will be mapped to prost_types equivalents in Rust.
+
+// Empty message (equivalent to Empty)
+message Empty {}
+
+// Timestamp (equivalent to Timestamp)
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+//
+// MCP Bridge Service - High-performance tool execution
+//
+// This service provides gRPC transport for MCP tools, combining:
+// - MCP's semantic layer (tool definitions, JSON schemas for LLM understanding)
+// - gRPC's performance layer (HTTP/2 multiplexing, bidirectional streaming)
+//
+// The "hybrid bridge" pattern: Keep the brain (MCP schemas), upgrade the pipe (gRPC).
+//
+
+service McpBridge {
+  // Discovery: List available MCP tools with their schemas
+  // Returns full MCP tool definitions so LLMs understand what's available
+  rpc ListMcpTools(ListMcpToolsRequest) returns (ListMcpToolsResponse);
+  
+  // Execution: Call a tool with streaming response
+  // Supports progress updates, partial results, and cancellation
+  rpc CallTool(CallToolRequest) returns (stream ToolResponseChunk);
+  
+  // Bidirectional: For tools that need user input mid-execution
+  rpc CallToolInteractive(stream ToolInteractiveRequest) returns (stream ToolResponseChunk);
+  
+  // Batch: Execute multiple independent tools in parallel
+  rpc CallToolsBatch(CallToolsBatchRequest) returns (stream ToolResponseChunk);
+  
+  // Resources: List MCP resources (files, data sources)
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  
+  // Resources: Read a specific resource
+  rpc ReadResource(ReadResourceRequest) returns (ReadResourceResponse);
+  
+  // Prompts: List available MCP prompts
+  rpc ListPrompts(ListPromptsRequest) returns (ListPromptsResponse);
+  
+  // Prompts: Get a prompt with arguments filled in
+  rpc GetPrompt(GetPromptRequest) returns (GetPromptResponse);
+}
+
+//
+// MCP Tool Messages
+//
+
+message ListMcpToolsRequest {
+  optional string server_filter = 1;  // Filter by MCP server
+}
+
+message ListMcpToolsResponse {
+  repeated McpTool tools = 1;
+}
+
+// Full MCP tool definition - keeps LLM compatibility
+message McpTool {
+  string name = 1;
+  string description = 2;
+  string input_schema_json = 3;       // JSON Schema as string (MCP format)
+  string server_id = 4;               // Which MCP server provides this
+  repeated string annotations = 5;    // Tool hints: "destructive", "slow", etc.
+}
+
+message CallToolRequest {
+  string tool_name = 1;
+  string arguments_json = 2;          // MCP-compatible JSON arguments
+  optional string request_id = 3;     // For correlation/cancellation
+  map<string, string> context = 4;    // Additional context (workspace, etc.)
+}
+
+message ToolResponseChunk {
+  string request_id = 1;
+  
+  oneof result {
+    ToolProgress progress = 2;        // Live progress updates
+    ToolTextDelta text_delta = 3;     // Streaming text output
+    ToolPartialResult partial = 4;    // Partial structured result
+    ToolFinalResult final_result = 5; // Complete result
+    ToolError error = 6;              // Error occurred
+    ToolPrompt prompt = 7;            // Tool needs user input
+  }
+}
+
+message ToolProgress {
+  float percentage = 1;               // 0.0 - 1.0
+  string message = 2;                 // Human-readable status
+  optional int64 eta_seconds = 3;     // Estimated time remaining
+}
+
+message ToolTextDelta {
+  string text = 1;                    // Incremental text output
+}
+
+message ToolPartialResult {
+  string content_json = 1;            // Partial structured data
+  bool is_final = 2;                  // More coming?
+}
+
+message ToolFinalResult {
+  repeated ToolContent content = 1;   // MCP-compatible content array
+  bool is_error = 2;
+}
+
+message ToolContent {
+  string type = 1;                    // "text", "image", "resource"
+  string text = 2;                    // For text content
+  string mime_type = 3;               // For binary content
+  bytes data = 4;                     // For binary content
+  string uri = 5;                     // For resource references
+}
+
+message ToolError {
+  string code = 1;                    // Error code
+  string message = 2;                 // Human-readable message
+  optional string details_json = 3;   // Additional error context
+}
+
+message ToolPrompt {
+  string prompt_id = 1;
+  string message = 2;                 // Question to ask user
+  repeated string options = 3;        // For multiple choice
+  optional string default_value = 4;  // Suggested default
+}
+
+// For bidirectional interactive tool calls
+message ToolInteractiveRequest {
+  oneof request {
+    CallToolRequest call = 1;         // Initial call
+    ToolPromptResponse response = 2;  // User's answer to prompt
+    ToolCancel cancel = 3;            // Cancel the operation
+  }
+}
+
+message ToolPromptResponse {
+  string prompt_id = 1;
+  string response = 2;
+}
+
+message ToolCancel {
+  string request_id = 1;
+  string reason = 2;
+}
+
+// Batch tool execution
+message CallToolsBatchRequest {
+  repeated CallToolRequest calls = 1;
+  bool stop_on_error = 2;             // Fail fast or continue?
+}
+
+//
+// MCP Resources
+//
+
+message ListResourcesRequest {
+  optional string server_filter = 1;
+  optional string uri_prefix = 2;
+}
+
+message ListResourcesResponse {
+  repeated McpResource resources = 1;
+}
+
+message McpResource {
+  string uri = 1;
+  string name = 2;
+  string description = 3;
+  string mime_type = 4;
+}
+
+message ReadResourceRequest {
+  string uri = 1;
+}
+
+message ReadResourceResponse {
+  repeated ToolContent contents = 1;
+}
+
+//
+// MCP Prompts
+//
+
+message ListPromptsRequest {
+  optional string server_filter = 1;
+}
+
+message ListPromptsResponse {
+  repeated McpPrompt prompts = 1;
+}
+
+message McpPrompt {
+  string name = 1;
+  string description = 2;
+  repeated McpPromptArgument arguments = 3;
+}
+
+message McpPromptArgument {
+  string name = 1;
+  string description = 2;
+  bool required = 3;
+}
+
+message GetPromptRequest {
+  string name = 1;
+  map<string, string> arguments = 2;
+}
+
+message GetPromptResponse {
+  string description = 1;
+  repeated PromptMessage messages = 2;
+}
+
+message PromptMessage {
+  string role = 1;                    // "user", "assistant"
+  string content = 2;
+}
+
+//
+// Main Service - Unified daemon API
+//
+
+service Abbenay {
+  //
+  // Chat
+  //
+  
+  // Stateless chat (no session persistence)
+  rpc Chat(ChatRequest) returns (stream ChatChunk);
+  
+  // Chat within a session (persisted)
+  rpc SessionChat(SessionChatRequest) returns (stream ChatChunk);
+  
+  //
+  // Sessions
+  //
+  
+  // Create a new session
+  rpc CreateSession(CreateSessionRequest) returns (Session);
+  
+  // Get a session by ID
+  rpc GetSession(GetSessionRequest) returns (Session);
+  
+  // List all sessions
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  
+  // Delete a session
+  rpc DeleteSession(DeleteSessionRequest) returns (Empty);
+  
+  // Watch for session events (create, update, delete)
+  rpc WatchSessions(WatchSessionsRequest) returns (stream SessionEvent);
+  
+  // Replay session for context injection
+  rpc ReplaySession(ReplaySessionRequest) returns (ReplaySessionResponse);
+  
+  // Get AI-generated summary of a session
+  rpc SummarizeSession(SummarizeSessionRequest) returns (SummarizeSessionResponse);
+  
+  // Fork a session (create new session from existing)
+  rpc ForkSession(ForkSessionRequest) returns (Session);
+  
+  // Export session as portable JSON
+  rpc ExportSession(ExportSessionRequest) returns (ExportSessionResponse);
+  
+  // Import a session from JSON
+  rpc ImportSession(ImportSessionRequest) returns (Session);
+  
+  //
+  // Models & Providers
+  //
+  
+  // List available models (config-gated: only configured/enabled models)
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+  
+  // Discover all models a provider offers (ignores config, for browsing/selection)
+  rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);
+  
+  // List configured providers
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+  
+  // Get provider status (configured, healthy, etc.)
+  rpc GetProviderStatus(GetProviderStatusRequest) returns (ProviderStatus);
+  
+  // List available engine types (fixed set of API implementations)
+  rpc ListEngines(ListEnginesRequest) returns (ListEnginesResponse);
+  
+  //
+  // Policies
+  //
+  
+  // List all policies (built-in + custom)
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  
+  //
+  // Tools
+  //
+  
+  // List available tools (from MCP servers)
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+  
+  // Execute a tool directly
+  rpc ExecuteTool(ExecuteToolRequest) returns (ExecuteToolResponse);
+  
+  //
+  // Configuration
+  //
+  
+  // Get current configuration
+  rpc GetConfig(GetConfigRequest) returns (Config);
+  
+  // Update configuration
+  rpc UpdateConfig(UpdateConfigRequest) returns (Config);
+  
+  //
+  // Secrets
+  //
+  
+  // Get a secret (API key, etc.)
+  rpc GetSecret(GetSecretRequest) returns (GetSecretResponse);
+  
+  // Set a secret
+  rpc SetSecret(SetSecretRequest) returns (Empty);
+  
+  // Delete a secret
+  rpc DeleteSecret(DeleteSecretRequest) returns (Empty);
+  
+  // List secret keys (not values)
+  rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse);
+  
+  //
+  // Daemon Lifecycle
+  //
+  
+  // Register a client connection
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  
+  // Unregister a client
+  rpc Unregister(UnregisterRequest) returns (Empty);
+  
+  // Get daemon status
+  rpc GetStatus(GetStatusRequest) returns (DaemonStatus);
+  
+  // Get workspaces from connected VS Code clients (queries via backchannel)
+  rpc GetConnectedWorkspaces(GetConnectedWorkspacesRequest) returns (GetConnectedWorkspacesResponse);
+  
+  // Request daemon shutdown
+  rpc Shutdown(ShutdownRequest) returns (Empty);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  
+  //
+  // Web Dashboard (embedded in daemon)
+  //
+  
+  // Start the embedded web server
+  rpc StartWebServer(StartWebServerRequest) returns (StartWebServerResponse);
+  
+  // Stop the embedded web server
+  rpc StopWebServer(StopWebServerRequest) returns (Empty);
+  
+  //
+  // MCP Server Registration (for external MCP servers)
+  //
+  
+  // Register an MCP server
+  rpc RegisterMcpServer(RegisterMcpServerRequest) returns (Empty);
+  
+  // Unregister an MCP server
+  rpc UnregisterMcpServer(UnregisterMcpServerRequest) returns (Empty);
+  
+  //
+  // VS Code Backchannel (Bidirectional Streaming)
+  //
+  // VS Code opens this stream and keeps it alive.
+  // The daemon pushes tool/model requests through it.
+  // VS Code sends responses back through the same stream.
+  //
+  
+  // Bidirectional stream for daemon to call VS Code
+  rpc VSCodeStream(stream VSCodeResponse) returns (stream VSCodeRequest);
+}
+
+//
+// Chat Messages
+//
+
+message ChatRequest {
+  string model = 1;                     // e.g., "openai/gpt-4o" or "abbenay/copilot-gpt-4o"
+  repeated Message messages = 2;
+  ChatOptions options = 3;
+  repeated Tool tools = 4;             // Client-provided tool definitions (overrides registry)
+}
+
+message SessionChatRequest {
+  string session_id = 1;
+  Message message = 2;                  // Single message to add to session
+  ChatOptions options = 3;              // Options override session defaults
+}
+
+message ChatOptions {
+  optional float temperature = 1;
+  optional int32 max_tokens = 2;
+  optional float top_p = 3;
+  repeated string stop = 4;
+  bool enable_tools = 5;                // Enable tool calling
+  int32 max_tool_iterations = 6;        // Max tool call rounds (0 = unlimited)
+  repeated string tool_filter = 7;      // Only use these tools (empty = all)
+  optional int32 top_k = 8;            // Top-k sampling
+  optional int32 timeout = 9;          // Request timeout in ms
+  optional string tool_mode = 10;      // "auto" (default) | "passthrough" | "none"
+                                        //   auto: daemon owns tool loop, executes tools
+                                        //   passthrough: stream tool_call chunks to caller, no execution
+                                        //   none: no tools sent to LLM
+}
+
+message ChatChunk {
+  oneof chunk {
+    TextChunk text = 1;
+    ToolCallChunk tool_call = 2;
+    ToolResultChunk tool_result = 3;
+    PromptChunk prompt = 4;             // Request user input for tool
+    UsageChunk usage = 5;
+    ErrorChunk error = 6;
+    DoneChunk done = 7;
+  }
+}
+
+message TextChunk {
+  string text = 1;
+}
+
+message ToolCallChunk {
+  string id = 1;
+  string name = 2;
+  string arguments = 3;                 // JSON string
+}
+
+message ToolResultChunk {
+  string tool_call_id = 1;
+  string name = 2;
+  string content = 3;
+  bool is_error = 4;
+}
+
+message PromptChunk {
+  string tool_call_id = 1;
+  string tool_name = 2;
+  string prompt_text = 3;
+  repeated string options = 4;          // If multiple choice
+}
+
+message UsageChunk {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+}
+
+message ErrorChunk {
+  string code = 1;
+  string message = 2;
+}
+
+message DoneChunk {
+  string finish_reason = 1;             // "stop", "length", "tool_calls"
+}
+
+//
+// Messages
+//
+
+message Message {
+  Role role = 1;
+  string content = 2;
+  repeated ToolCall tool_calls = 3;     // For assistant messages
+  string tool_call_id = 4;              // For tool messages
+  string name = 5;                      // Optional name
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_SYSTEM = 1;
+  ROLE_USER = 2;
+  ROLE_ASSISTANT = 3;
+  ROLE_TOOL = 4;
+}
+
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  string arguments = 3;                 // JSON string
+}
+
+//
+// Sessions
+//
+
+message Session {
+  string id = 1;
+  string model = 2;
+  string topic = 3;                     // Auto-generated or user-set topic
+  repeated Message messages = 4;
+  ClientInfo created_by = 5;
+  Timestamp created_at = 6;
+  Timestamp updated_at = 7;
+  map<string, string> metadata = 8;     // workspace, branch, etc.
+  
+  // Fork info
+  optional string forked_from = 9;
+  optional int32 fork_point = 10;
+  
+  // Cache
+  optional string cached_summary = 11;
+}
+
+message ClientInfo {
+  ClientType client_type = 1;
+  string client_id = 2;                 // Unique client instance ID
+  string user = 3;                      // Username if available
+}
+
+enum ClientType {
+  CLIENT_TYPE_UNSPECIFIED = 0;
+  CLIENT_TYPE_VSCODE = 1;
+  CLIENT_TYPE_CLI = 2;
+  CLIENT_TYPE_PYTHON = 3;
+  CLIENT_TYPE_NODEJS = 4;
+  CLIENT_TYPE_MCP = 5;                  // External MCP client
+}
+
+message CreateSessionRequest {
+  string model = 1;
+  optional string topic = 2;
+  map<string, string> metadata = 3;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+  bool include_messages = 2;            // If false, only metadata
+}
+
+message ListSessionsRequest {
+  int32 limit = 1;                      // Max sessions to return
+  int32 offset = 2;                     // For pagination
+  optional string source_filter = 3;   // Filter by client type
+  optional string model_filter = 4;    // Filter by model prefix
+}
+
+message ListSessionsResponse {
+  repeated SessionSummary sessions = 1;
+  int32 total_count = 2;
+}
+
+message SessionSummary {
+  string id = 1;
+  string model = 2;
+  string topic = 3;
+  int32 message_count = 4;
+  ClientType source = 5;
+  Timestamp created_at = 6;
+  Timestamp updated_at = 7;
+}
+
+message DeleteSessionRequest {
+  string session_id = 1;
+}
+
+message WatchSessionsRequest {
+  // Empty for now, could add filters
+}
+
+message SessionEvent {
+  string session_id = 1;
+  oneof event {
+    SessionCreated created = 2;
+    SessionUpdated updated = 3;
+    SessionDeleted deleted = 4;
+  }
+}
+
+message SessionCreated {
+  SessionSummary session = 1;
+}
+
+message SessionUpdated {
+  SessionSummary session = 1;
+  int32 new_message_count = 2;
+}
+
+message SessionDeleted {
+  // Just the ID in the wrapper is enough
+}
+
+//
+// Session Replay & Fork
+//
+
+message ReplaySessionRequest {
+  string session_id = 1;
+  ReplayFormat format = 2;
+  optional int32 max_messages = 3;      // Limit for condensed format
+}
+
+enum ReplayFormat {
+  REPLAY_FORMAT_UNSPECIFIED = 0;
+  REPLAY_FORMAT_FULL = 1;               // Complete history
+  REPLAY_FORMAT_CONDENSED = 2;          // Key exchanges only
+  REPLAY_FORMAT_SUMMARY_ONLY = 3;       // Just the summary
+}
+
+message ReplaySessionResponse {
+  string formatted_content = 1;         // Markdown-formatted for injection
+  int32 message_count = 2;
+  int32 token_estimate = 3;
+}
+
+message SummarizeSessionRequest {
+  string session_id = 1;
+  optional string summarize_model = 2;  // Model to use for summary (optional)
+}
+
+message SummarizeSessionResponse {
+  string summary = 1;
+  bool from_cache = 2;
+}
+
+message ForkSessionRequest {
+  string session_id = 1;
+  optional string new_model = 2;        // Different model for fork
+  optional int32 fork_point = 3;        // Message index to fork from
+}
+
+message ExportSessionRequest {
+  string session_id = 1;
+  bool include_tool_results = 2;        // Include full tool results
+  bool include_metadata = 3;            // Include workspace metadata
+}
+
+message ExportSessionResponse {
+  string json_content = 1;              // Portable JSON
+}
+
+message ImportSessionRequest {
+  string json_content = 1;
+  bool generate_new_id = 2;             // Create new ID instead of using imported
+}
+
+//
+// Models & Providers
+//
+
+message ListModelsRequest {
+  optional string provider_filter = 1;  // Filter by provider
+  repeated string workspace_paths = 2;  // Workspace paths for config-aware filtering
+}
+
+message ListModelsResponse {
+  repeated Model models = 1;
+}
+
+message DiscoverModelsRequest {
+  string engine_id = 1;               // Which engine to discover models for (was provider_id)
+  optional string api_key = 2;        // API key for authenticated discovery
+  optional string base_url = 3;       // Custom base URL for discovery
+}
+
+message DiscoverModelsResponse {
+  repeated Model models = 1;
+}
+
+message Model {
+  string id = 1;                        // Composite unique ID: "{provider-id}/{model-name}"
+  string provider = 2;                  // Virtual provider ID (back-reference)
+  string name = 3;                      // Virtual model name (unique within provider)
+  ModelCapabilities capabilities = 4;
+  ModelSource source = 5;               // Direct HTTP or via vscode.lm
+  string engine = 6;                    // Actual engine type
+  optional ModelParams params = 7;      // Per-model config params
+  string engine_model_id = 8;           // Actual engine model ID sent to API
+  optional string policy = 9;           // Assigned policy name (if any)
+}
+
+// Per-model parameter configuration (virtual model layer)
+message ModelParams {
+  optional float temperature = 1;
+  optional float top_p = 2;
+  optional int32 max_tokens = 3;
+  optional string system_prompt = 4;    // System prompt text
+  optional string system_prompt_mode = 5; // "prepend" | "replace"
+  optional int32 top_k = 6;
+  optional int32 timeout = 7;           // Request timeout in ms
+}
+
+message ModelCapabilities {
+  bool supports_streaming = 1;
+  bool supports_tools = 2;
+  bool supports_vision = 3;
+  optional int32 context_window = 4;
+}
+
+enum ModelSource {
+  MODEL_SOURCE_UNSPECIFIED = 0;
+  MODEL_SOURCE_DIRECT = 1;              // Direct HTTP to provider
+  MODEL_SOURCE_VSCODE_LM = 2;           // Via vscode.lm MCP
+}
+
+message ListProvidersRequest {
+  repeated string workspace_paths = 1;  // Workspace paths for config-aware filtering
+}
+
+message ListProvidersResponse {
+  repeated Provider providers = 1;
+}
+
+message Provider {
+  string id = 1;                        // Virtual provider name = unique ID
+  bool configured = 2;                  // Has API key / is usable
+  bool healthy = 3;                     // Last health check passed
+  ProviderType provider_type = 4;
+  bool requires_key = 5;               // Whether this provider needs an API key
+  optional string default_base_url = 6; // Default API base URL (from engine metadata)
+  string engine = 7;                    // Actual engine type
+  optional string base_url = 8;         // Configured base URL override
+}
+
+enum ProviderType {
+  PROVIDER_TYPE_UNSPECIFIED = 0;
+  PROVIDER_TYPE_HTTP = 1;               // Direct HTTP API
+  PROVIDER_TYPE_MCP = 2;                // Via MCP (e.g., vscode.lm)
+  PROVIDER_TYPE_LOCAL = 3;              // Local (e.g., Ollama)
+}
+
+message GetProviderStatusRequest {
+  string provider_id = 1;
+}
+
+message ProviderStatus {
+  string provider_id = 1;
+  bool configured = 2;
+  bool healthy = 3;
+  optional string error = 4;
+  Timestamp last_check = 5;
+}
+
+// Engine = actual API implementation from multi-llm-ts (fixed set)
+message ListEnginesRequest {}
+
+message ListEnginesResponse {
+  repeated Engine engines = 1;
+}
+
+message Engine {
+  string id = 1;                        // Engine type identifier (e.g., "openrouter")
+  bool requires_key = 2;               // Whether this engine needs an API key
+  optional string default_base_url = 3; // Default API base URL
+  optional string default_env_var = 4;  // Default environment variable for API key
+}
+
+//
+// Tools
+//
+
+message ListToolsRequest {
+  optional string server_filter = 1;    // Filter by MCP server
+}
+
+message ListToolsResponse {
+  repeated Tool tools = 1;
+}
+
+message Tool {
+  string name = 1;
+  string description = 2;
+  string input_schema = 3;              // JSON schema
+  string server = 4;                    // MCP server that provides this tool
+}
+
+message ExecuteToolRequest {
+  string name = 1;
+  string arguments = 2;                 // JSON string
+}
+
+message ExecuteToolResponse {
+  string content = 1;
+  bool is_error = 2;
+}
+
+//
+// Configuration
+//
+
+message GetConfigRequest {}
+
+message Config {
+  string default_model = 1;
+  map<string, ProviderConfig> providers = 2;
+  int32 session_ttl_days = 3;
+  LogLevel log_level = 4;
+}
+
+message ProviderConfig {
+  bool enabled = 1;
+  optional string api_key_ref = 2;      // Reference to secret
+  optional string base_url = 3;
+  map<string, string> extra = 4;
+}
+
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_ERROR = 1;
+  LOG_LEVEL_WARN = 2;
+  LOG_LEVEL_INFO = 3;
+  LOG_LEVEL_DEBUG = 4;
+  LOG_LEVEL_TRACE = 5;
+}
+
+message UpdateConfigRequest {
+  Config config = 1;
+  repeated string update_mask = 2;      // Which fields to update
+}
+
+//
+// Secrets
+//
+
+message GetSecretRequest {
+  string key = 1;
+}
+
+message GetSecretResponse {
+  string value = 1;
+}
+
+message SetSecretRequest {
+  string key = 1;
+  string value = 2;
+  SecretStore store = 3;                // Where to store
+}
+
+enum SecretStore {
+  SECRET_STORE_UNSPECIFIED = 0;
+  SECRET_STORE_KEYCHAIN = 1;
+  SECRET_STORE_ENV = 2;
+  SECRET_STORE_MEMORY = 3;
+}
+
+message DeleteSecretRequest {
+  string key = 1;
+}
+
+message ListSecretsRequest {}
+
+message ListSecretsResponse {
+  repeated SecretInfo secrets = 1;
+}
+
+message SecretInfo {
+  string key = 1;
+  SecretStore store = 2;
+  bool has_value = 3;                   // Whether a value is set
+}
+
+//
+// Daemon Lifecycle
+//
+
+message RegisterRequest {
+  ClientInfo client = 1;
+  bool is_spawner = 2;                  // Did this client start the daemon?
+  string workspace_path = 3;            // Primary workspace path (backward compat)
+  repeated string workspace_paths = 4;  // All workspace folder paths (multi-root)
+}
+
+message RegisterResponse {
+  string client_id = 1;                 // Assigned client ID
+  int32 connected_clients = 2;          // Current client count
+}
+
+message UnregisterRequest {
+  string client_id = 1;
+}
+
+message GetStatusRequest {}
+
+message GetConnectedWorkspacesRequest {}
+
+message GetConnectedWorkspacesResponse {
+  repeated string workspaces = 1;  // Workspace paths from all connected VS Code clients
+}
+
+message DaemonStatus {
+  string version = 1;
+  Timestamp started_at = 2;
+  int32 connected_clients = 3;
+  int32 active_sessions = 4;
+  repeated ConnectedClient clients = 5;
+  repeated string registered_mcp_servers = 6;
+}
+
+message ConnectedClient {
+  string client_id = 1;
+  ClientType client_type = 2;
+  Timestamp connected_at = 3;
+  bool is_spawner = 4;
+  string workspace_path = 5;  // Workspace/project path from client
+}
+
+message ShutdownRequest {
+  bool force = 1;                       // Skip grace period
+  int32 grace_period_seconds = 2;       // Wait for clients to disconnect
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  string version = 2;
+}
+
+//
+// Web Dashboard
+//
+
+message StartWebServerRequest {
+  int32 port = 1;                       // HTTP port (default 8787)
+}
+
+message StartWebServerResponse {
+  bool started = 1;                     // True if newly started
+  bool already_running = 2;             // True if was already running
+  int32 port = 3;                       // Actual port the server is on
+  string url = 4;                       // Full URL (e.g. "http://localhost:8787")
+}
+
+message StopWebServerRequest {}
+
+//
+// VS Code Backchannel (Bidirectional Streaming)
+//
+// This allows the Rust daemon to call back into VS Code for:
+// - Invoking VS Code tools (vscode.lm.tools)
+// - Using VS Code LM models (Copilot, etc.)
+// - Getting workspace information
+//
+// VS Code opens a long-lived stream, daemon pushes requests through it.
+//
+
+// Request from daemon to VS Code
+message VSCodeRequest {
+  string request_id = 1;
+  
+  oneof request {
+    InvokeToolRequest invoke_tool = 2;
+    ListVSCodeModelsRequest list_models = 3;
+    SendVSCodeChatRequest send_chat = 4;
+    GetWorkspaceRequest get_workspace = 6;
+    // Note: field 5 (get_secret) removed - secrets managed by daemon
+    ModelsChangedNotification models_changed = 7;  // Push: daemon tells VS Code models changed
+    ListVSCodeToolsRequest list_tools = 8;         // Request VS Code's available tools
+  }
+}
+
+// Notification from daemon that available models have changed
+// (e.g. config saved, API key stored, provider toggled)
+message ModelsChangedNotification {
+  string reason = 1;  // e.g. "config_changed", "secret_updated"
+}
+
+// Response from VS Code to daemon
+message VSCodeResponse {
+  string request_id = 1;
+  
+  oneof response {
+    InvokeToolResponse invoke_tool = 2;
+    ListVSCodeModelsResponse list_models = 3;
+    SendVSCodeChatResponse send_chat = 4;
+    VSCodeError error = 6;
+    GetWorkspaceResponse get_workspace = 7;
+    // Note: field 5 (get_secret) removed - secrets managed by daemon
+    ListVSCodeToolsResponse list_tools = 8;
+    RegisterToolsNotification register_tools = 9;  // Unsolicited: VS Code pushes tool updates
+  }
+}
+
+// Get workspace path from VS Code
+message GetWorkspaceRequest {}
+
+message GetWorkspaceResponse {
+  string workspace_path = 1;        // Primary workspace folder path
+  repeated string workspace_folders = 2;  // All workspace folders
+}
+
+message VSCodeError {
+  string message = 1;
+  string code = 2;
+}
+
+// Invoke a VS Code tool (vscode.lm.tools)
+message InvokeToolRequest {
+  string tool_name = 1;
+  string arguments_json = 2;
+}
+
+message InvokeToolResponse {
+  string result_json = 1;
+  bool is_error = 2;
+}
+
+// List VS Code tools (vscode.lm.tools)
+message ListVSCodeToolsRequest {}
+
+message ListVSCodeToolsResponse {
+  repeated VSCodeToolInfo tools = 1;
+}
+
+// Unsolicited notification: VS Code pushes updated tool list
+message RegisterToolsNotification {
+  repeated VSCodeToolInfo tools = 1;
+}
+
+// VS Code tool metadata
+message VSCodeToolInfo {
+  string name = 1;
+  string description = 2;
+  string input_schema = 3;  // JSON Schema string
+  repeated string tags = 4;
+}
+
+// List VS Code LM models (Copilot, etc.)
+message ListVSCodeModelsRequest {
+  optional string family_filter = 1;    // e.g., "gpt-4"
+}
+
+message ListVSCodeModelsResponse {
+  repeated VSCodeModel models = 1;
+}
+
+message VSCodeModel {
+  string id = 1;
+  string name = 2;
+  string vendor = 3;
+  string family = 4;
+  int32 max_input_tokens = 5;
+}
+
+// Send chat to a VS Code LM model
+message SendVSCodeChatRequest {
+  string model_id = 1;
+  repeated Message messages = 2;
+  optional float temperature = 3;
+  optional int32 max_tokens = 4;
+}
+
+message SendVSCodeChatResponse {
+  repeated VSCodeChatChunk chunks = 1;
+}
+
+message VSCodeChatChunk {
+  oneof chunk {
+    string text = 1;
+    VSCodeToolCall tool_call = 2;
+  }
+}
+
+message VSCodeToolCall {
+  string call_id = 1;
+  string name = 2;
+  string arguments_json = 3;
+}
+
+//
+// Policies
+//
+
+message ListPoliciesRequest {}
+
+message ListPoliciesResponse {
+  repeated PolicyInfo policies = 1;
+}
+
+message PolicyInfo {
+  string name = 1;
+  bool builtin = 2;
+  PolicyConfig config = 3;
+}
+
+message PolicyConfig {
+  optional PolicySampling sampling = 1;
+  optional PolicyOutput output = 2;
+  optional PolicyContext context = 3;
+  optional PolicyTool tool = 4;
+  optional PolicyReliability reliability = 5;
+}
+
+message PolicySampling {
+  optional float temperature = 1;
+  optional float top_p = 2;
+  optional int32 top_k = 3;
+}
+
+message PolicyOutput {
+  optional int32 max_tokens = 1;
+  optional int32 reserved_output_tokens = 2;
+  optional string format = 3;              // "text" | "json_only" | "markdown"
+  optional string system_prompt_snippet = 4;
+  optional string system_prompt_mode = 5;  // "prepend" | "append" | "replace"
+}
+
+message PolicyContext {
+  optional float context_threshold = 1;
+  optional string compression_strategy = 2; // "none" | "truncate" | "rolling_summary"
+}
+
+message PolicyTool {
+  optional int32 max_tool_iterations = 1;
+  optional string tool_mode = 2;           // "auto" | "ask" | "none"
+}
+
+message PolicyReliability {
+  optional bool retry_on_invalid_json = 1;
+  optional int32 timeout = 2;
+}
+
+//
+// MCP Server Registration (keeping for external MCP servers)
+//
+
+message RegisterMcpServerRequest {
+  string server_id = 1;                 // e.g., "filesystem"
+  string transport = 2;                 // "stdio" or socket path
+  repeated string capabilities = 3;     // What it provides
+}
+
+message UnregisterMcpServerRequest {
+  string server_id = 1;
+}

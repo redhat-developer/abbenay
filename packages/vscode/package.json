@@ -1,0 +1,113 @@
+{
+  "name": "abbenay-provider",
+  "displayName": "Abbenay Provider",
+  "description": "Use any LLM with any VS Code extension - OpenAI, Anthropic, Google, Ollama & more. The open alternative to Copilot.",
+  "version": "0.1.0",
+  "publisher": "abbenay",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.99.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "llm",
+    "ai",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "gemini",
+    "ollama",
+    "copilot",
+    "language model",
+    "chatgpt",
+    "local llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abbenay/abbenay"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "abbenay.daemonStatus",
+        "title": "Show Daemon Status",
+        "category": "Abbenay"
+      },
+      {
+        "command": "abbenay.openDashboard",
+        "title": "Open Dashboard",
+        "category": "Abbenay",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "abbenay.configureProvider",
+        "title": "Configure Provider",
+        "category": "Abbenay"
+      }
+    ],
+    "configuration": {
+      "title": "Abbenay Provider",
+      "properties": {
+        "abbenay.logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "Logging level for the extension"
+        }
+      }
+    },
+    "languageModelChatProviders": [
+      {
+        "vendor": "abbenay",
+        "displayName": "Abbenay"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run bundle",
+    "build": "npm run bundle",
+    "bundle": "node esbuild.js --production",
+    "bundle:daemon": "node scripts/bundle-daemon.js",
+    "compile": "tsc -p ./",
+    "compile:check": "tsc -p ./ --noEmit",
+    "clean": "rm -rf out bin",
+    "watch": "node esbuild.js --watch",
+    "watch:tsc": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "npm run bundle && vsce package --no-dependencies",
+    "package:all-platforms": "npm run bundle && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.99.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^2.24.0",
+    "esbuild": "^0.27.2",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.5.1",
+    "long": "^5.3.2",
+    "nice-grpc": "^2.1.14",
+    "nice-grpc-common": "^2.0.2"
+  }
+}

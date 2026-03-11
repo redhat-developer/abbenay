@@ -1,0 +1,31 @@
+{
+  "name": "@abbenay/proto",
+  "version": "0.1.0",
+  "description": "Abbenay gRPC protocol definitions for TypeScript",
+  "main": "src/abbenay/v1/service.ts",
+  "types": "src/abbenay/v1/service.ts",
+  "type": "module",
+  "scripts": {
+    "generate": "../../proto/generate.sh typescript"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0",
+    "long": "^5.2.0",
+    "nice-grpc": "^2.1.0",
+    "nice-grpc-common": "^2.0.0",
+    "protobufjs": "^7.2.0"
+  },
+  "devDependencies": {
+    "ts-proto": "^1.180.0",
+    "typescript": "^5.4.0"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "abbenay",
+    "grpc",
+    "protobuf"
+  ],
+  "license": "MIT"
+}

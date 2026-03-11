@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "watch",
+      "path": "packages/vscode",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "never"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "type": "npm",
+      "script": "compile",
+      "path": "packages/vscode",
+      "problemMatcher": "$tsc",
+      "label": "npm: compile - packages/vscode",
+      "group": "build"
+    }
+  ]
+}

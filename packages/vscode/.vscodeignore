@@ -1,0 +1,22 @@
+.vscode/**
+.vscode-test/**
+src/**
+scripts/**
+*.ts
+**/*.map
+.gitignore
+.eslintrc.json
+tsconfig.json
+tsconfig.tsbuildinfo
+esbuild.js
+plan.txt
+**/*.vsix
+node_modules/**
+**/__tests__/**
+**/package-lock.json
+
+# Include binaries (don't ignore)
+!bin/**
+# But exclude JS fallback bundle (SEA binary is the only supported daemon)
+bin/abbenay-daemon.js
+bin/bundle.js
