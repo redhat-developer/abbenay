@@ -96,7 +96,7 @@ async function runInteractiveMode(
       toolMode: options.tools === false ? 'none' : 'auto',
       onToolApprovalNeeded: async (_requestId: string, toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
         process.stderr.write(`\n${YELLOW}⚠ Tool approval required:${RESET} ${BOLD}${toolName}${RESET}\n`);
-        process.stderr.write(`${DIM}Arguments:${RESET} ${JSON.stringify(args && typeof args === 'object' ? args : args, null, 2)}\n`);
+        process.stderr.write(`${DIM}Arguments:${RESET} ${JSON.stringify(args, null, 2)}\n`);
         return promptApproval(rl);
       },
     };

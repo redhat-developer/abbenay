@@ -459,7 +459,7 @@ export function createWebApp(state: DaemonState): Express {
   const pendingApprovals = new Map<string, {
     resolve: (decision: 'allow' | 'deny' | 'abort') => void;
     toolName: string;
-    args: Record<string, unknown>;
+    args: unknown;
     chatId: string;
   }>();
 
@@ -565,7 +565,7 @@ export function createWebApp(state: DaemonState): Express {
       onToolApprovalNeeded: async (requestId: string, toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
         safeWrite(`data: ${JSON.stringify({ type: 'approval_request', chatId, requestId, toolName, args })}\n\n`);
         return new Promise((resolve) => {
-          pendingApprovals.set(requestId, { resolve, toolName, args: args as Record<string, unknown>, chatId });
+          pendingApprovals.set(requestId, { resolve, toolName, args, chatId });
         });
       },
     };

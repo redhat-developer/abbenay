@@ -37,7 +37,7 @@ function extractTextFromPromptTsx(obj: unknown): string {
     const o = obj as Record<string, unknown>;
 
     if (typeof o.text === 'string') {
-        if (o.lineBreakBefore) {parts.push('\n');}
+        if (o.lineBreakBefore === true) {parts.push('\n');}
         parts.push(o.text);
     }
 

@@ -12,7 +12,7 @@
  * the built-in step loop (stopWhen). No wrapper classes required.
  */
 
-import { streamText, jsonSchema } from 'ai';
+import { streamText, jsonSchema, tool } from 'ai';
 import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
 
 import { mockStreamChat, getMockModels } from './mock.js';
@@ -649,7 +649,7 @@ export async function* streamChat(
     let aiTools: ToolSet | undefined;
 
     if (hasTools) {
-      const toolRecord: Record<string, { description: string; inputSchema: ReturnType<typeof jsonSchema>; execute: (args: Record<string, unknown>) => Promise<unknown> }> = {};
+      const toolRecord: ToolSet = {};
       for (const t of tools) {
         let schema: JSONSchema7;
         try {
@@ -664,7 +664,7 @@ export async function* streamChat(
           schema.properties = {};
         }
 
-        toolRecord[t.name] = {
+        toolRecord[t.name] = tool({
           description: t.description,
           inputSchema: jsonSchema(schema),
           execute: async (args: Record<string, unknown>) => {
@@ -675,9 +675,9 @@ export async function* streamChat(
             }
             return toolExecutor!(t.name, args);
           },
-        };
+        });
       }
-      aiTools = toolRecord as ToolSet;
+      aiTools = toolRecord;
     }
 
     const streamOptions = {
