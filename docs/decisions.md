@@ -207,3 +207,16 @@ immediate instance.
 **Rationale:** One-time fixes decay as new code is written. Automated checks
 are self-sustaining. This principle is codified in the pr-readiness skill and
 applies to all contributors, human and AI.
+
+## DR-018: CalVer versioning with vsce compatibility
+
+**Date:** 2026-03-11  
+**Decision:** Use CalVer format `YYYY.M.MICRO[-prerelease]` for releases
+(e.g., `v2026.3.1-alpha`). The VS Code extension receives the version without
+the pre-release suffix (e.g., `2026.3.1`) because `vsce` requires strict
+`MAJOR.MINOR.PATCH` with no pre-release identifiers. Month numbers must not
+have leading zeros (semver prohibits them).  
+**Rationale:** `vsce package` rejects any version with a pre-release suffix --
+VS Code uses a separate `--pre-release` flag instead. CalVer was chosen over
+semver because the project is not yet stable enough for semver semantics to be
+meaningful, and date-based versions communicate recency at a glance.

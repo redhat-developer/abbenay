@@ -30,12 +30,16 @@ if (!version) {
   process.exit(1);
 }
 
-function updateJson(filePath) {
+// VS Code extensions require pure MAJOR.MINOR.PATCH (no pre-release suffix).
+// Pre-release is indicated by the --pre-release flag to vsce, not the version.
+const vsceVersion = version.replace(/-.*$/, '');
+
+function updateJson(filePath, ver = version) {
   const pkg = JSON.parse(readFileSync(filePath, 'utf8'));
   const old = pkg.version;
-  pkg.version = version;
+  pkg.version = ver;
   writeFileSync(filePath, JSON.stringify(pkg, null, 2) + '\n');
-  console.log(`  ${filePath}: ${old} -> ${version}`);
+  console.log(`  ${filePath}: ${old} -> ${ver}`);
 }
 
 function updateToml(filePath) {
@@ -64,7 +68,7 @@ console.log(`Setting version to ${version}\n`);
 
 updateJson(join(root, 'package.json'));
 updateJson(join(root, 'packages', 'daemon', 'package.json'));
-updateJson(join(root, 'packages', 'vscode', 'package.json'));
+updateJson(join(root, 'packages', 'vscode', 'package.json'), vsceVersion);
 updateJson(join(root, 'packages', 'proto-ts', 'package.json'));
 updateToml(join(root, 'packages', 'python', 'pyproject.toml'));
 updateSourceConst(
