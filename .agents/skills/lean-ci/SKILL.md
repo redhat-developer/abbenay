@@ -23,7 +23,7 @@ locally-runnable scripts; CI just calls them.
    single command invocation.
 
 3. **`bootstrap.sh` is the only setup step.** It downloads Node.js (with SEA
-   fuse) and uv into `.build-tools/`. No `actions/setup-node`, no
+   fuse), uv, and prek into `.build-tools/`. No `actions/setup-node`, no
    `actions/setup-python`, no other setup actions. The bootstrap auto-detects
    CI via `$GITHUB_PATH` and persists PATH entries for subsequent steps.
 
@@ -44,7 +44,8 @@ locally-runnable scripts; CI just calls them.
 
 The CI workflow (`.github/workflows/ci.yml`) has three jobs:
 
-- **lint-and-test**: runs on ubuntu-latest, gates all other jobs
+- **lint-and-test**: runs on ubuntu-latest with xvfb (for VS Code extension
+  tests), gates all other jobs
 - **build**: matrix across linux-x64, linux-arm64, macos-arm64; produces SEA
   binaries, VSIX, and distribution zips
 - **package-python**: produces the Python client wheel
@@ -107,6 +108,17 @@ git push --tags
 - **Node.js** from nodejs.org (version from `.node-version`) -- official
   binaries always include the NODE_SEA_FUSE sentinel
 - **uv** from astral.sh -- handles Python toolchain for wheel builds
+- **prek** from github.com/j178/prek -- pre-commit hook framework (Rust binary,
+  no runtime dependencies). Enforces conventional commits and linting at
+  commit time via `.pre-commit-config.yaml`
 
 It detects `$GITHUB_PATH` and appends tool paths automatically so subsequent
 workflow steps inherit them without sourcing `env.sh`.
+
+## VS Code extension tests in CI
+
+The `lint-and-test` job installs `xvfb` and runs tests via `xvfb-run -a npm test`
+to provide a virtual display for the VS Code test runner. GPU acceleration is
+disabled via `~/.vscode/argv.json`. This is the one CI-only prerequisite that
+cannot be reproduced identically on a local machine with a display server, but
+the underlying `npm test` command is the same.

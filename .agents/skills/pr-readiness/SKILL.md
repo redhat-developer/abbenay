@@ -1,68 +1,83 @@
 ---
 name: pr-readiness
 description: >
-  Checklist for preparing code before creating a pull request. Use this before
-  committing, pushing, or creating a PR. Ensures lint, tests, and builds pass
-  locally before code reaches CI.
+  Hard gate for code quality before pushing or creating a pull request. MUST be
+  followed before every push, every PR, and every PR update. No exceptions.
 ---
 
 # PR Readiness
 
-Before creating a pull request, every change must be validated locally. Never
-push code that has not been verified on your machine first. CI exists to catch
-cross-platform issues, not to be your first line of defense.
+This skill defines the mandatory quality gates for the Abbenay project. These
+are not suggestions. Code that violates these rules MUST NOT be pushed.
 
-## Required steps before creating a PR
+## Local validation gate
 
-1. **Bootstrap** (if not already done):
+Every change MUST pass ALL of the following locally before being pushed to any
+remote branch. There are no exceptions. Do not push code hoping CI will tell
+you what is broken.
+
+1. **Bootstrap** (first time or after `.node-version` change):
 
    ```bash
    ./bootstrap.sh
    source .build-tools/env.sh
    ```
 
-2. **Install dependencies** (if package.json or lockfile changed):
+2. **Install dependencies** (after any `package.json` or lockfile change):
 
    ```bash
    npm ci
    ```
 
-3. **Lint** -- must exit 0:
+3. **Lint** -- MUST exit 0 with zero errors:
 
    ```bash
    npm run lint
    ```
 
-4. **Test** -- must exit 0:
+4. **Test** -- MUST exit 0:
 
    ```bash
    npm test
    ```
 
-5. **Build** -- must exit 0 (verifies TypeScript compilation, SEA injection,
-   VSIX packaging):
+   On Linux, VS Code extension tests require Xvfb:
+
+   ```bash
+   xvfb-run -a npm test
+   ```
+
+5. **Build** -- MUST exit 0:
 
    ```bash
    npm run ci:build
    ```
 
-6. Only after all of the above pass, commit and push.
+6. Only after steps 3, 4, and 5 all pass may the code be pushed.
 
-## Rules
+### Rules
 
-- **DO NOT** create a PR if lint or tests fail locally. Fix the issues first.
-- **DO NOT** push commits hoping CI will tell you what's broken. Run the checks
-  yourself.
-- **DO NOT** skip the build step. TypeScript compilation errors and SEA fuse
-  issues are caught here, not in lint or tests.
-- If you are fixing pre-existing lint errors alongside a feature change, verify
-  the lint fixes independently before combining them into the PR.
-- If a test is flaky, investigate before pushing. Do not merge flaky tests.
+- You MUST NOT push to a remote branch if lint, test, or build fails locally.
+- You MUST NOT create a pull request if lint, test, or build fails locally.
+- You MUST NOT push commits hoping CI will surface failures for you.
+- You MUST NOT skip the build step. TypeScript compilation errors and SEA fuse
+  issues are only caught here.
+- **"Pre-existing" failures are not an excuse.** If a test fails, it MUST be
+  fixed before pushing -- regardless of whether you wrote the test or the
+  failure predates your changes. PRs will not be merged with failing tests.
+  The correct action is to fix the test or the code it covers, not to push
+  and hope someone else deals with it.
+- If a test is flaky, you MUST diagnose and fix the root cause before pushing.
+  Do not dismiss flaky tests as acceptable. A test that sometimes fails is
+  broken and MUST be repaired.
+- prek pre-commit hooks enforce lint and conventional commits at commit time,
+  but hooks can be bypassed with `--no-verify`. These rules remain the
+  authoritative standard regardless of hook status.
 
 ## Commit messages
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
-Every commit message must follow the format:
+Every commit message MUST follow the format:
 
 ```
 <type>[optional scope]: <description>
@@ -80,10 +95,49 @@ docs: update DEVELOPMENT.md with bootstrap instructions
 refactor(vscode): remove unused extensionVersion variable
 ```
 
-Additional rules:
-
-- The description should explain *why*, not just *what*.
+- The description MUST explain *why*, not just *what*.
 - Separate unrelated changes into separate commits.
 - If a PR contains both feature code and lint/style fixes, the lint fixes
-  should be in their own commit so they can be reviewed independently.
+  MUST be in their own commit so they can be reviewed independently.
 - Use `!` after the type or a `BREAKING CHANGE:` footer for breaking changes.
+
+## Pull request descriptions
+
+PR descriptions MUST accurately reflect the full scope of changes in the
+branch at all times. A stale or inaccurate PR description is a defect.
+
+### Rules
+
+- The PR title MUST be a conventional-commit-style summary of the overall
+  change (e.g., `feat(ci): add prek hooks and VS Code extension tests`).
+- The PR body MUST include:
+  - A summary section with bullet points describing what changed and why.
+  - A list of the commits in the branch, each with its conventional type.
+  - A test plan describing how the changes were validated.
+- After pushing additional commits to a PR branch, the PR description MUST
+  be updated to include the new commits and reflect the expanded scope.
+- A PR whose description says "Add CI badge" but whose branch also contains
+  lint fixes, new skill files, and test infrastructure is **wrong**. The
+  description must cover everything.
+- If a PR grows significantly beyond its original scope, consider splitting
+  it into focused PRs instead.
+
+### PR body template
+
+```markdown
+## Summary
+
+- <What changed and why, 1-3 bullets>
+
+## Commits
+
+- `<type>(scope): description` -- brief rationale
+- `<type>(scope): description` -- brief rationale
+
+## Test plan
+
+- [ ] `npm run lint` passes locally (0 errors)
+- [ ] `npm test` passes locally
+- [ ] `npm run ci:build` passes locally
+- [ ] <any additional manual verification>
+```
