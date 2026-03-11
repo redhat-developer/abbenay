@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap
+        run: ./bootstrap.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+  build:
+    needs: lint-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: macos-latest
+            platform: darwin
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap
+        run: ./bootstrap.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run ci:build
+
+      - name: Upload SEA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: abbenay-daemon-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/${{ matrix.platform }}-${{ matrix.arch }}/
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: abbenay-vsix-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/vscode/*.vsix
+
+  package-python:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap
+        run: ./bootstrap.sh
+
+      - name: Build Python wheel
+        run: npm run ci:package-python
+
+      - name: Upload Python artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: abbenay-client-python
+          path: packages/python/dist/

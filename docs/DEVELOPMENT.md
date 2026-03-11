@@ -2,303 +2,303 @@
 
 ## Prerequisites
 
-- **Node.js** (20+) and **npm** — for development and building
-- **Node.js official binary** — for SEA packaging (see below)
-- **protoc** — Protocol buffer compiler (for gRPC client generation)
-- **python3** — For Python gRPC client generation (optional — build skips if missing)
-- **VS Code** — for extension development
+The only hard prerequisites are `curl` and `bash`, both present on any macOS or Linux system. The bootstrap script downloads everything else.
 
-### macOS (Homebrew)
+If you already have Node.js 22+ and uv on your PATH, you can skip the bootstrap and use them directly.
+
+## Quick Start
 
 ```bash
-brew install node protobuf python3
+./bootstrap.sh                 # downloads Node.js 22 + uv into .build-tools/
+source .build-tools/env.sh     # puts them on PATH
+npm install                    # install dependencies
+node build.js                  # full build (SEA + VSIX + zip)
 ```
 
-### Linux (apt)
+## Bootstrap
+
+`bootstrap.sh` downloads two tools into `.build-tools/` (gitignored):
+
+| Tool | Source | Why |
+|------|--------|-----|
+| **Node.js** (version from `.node-version`) | [nodejs.org](https://nodejs.org/) official tarball | Official binaries include the `NODE_SEA_FUSE` sentinel required for SEA injection. Package-manager Node (Homebrew, apt, nvm) usually does not. |
+| **uv** | [astral.sh](https://docs.astral.sh/uv/) | Python toolchain manager. Used to build the Python client wheel via `uvx hatch build` without needing a system Python. |
+
+After running the bootstrap, source the generated env file to put the tools on PATH:
 
 ```bash
-sudo apt install -y nodejs npm protobuf-compiler python3 python3-venv
+source .build-tools/env.sh
 ```
 
-### Node.js for SEA (required for full build)
+The bootstrap is idempotent -- re-running it is a no-op if the tools are already downloaded.
 
-The full build produces a Single Executable Application (SEA) binary. This requires an **official Node.js binary** downloaded from [nodejs.org](https://nodejs.org/) — package-manager-installed Node.js (Homebrew, apt, nvm, etc.) does **not** include the `NODE_SEA_FUSE` sentinel needed for SEA injection.
+### Platform / architecture matrix
 
-Download the official binary and set `NODE_SEA_BASE`:
+The bootstrap auto-detects your OS and architecture:
 
-```bash
-# macOS (Apple Silicon)
-curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-darwin-arm64.tar.xz | tar xJ -C /tmp
-export NODE_SEA_BASE=/tmp/node-v22.22.0-darwin-arm64/bin/node
+| OS | Architecture | Node.js tarball | Tested in CI |
+|----|-------------|-----------------|-------------|
+| Linux | x86_64 (x64) | `node-v22.x.x-linux-x64.tar.xz` | Yes |
+| Linux | aarch64 (arm64) | `node-v22.x.x-linux-arm64.tar.xz` | Yes |
+| macOS | arm64 (Apple Silicon) | `node-v22.x.x-darwin-arm64.tar.xz` | Yes |
+| macOS | x86_64 (Intel) | `node-v22.x.x-darwin-x64.tar.xz` | No (not in CI matrix) |
 
-# macOS (Intel)
-curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-darwin-x64.tar.xz | tar xJ -C /tmp
-export NODE_SEA_BASE=/tmp/node-v22.22.0-darwin-x64/bin/node
+### Pinning the Node.js version
 
-# Linux (x64)
-curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz | tar xJ -C /tmp
-export NODE_SEA_BASE=/tmp/node-v22.22.0-linux-x64/bin/node
-
-# Linux (arm64)
-curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-arm64.tar.xz | tar xJ -C /tmp
-export NODE_SEA_BASE=/tmp/node-v22.22.0-linux-arm64/bin/node
-```
-
-If `NODE_SEA_BASE` is not set, the build checks your system node for the fuse and fails with a clear error message.
-
-## Repository Structure
-
-```
-abbenay/
-├── packages/
-│   ├── daemon/              # TypeScript daemon + core library
-│   │   ├── src/
-│   │   │   ├── core/        # @abbenay/core (reusable library)
-│   │   │   │   ├── index.ts # Public API
-│   │   │   │   ├── state.ts # CoreState
-│   │   │   │   ├── engines.ts # Engine registry (Vercel AI SDK)
-│   │   │   │   ├── config.ts  # YAML config
-│   │   │   │   ├── secrets.ts # SecretStore + MemorySecretStore
-│   │   │   │   ├── paths.ts   # Platform paths
-│   │   │   │   └── mock.ts    # Mock engine
-│   │   │   └── daemon/      # Daemon-specific code
-│   │   │       ├── index.ts # CLI entry point
-│   │   │       ├── state.ts # DaemonState extends CoreState
-│   │   │       ├── daemon.ts
-│   │   │       ├── transport.ts
-│   │   │       ├── server/  # gRPC service handlers
-│   │   │       ├── web/     # Express web server
-│   │   │       └── secrets/ # KeychainSecretStore
-│   │   ├── static/          # Web dashboard HTML
-│   │   ├── tests/           # Integration tests
-│   │   └── build.js         # SEA + core package builder
-│   ├── python/              # Python gRPC client
-│   ├── vscode/              # VS Code extension
-│   └── proto-ts/            # Generated TS proto stubs
-├── proto/                   # gRPC service definition
-├── docs/
-└── build.js                 # Monorepo build orchestrator
-```
+The Node.js version is stored in `.node-version` at the repo root. This file is read by `bootstrap.sh` and is also compatible with nvm, fnm, volta, and mise.
 
 ## Building
 
-```bash
-cd packages/daemon
-npm install
-npm run build   # TypeScript compilation
-npm test        # vitest
-```
-
-## Running
+### Full build
 
 ```bash
-# Development (via tsx, no compile step)
-npm run daemon        # Start daemon (foreground)
-npm run web           # Start web dashboard
-npm run status        # Check status
-
-# Production (compiled)
-node dist/daemon/index.js daemon
-node dist/daemon/index.js web
-node dist/daemon/index.js status
-node dist/daemon/index.js stop
-
-# Or via CLI binary (aby is a short alias for abbenay)
-abbenay daemon
-aby status
-```
-
-## Full Build (SEA + VSIX)
-
-```bash
-# From repo root — install dependencies first
-npm install
-
-# Full build: proto generation + SEA binary + VSIX extension + zip
 node build.js
-
-# Common variations
-node build.js --skip-proto     # Skip proto generation (use existing stubs)
-node build.js --code-install   # Build + install VSIX into VS Code
-node build.js --skip-zip       # Skip creating distribution zip
-
-# If your system node lacks the SEA fuse:
-NODE_SEA_BASE=/path/to/official/node node build.js
 ```
 
-The build pipeline runs 6 stages:
-1. Generate Python gRPC client (requires python3 — skips if missing)
-2. Generate TypeScript gRPC client (requires protoc)
+This runs 6 stages:
+
+1. Generate Python gRPC client (requires `python3` -- skips if missing)
+2. Generate TypeScript gRPC client (requires `protoc` -- skips if missing)
 3. Build daemon: tsc type-check, esbuild bundle, core package, SEA binary
 4. Package VS Code extension (VSIX)
 5. Create distribution zip
 6. Install VSIX into VS Code (only with `--code-install`)
 
-> **macOS note:** The build automatically handles macOS-specific SEA requirements — it passes `--macho-segment-name NODE_SEA` to postject and re-signs the binary with an ad-hoc signature (`codesign --sign -`). No manual steps are needed.
+### Build options
+
+| Flag | Effect |
+|------|--------|
+| `--skip-proto` | Skip proto generation (use committed stubs) |
+| `--proto-only` | Only regenerate proto stubs, then stop |
+| `--skip-zip` | Skip creating distribution zip |
+| `--code-install` | Build + install VSIX into VS Code |
+
+### SEA binary
+
+The daemon is packaged as a [Single Executable Application](https://nodejs.org/api/single-executable-applications.html). The build copies the Node.js binary, injects the bundled JS via `postject`, and produces a self-contained `abbenay-daemon-{platform}-{arch}` binary.
+
+The SEA build runs a **preflight check** at the start -- before doing any esbuild work -- to verify the Node.js binary has the `NODE_SEA_FUSE` sentinel and that `postject` is available. If either is missing, the build fails immediately with a clear error.
+
+When using the bootstrap, the downloaded Node.js is always the official binary, so the fuse is always present. If you're using your own Node.js, you can override with:
+
+```bash
+NODE_SEA_BASE=/path/to/official/node node build.js
+```
+
+### Python client wheel
+
+```bash
+npm run ci:package-python
+```
+
+This runs `uvx hatch build` in `packages/python/`, producing a wheel in `packages/python/dist/`. The bootstrapped `uv` handles downloading hatch and any needed Python version automatically.
+
+### macOS note
+
+The build handles macOS-specific SEA requirements automatically: it passes `--macho-segment-name NODE_SEA` to postject and re-signs the binary with an ad-hoc signature (`codesign --sign -`). No manual steps needed.
+
+## npm scripts
+
+### Top-level (repo root)
+
+| Script | Command | Purpose |
+|--------|---------|---------|
+| `build` | `node build.js` | Full build |
+| `build:dev` | `node build.js --skip-zip --code-install` | Build + install VSIX, no zip |
+| `build:proto` | `node build.js --proto-only` | Regenerate proto stubs only |
+| `lint` | `npm run lint --workspaces --if-present` | Lint all packages |
+| `test` | `npm run test --workspaces --if-present` | Test all packages |
+| `ci:build` | `node build.js --skip-proto` | Full build, skip proto (stubs committed) |
+| `ci:package-python` | `cd packages/python && uvx hatch build` | Build Python wheel |
+
+### Daemon package
+
+| Script | Command | Purpose |
+|--------|---------|---------|
+| `build` | `tsc` | TypeScript compilation |
+| `build:sea` | `node build.js` | SEA binary build |
+| `dev` | `tsx src/daemon/index.ts` | Run daemon in dev mode (no compile) |
+| `test` | `vitest` | Run tests |
+| `lint` | `eslint src/` | Lint source |
+
+## Running
+
+```bash
+# Development (via tsx, no compile step)
+cd packages/daemon
+npm run daemon        # start daemon (foreground)
+npm run web           # start web dashboard
+npm run status        # check status
+
+# Production (compiled SEA binary)
+abbenay daemon
+abbenay web
+abbenay status
+aby daemon            # short alias
+```
 
 ## Development Workflow
 
-### 1. Making Daemon Changes
+### Daemon changes
 
 Edit `src/core/` or `src/daemon/`, then:
 
 ```bash
 cd packages/daemon
-npm run daemon    # tsx watches and runs directly, no build needed
+npm run daemon    # tsx runs directly, no build needed
 ```
 
-For compiled output:
-```bash
-npm run build
-node dist/daemon/index.js daemon
-```
-
-### 2. Making Proto Changes
+### Proto changes
 
 1. Edit `proto/abbenay/v1/service.proto`
-2. Regenerate TypeScript stubs for VS Code:
-   ```bash
-   node build.js --proto-only
-   ```
-3. The daemon uses `@grpc/proto-loader` for dynamic loading and does not need stub regeneration
+2. Regenerate TypeScript stubs: `node build.js --proto-only`
+3. The daemon uses `@grpc/proto-loader` for dynamic loading and does not need regeneration
 
-### 3. VS Code Extension
+### VS Code extension
 
 1. Open `packages/vscode` in VS Code
 2. Press **F5** to launch Extension Development Host
 3. Check Output panel -> "Abbenay Provider" for logs
 
-### 4. Web Dashboard
+### Web dashboard
 
 1. Edit `packages/daemon/static/index.html`
 2. Restart the web server to see changes
-3. Start daemon + web: `npm run web` (or start daemon first, then web)
+
+## CI
+
+CI runs in GitHub Actions (`.github/workflows/ci.yml`). The workflow follows a **lean CI** philosophy: GitHub Actions is a thin wrapper that calls the same scripts developers run locally.
+
+### Workflow structure
+
+```
+lint-and-test (ubuntu-latest)
+  └─ ./bootstrap.sh → npm ci → npm run lint → npm test
+
+build (matrix: linux-x64, linux-arm64, macos-arm64)
+  └─ ./bootstrap.sh → npm ci → npm run ci:build
+  └─ uploads: SEA binary, VSIX, distribution zip
+
+package-python (ubuntu-latest)
+  └─ ./bootstrap.sh → npm run ci:package-python
+  └─ uploads: Python wheel
+```
+
+### How bootstrap integrates with CI
+
+`bootstrap.sh` detects the `$GITHUB_PATH` environment variable (set by GitHub Actions) and automatically appends its PATH entries there, so all subsequent workflow steps have `node`, `npm`, `uv`, and `uvx` available without re-sourcing.
+
+### Artifacts
+
+Every CI run produces downloadable artifacts:
+
+| Artifact | Contents |
+|----------|----------|
+| `abbenay-daemon-linux-x64` | SEA binary + sidecars (Linux x64) |
+| `abbenay-daemon-linux-arm64` | SEA binary + sidecars (Linux arm64) |
+| `abbenay-daemon-darwin-arm64` | SEA binary + sidecars (macOS Apple Silicon) |
+| `abbenay-vsix-{platform}-{arch}` | VS Code extension (per platform) |
+| `abbenay-client-python` | Python wheel (platform-independent) |
+
+### Releases
+
+A separate workflow (`.github/workflows/release.yml`) triggers when you push a `v*` tag. It builds all platforms and creates a GitHub Release with the artifacts permanently attached.
+
+```bash
+git tag v0.0.1-alpha
+git push --tags
+```
+
+Tags containing `alpha`, `beta`, or `rc` are automatically marked as prereleases. Release notes are auto-generated from commit history.
+
+### Reproducing CI locally
+
+Every CI step is a standard npm script. To reproduce a CI build on your machine:
+
+```bash
+./bootstrap.sh
+source .build-tools/env.sh
+npm ci
+npm run lint
+npm test
+npm run ci:build
+npm run ci:package-python
+```
 
 ## Adding a New Engine
 
-Edit `packages/daemon/src/core/engines.ts`:
+Edit `packages/daemon/src/core/engines.ts` and add a new entry to the `ENGINES` record. No other code changes needed.
 
-1. Add a new entry to the `ENGINES` record with metadata and a `createModel` factory
-2. That's it — no other code changes needed
-
-Example for a dedicated `@ai-sdk/*` provider:
+For a dedicated `@ai-sdk/*` provider:
 
 ```typescript
-const ENGINES: Record<string, EngineInfo> = {
-  // ... existing engines
-
-  newengine: {
-    id: 'newengine',
-    requiresKey: true,
-    defaultBaseUrl: 'https://api.newengine.com/v1',
-    defaultEnvVar: 'NEWENGINE_API_KEY',
-    supportsTools: true,
-    createModel: (modelId, config) =>
-      dedicatedProvider('@ai-sdk/newengine', 'createNewEngine', config, modelId),
-  },
-};
+newengine: {
+  id: 'newengine',
+  requiresKey: true,
+  defaultBaseUrl: 'https://api.newengine.com/v1',
+  defaultEnvVar: 'NEWENGINE_API_KEY',
+  supportsTools: true,
+  createModel: (modelId, config) =>
+    dedicatedProvider('@ai-sdk/newengine', 'createNewEngine', config, modelId),
+},
 ```
 
-For an OpenAI-compatible provider (no dedicated SDK package):
+For an OpenAI-compatible provider:
 
 ```typescript
-  newcompat: {
-    id: 'newcompat',
-    requiresKey: true,
-    defaultBaseUrl: 'https://api.newcompat.com/v1',
-    defaultEnvVar: 'NEWCOMPAT_API_KEY',
-    supportsTools: true,
-    createModel: (modelId, config) =>
-      openaiCompatibleProvider('newcompat', 'https://api.newcompat.com/v1', config, modelId),
-  },
+newcompat: {
+  id: 'newcompat',
+  requiresKey: true,
+  defaultBaseUrl: 'https://api.newcompat.com/v1',
+  defaultEnvVar: 'NEWCOMPAT_API_KEY',
+  supportsTools: true,
+  createModel: (modelId, config) =>
+    openaiCompatibleProvider('newcompat', 'https://api.newcompat.com/v1', config, modelId),
+},
 ```
-
-The engine will automatically appear in:
-- `listEngines()` / `list-engines` CLI command
-- The web dashboard's "Add Provider" wizard
-- `getProviderTemplates()` for UI consumption
 
 ## Adding a New gRPC RPC
 
-1. **Define in proto** - Edit `proto/abbenay/v1/service.proto`:
-   ```protobuf
-   rpc NewMethod(NewMethodRequest) returns (NewMethodResponse);
-   message NewMethodRequest { string field = 1; }
-   message NewMethodResponse { string result = 1; }
-   ```
-
-2. **Regenerate stubs** - Run `node build.js --proto-only` for the VS Code extension
-
-3. **Implement handler** - Edit `packages/daemon/src/daemon/server/abbenay-service.ts`:
-   ```typescript
-   NewMethod(
-     call: grpc.ServerUnaryCall<any, any>,
-     callback: grpc.sendUnaryData<any>
-   ): void {
-     const req = call.request;
-     callback(null, { result: 'done' });
-   }
-   ```
+1. Edit `proto/abbenay/v1/service.proto`
+2. Regenerate stubs: `node build.js --proto-only`
+3. Implement handler in `packages/daemon/src/daemon/server/abbenay-service.ts`
 
 ## Testing
 
-- **Unit tests** - vitest, co-located with source (`src/core/*.test.ts`, `src/*.test.ts`)
-- **Integration tests** - `tests/integration/*.test.ts`
-- **Mock engine** - Use `mock/echo`, `mock/fixed`, `mock/error` for testing without network or API keys
-
 ```bash
 cd packages/daemon
-npm test                    # All tests
-npx vitest run src/         # Unit tests only
-npx vitest run tests/       # Integration tests only
+npm test                    # all tests
+npx vitest run src/         # unit tests only
+npx vitest run tests/       # integration tests only
 ```
+
+Use `mock/echo`, `mock/fixed`, `mock/error` engines for testing without network or API keys.
 
 ## Debugging
 
-- **Daemon logs** - Console output from the daemon process
-- **Socket check** - `ls -la /run/user/$(id -u)/abbenay/`
-- **VS Code logs** - Output panel -> "Abbenay Provider"
+- **Daemon logs**: console output from the daemon process
+- **Socket check**: `ls -la /run/user/$(id -u)/abbenay/`
+- **VS Code logs**: Output panel -> "Abbenay Provider"
 
 ## Common Issues
 
-### Socket Permission Denied
+### Daemon won't start
 
 ```bash
-ls -la /run/user/$(id -u)/abbenay/daemon.sock
-# Should be owned by your user with appropriate permissions
-```
-
-### Daemon Won't Start
-
-```bash
-# Kill any stale processes
 pkill -f "abbenay-daemon"
-
-# Remove stale socket
 rm -f /run/user/$(id -u)/abbenay/daemon.sock
-
-# Check for port conflicts
-lsof -i :8787
-
-# Restart
 npm run daemon
 ```
 
-### Proto Mismatch
-
-If TypeScript clients and daemon disagree on proto format:
+### Proto mismatch
 
 ```bash
-# Regenerate VS Code stubs
-node build.js --proto-only
-
-# Rebuild daemon (uses dynamic loading, no regeneration needed)
+node build.js --proto-only        # regenerate stubs
 cd packages/daemon && npm run build
 ```
 
-### Extension Not Connecting
+### Extension not connecting
 
-1. Ensure daemon is running: `npm run status`
+1. Ensure daemon is running: `npm run status` (in `packages/daemon`)
 2. Check Output panel for connection errors
 3. Reload VS Code window
-4. Verify socket path matches expected location
