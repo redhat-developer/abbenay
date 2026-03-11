@@ -39,18 +39,18 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-function writeYaml(filePath: string, data: any): string {
+function writeYaml(filePath: string, data: Record<string, unknown>): string {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, yaml.dump(data));
   return filePath;
 }
 
-function setUserConfig(data: any): void {
+function setUserConfig(data: Record<string, unknown>): void {
   mockUserConfigPath = path.join(tmpDir, 'user-config.yaml');
   writeYaml(mockUserConfigPath, data);
 }
 
-function createWorkspace(name: string, data: any): string {
+function createWorkspace(name: string, data: Record<string, unknown>): string {
   const wsDir = path.join(tmpDir, name);
   writeYaml(path.join(wsDir, '.config', 'abbenay', 'config.yaml'), data);
   return wsDir;
@@ -176,7 +176,7 @@ describe('loadConfigFromPath (old schema migration)', () => {
     expect(Object.keys(prov.models!)).toHaveLength(2);
     expect(prov.models!['openrouter/anthropic/claude-opus-4.5']).toEqual({});
     expect(prov.models!['openrouter/anthropic/claude-opus-4.6']).toEqual({});
-    expect((prov as any).enabled_models).toBeUndefined();
+    expect((prov as Record<string, unknown>).enabled_models).toBeUndefined();
   });
 
   it('should migrate api_base to base_url', () => {
@@ -193,7 +193,7 @@ describe('loadConfigFromPath (old schema migration)', () => {
 
     const prov = config!.providers!.openai;
     expect(prov.base_url).toBe('https://custom.openai.com');
-    expect((prov as any).api_base).toBeUndefined();
+    expect((prov as Record<string, unknown>).api_base).toBeUndefined();
   });
 });
 

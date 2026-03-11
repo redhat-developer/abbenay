@@ -66,10 +66,10 @@ export async function activate(context: vscode.ExtensionContext) {
       logger.warn('[Backchannel] Failed to start:', e);
     });
     logger.info('[Backchannel] Started');
-  } catch (e: any) {
-    const msg = e?.message || JSON.stringify(e) || 'Unknown error';
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     logger.error(`[Daemon] Failed to connect: ${msg}`);
-    if (e?.stack) {
+    if (e instanceof Error && e.stack) {
       logger.error(`[Daemon] Stack: ${e.stack}`);
     }
     vscode.window.showWarningMessage(
@@ -199,8 +199,9 @@ function registerCommands(context: vscode.ExtensionContext): void {
         }
         
         vscode.env.openExternal(vscode.Uri.parse(url));
-      } catch (e: any) {
-        logger.error(`[Dashboard] Failed to start web server: ${e.message}`);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.error(`[Dashboard] Failed to start web server: ${msg}`);
         // Fall back to opening the URL directly
         vscode.env.openExternal(vscode.Uri.parse(DASHBOARD_URL));
       }

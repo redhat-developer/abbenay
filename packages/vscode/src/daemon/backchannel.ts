@@ -29,36 +29,33 @@ const OUR_VENDOR_PREFIX = 'abbenay-';
  * Leaf nodes carry a `text` string property. We walk the tree depth-first
  * and concatenate all text values.
  */
-function extractTextFromPromptTsx(obj: any): string {
+function extractTextFromPromptTsx(obj: unknown): string {
     if (obj == null) {return '';}
     if (typeof obj === 'string') {return obj;}
 
     const parts: string[] = [];
+    const o = obj as Record<string, unknown>;
 
-    // Direct text property on the node
-    if (typeof obj.text === 'string') {
-        if (obj.lineBreakBefore) {parts.push('\n');}
-        parts.push(obj.text);
+    if (typeof o.text === 'string') {
+        if (o.lineBreakBefore === true) {parts.push('\n');}
+        parts.push(o.text);
     }
 
-    // Recurse into .node (top-level wrapper)
-    if (obj.node) {
-        const inner = extractTextFromPromptTsx(obj.node);
+    if (o.node != null) {
+        const inner = extractTextFromPromptTsx(o.node);
         if (inner) {parts.push(inner);}
     }
 
-    // Recurse into .children array
-    if (Array.isArray(obj.children)) {
-        for (const child of obj.children) {
+    if (Array.isArray(o.children)) {
+        for (const child of o.children) {
             const inner = extractTextFromPromptTsx(child);
             if (inner) {parts.push(inner);}
         }
     }
 
-    // If we found nothing, try .value as a last resort
-    if (parts.length === 0 && obj.value != null) {
-        if (typeof obj.value === 'string') {return obj.value;}
-        return extractTextFromPromptTsx(obj.value);
+    if (parts.length === 0 && o.value != null) {
+        if (typeof o.value === 'string') {return o.value;}
+        return extractTextFromPromptTsx(o.value);
     }
 
     return parts.join('');
@@ -197,11 +194,11 @@ export class BackchannelHandler {
                     logger.error('[Backchannel] Error handling request:', error);
                     sendResponse({
                         requestId: request.requestId,
-                        response: { $case: 'error', error: {
+                        response: { $case: 'error' as const, error: {
                             message: error instanceof Error ? error.message : String(error),
                             code: 'INTERNAL_ERROR',
                         }},
-                    } as any);
+                    });
                 }
             }
             
@@ -218,14 +215,16 @@ export class BackchannelHandler {
      * Handle a request from the daemon
      */
     private async handleRequest(request: proto.VSCodeRequest): Promise<proto.VSCodeResponse> {
-        // ts-proto with oneof=unions puts the payload in request.request with a $case discriminator
-        const req = request as any;
-        const oneof = req.request;
-        const requestCase = oneof?.$case || '';
+        const oneof = request.request;
         
-        logger.info(`[Backchannel] Handling request: ${request.requestId} ($case=${requestCase})`);
+        if (!oneof) {
+            logger.warn(`[Backchannel] Request ${request.requestId} has no oneof payload`);
+            return { requestId: request.requestId, response: { $case: 'error' as const, error: { message: 'Missing request payload', code: 'INVALID_REQUEST' } } };
+        }
+
+        logger.info(`[Backchannel] Handling request: ${request.requestId} ($case=${oneof.$case})`);
         
-        switch (requestCase) {
+        switch (oneof.$case) {
             case 'invokeTool':
                 return this.handleInvokeTool(request.requestId, oneof.invokeTool);
             case 'listModels':
@@ -237,19 +236,22 @@ export class BackchannelHandler {
             case 'listTools':
                 return this.handleListTools(request.requestId);
             case 'modelsChanged': {
-                const reason = oneof.modelsChanged?.reason || 'unknown';
+                const reason = oneof.modelsChanged?.reason ?? 'unknown';
                 logger.info(`[Backchannel] Models changed notification received (reason: ${reason})`);
                 if (this.onModelsChanged) {
                     this.onModelsChanged();
                 }
-                return { requestId: request.requestId } as any;
+                return { requestId: request.requestId };
             }
-            default:
-                logger.warn(`[Backchannel] Unknown request type: $case=${requestCase}, keys=${JSON.stringify(Object.keys(req))}`);
+            default: {
+                const exhaustive: never = oneof;
+                const caseValue = (exhaustive as { $case: string }).$case;
+                logger.warn(`[Backchannel] Unknown request type: $case=${caseValue}, keys=${JSON.stringify(Object.keys(request))}`);
                 return {
                     requestId: request.requestId,
-                    error: { message: `Unknown request type: ${requestCase}`, code: 'INVALID_REQUEST' },
-                } as any;
+                    response: { $case: 'error' as const, error: { message: `Unknown request type: ${caseValue}`, code: 'INVALID_REQUEST' } },
+                };
+            }
         }
     }
 
@@ -263,7 +265,7 @@ export class BackchannelHandler {
         logger.info(`[Backchannel] Invoking tool: ${req.toolName}`);
         
         try {
-            const args = JSON.parse(req.argumentsJson || '{}');
+            const args = JSON.parse(req.argumentsJson || '{}') as Record<string, unknown>;
             
             const result = await vscode.lm.invokeTool(req.toolName, {
                 input: args,
@@ -279,8 +281,7 @@ export class BackchannelHandler {
                 if (part instanceof vscode.LanguageModelTextPart) {
                     textParts.push(part.value);
                 } else {
-                    // PromptTsx or unknown part — extract text from tree structure
-                    const raw = part as any;
+                    const raw = part as { value?: unknown };
                     const extracted = extractTextFromPromptTsx(raw.value ?? raw);
                     if (extracted) {
                         textParts.push(extracted);
@@ -296,7 +297,7 @@ export class BackchannelHandler {
                     resultJson: resultText,
                     isError: false,
                 }},
-            } as any;
+            };
         } catch (error) {
             return {
                 requestId,
@@ -304,7 +305,7 @@ export class BackchannelHandler {
                     resultJson: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
                     isError: true,
                 }},
-            } as any;
+            };
         }
     }
 
@@ -344,12 +345,12 @@ export class BackchannelHandler {
                         maxInputTokens: m.maxInputTokens,
                     })),
                 }},
-            } as any;
+            };
         } catch (error) {
             return {
                 requestId,
                 response: { $case: 'error' as const, error: { message: error instanceof Error ? error.message : String(error), code: 'LIST_MODELS_ERROR' }},
-            } as any;
+            };
         }
     }
 
@@ -377,7 +378,7 @@ export class BackchannelHandler {
                 return {
                     requestId,
                     response: { $case: 'error' as const, error: { message: `Model not found: ${req.modelId}`, code: 'MODEL_NOT_FOUND' }},
-                } as any;
+                };
             }
 
             // Convert messages to VS Code format
@@ -400,13 +401,12 @@ export class BackchannelHandler {
                 new vscode.CancellationTokenSource().token
             );
 
-            // Collect chunks
-            const chunks: any[] = [];
+            const chunks: proto.VSCodeChatChunk[] = [];
             for await (const part of response.stream) {
                 if (part instanceof vscode.LanguageModelTextPart) {
-                    chunks.push({ chunk: { $case: 'text', text: part.value } });
+                    chunks.push({ chunk: { $case: 'text' as const, text: part.value } });
                 } else if (part instanceof vscode.LanguageModelToolCallPart) {
-                    chunks.push({ chunk: { $case: 'toolCall', toolCall: {
+                    chunks.push({ chunk: { $case: 'toolCall' as const, toolCall: {
                         callId: part.callId,
                         name: part.name,
                         argumentsJson: JSON.stringify(part.input),
@@ -417,12 +417,12 @@ export class BackchannelHandler {
             return {
                 requestId,
                 response: { $case: 'sendChat' as const, sendChat: { chunks } },
-            } as any;
+            };
         } catch (error) {
             return {
                 requestId,
                 response: { $case: 'error' as const, error: { message: error instanceof Error ? error.message : String(error), code: 'CHAT_ERROR' }},
-            } as any;
+            };
         }
     }
 
@@ -446,7 +446,7 @@ export class BackchannelHandler {
                 workspacePath,
                 workspaceFolders: allFolders,
             }},
-        } as any;
+        };
     }
 
     /**
@@ -461,7 +461,7 @@ export class BackchannelHandler {
                 name: t.name,
                 description: t.description,
                 inputSchema: JSON.stringify(t.inputSchema || {}),
-                tags: t.tags || [],
+                tags: [...(t.tags || [])],
             }));
 
             logger.info(`[Backchannel] Found ${toolInfos.length} VS Code tools`);
@@ -469,7 +469,7 @@ export class BackchannelHandler {
             return {
                 requestId,
                 response: { $case: 'listTools' as const, listTools: { tools: toolInfos } },
-            } as any;
+            };
         } catch (error) {
             return {
                 requestId,
@@ -477,7 +477,7 @@ export class BackchannelHandler {
                     message: error instanceof Error ? error.message : String(error),
                     code: 'LIST_TOOLS_ERROR',
                 }},
-            } as any;
+            };
         }
     }
 
@@ -488,7 +488,10 @@ export class BackchannelHandler {
      */
     setupToolChangeListener(): vscode.Disposable {
         // onDidChangeTools may not be available in all VS Code versions
-        const lm = vscode.lm as any;
+        interface LmWithOnDidChangeTools {
+            onDidChangeTools?: (listener: () => void) => vscode.Disposable;
+        }
+        const lm = vscode.lm as LmWithOnDidChangeTools;
         if (typeof lm.onDidChangeTools === 'function') {
             return lm.onDidChangeTools(() => {
                 logger.info('[Backchannel] VS Code tools changed, pushing update to daemon');
@@ -510,14 +513,14 @@ export class BackchannelHandler {
                 name: t.name,
                 description: t.description,
                 inputSchema: JSON.stringify(t.inputSchema || {}),
-                tags: t.tags || [],
+                tags: [...(t.tags || [])],
             }));
 
             // Send as an unsolicited response on the backchannel
-            const notification = {
+            const notification: proto.VSCodeResponse = {
                 requestId: `tools-update-${Date.now()}`,
                 response: { $case: 'registerTools' as const, registerTools: { tools: toolInfos } },
-            } as any;
+            };
 
             // Queue the notification to be sent through the stream
             if (this.sendNotification) {

@@ -52,9 +52,9 @@ export interface VSCodeConnection {
   id: string;
   workspacePath?: string;
   workspaceFolders: string[];
-  stream?: any; // grpc.ServerDuplexStream
+  stream?: { write: (data: object) => void; end: () => void };
   pendingRequests: Map<string, {
-    resolve: (response: any) => void;
+    resolve: (response: Record<string, unknown>) => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
   }>;
@@ -118,7 +118,7 @@ export class DaemonState extends CoreState {
 
   async* chat(
     compositeModelId: string,
-    messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: any[] }>,
+    messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }>,
     requestParams?: ChatParams,
     toolOptions?: ChatToolOptions,
   ): AsyncGenerator<ChatChunk> {
@@ -128,7 +128,7 @@ export class DaemonState extends CoreState {
     if (toolMode === 'auto') {
       if (toolOptions?.tools && toolOptions.tools.length > 0) {
         // Client-provided tools with VS Code backchannel executor (Phase 1 path)
-        toolExecutor = async (toolName: string, args: Record<string, any>) => {
+        toolExecutor = async (toolName: string, args: Record<string, unknown>) => {
           console.log(`[DaemonState] Tool execution: ${toolName}`, JSON.stringify(args).substring(0, 200));
           try {
             const result = await this.invokeVSCodeTool(toolName, args);
@@ -137,9 +137,10 @@ export class DaemonState extends CoreState {
               return { error: result.resultJson };
             }
             return JSON.parse(result.resultJson);
-          } catch (error: any) {
-            console.error(`[DaemonState] Tool execution failed: ${toolName}:`, error.message);
-            return { error: error.message };
+          } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[DaemonState] Tool execution failed: ${toolName}:`, msg);
+            return { error: msg };
           }
         };
       } else if (this.toolRegistry && this.toolRegistry.size > 0) {
@@ -190,7 +191,7 @@ export class DaemonState extends CoreState {
 
   // ─── VS Code Backchannel ─────────────────────────────────────────────
 
-  registerVSCodeConnection(stream?: any): string {
+  registerVSCodeConnection(stream?: { write: (data: object) => void; end: () => void }): string {
     const id = uuidv4();
 
     this.vscodeConnections.set(id, {
@@ -236,12 +237,12 @@ export class DaemonState extends CoreState {
     }
   }
 
-  handleVSCodeResponse(connId: string, response: any): void {
+  handleVSCodeResponse(connId: string, response: Record<string, unknown>): void {
     const conn = this.vscodeConnections.get(connId);
     if (!conn) return;
 
-    const requestId = response.request_id || response.requestId;
-    if (!requestId) return;
+    const requestId = (response.request_id ?? response.requestId) as string | undefined;
+    if (!requestId || typeof requestId !== 'string') return;
 
     const pending = conn.pendingRequests.get(requestId);
     if (pending) {
@@ -251,7 +252,7 @@ export class DaemonState extends CoreState {
     }
   }
 
-  async sendVSCodeRequest(connId: string, request: any, timeoutMs: number = 10000): Promise<any> {
+  async sendVSCodeRequest(connId: string, request: Record<string, unknown>, timeoutMs: number = 10000): Promise<Record<string, unknown>> {
     const conn = this.vscodeConnections.get(connId);
     if (!conn || !conn.stream) {
       throw new Error('VS Code connection not available');
@@ -269,7 +270,7 @@ export class DaemonState extends CoreState {
       conn.pendingRequests.set(requestId, { resolve, reject, timer });
 
       try {
-        conn.stream.write(fullRequest);
+        conn.stream!.write(fullRequest);
       } catch (err) {
         conn.pendingRequests.delete(requestId);
         clearTimeout(timer);
@@ -283,9 +284,9 @@ export class DaemonState extends CoreState {
       get_workspace: {},
     });
 
-    const ws = response.get_workspace || response.getWorkspace || {};
-    const workspacePath = ws.workspace_path || ws.workspacePath || '';
-    const workspaceFolders = ws.workspace_folders || ws.workspaceFolders || [];
+    const ws = (response.get_workspace ?? response.getWorkspace ?? {}) as Record<string, unknown>;
+    const workspacePath = (ws.workspace_path ?? ws.workspacePath ?? '') as string;
+    const workspaceFolders = (ws.workspace_folders ?? ws.workspaceFolders ?? []) as string[];
 
     if (workspacePath || workspaceFolders.length > 0) {
       this.updateVSCodeWorkspace(connId, workspacePath, workspaceFolders);
@@ -305,10 +306,10 @@ export class DaemonState extends CoreState {
       },
     });
 
-    const result = response.invoke_tool || response.invokeTool || {};
+    const result = (response.invoke_tool ?? response.invokeTool ?? {}) as Record<string, unknown>;
     return {
-      resultJson: result.result_json || result.resultJson || '{}',
-      isError: result.is_error || result.isError || false,
+      resultJson: (result.result_json ?? result.resultJson ?? '{}') as string,
+      isError: (result.is_error ?? result.isError ?? false) as boolean,
     };
   }
 
@@ -321,8 +322,8 @@ export class DaemonState extends CoreState {
       list_tools: {},
     });
 
-    const result = response.list_tools || response.listTools || {};
-    const tools = result.tools || [];
+    const result = (response.list_tools ?? response.listTools ?? {}) as Record<string, unknown>;
+    const tools = (result.tools ?? []) as Array<{ tool_name?: string; toolName?: string; name?: string; description?: string; input_schema?: string; inputSchema?: string }>;
 
     if (tools.length === 0) {
       console.log(`[DaemonState] VS Code (${connId}) reported 0 tools`);
@@ -336,11 +337,11 @@ export class DaemonState extends CoreState {
       : 'vscode';
 
     // Register tools in the registry
-    const toolDefs = tools.map((t: any) => ({
+    const toolDefs = tools.map((t: { tool_name?: string; toolName?: string; name?: string; description?: string; input_schema?: string; inputSchema?: string }) => ({
       name: t.tool_name || t.toolName || t.name || '',
       description: t.description || '',
       inputSchema: t.input_schema || t.inputSchema || '{}',
-    })).filter((t: any) => t.name);
+    })).filter((t) => t.name);
 
     this.toolRegistry?.register(workspaceName, 'vscode', toolDefs);
     console.log(`[DaemonState] Registered ${toolDefs.length} VS Code tools from ws:${workspaceName}`);
@@ -350,8 +351,8 @@ export class DaemonState extends CoreState {
    * Handle an unsolicited RegisterTools notification from VS Code.
    * VS Code sends this when vscode.lm.onDidChangeTools fires.
    */
-  handleRegisterToolsNotification(connId: string, notification: any): void {
-    const tools = notification.tools || [];
+  handleRegisterToolsNotification(connId: string, notification: { tools?: unknown[] }): void {
+    const tools = (notification.tools ?? []) as Array<{ tool_name?: string; toolName?: string; name?: string; description?: string; input_schema?: string; inputSchema?: string }>;
     const conn = this.vscodeConnections.get(connId);
     const workspaceName = conn?.workspacePath
       ? conn.workspacePath.split('/').pop() || 'vscode'
@@ -360,11 +361,11 @@ export class DaemonState extends CoreState {
     // Unregister old tools from this source, then re-register
     this.toolRegistry?.unregisterSource(`ws:${workspaceName}`);
 
-    const toolDefs = tools.map((t: any) => ({
+    const toolDefs = tools.map((t: { tool_name?: string; toolName?: string; name?: string; description?: string; input_schema?: string; inputSchema?: string }) => ({
       name: t.tool_name || t.toolName || t.name || '',
       description: t.description || '',
       inputSchema: t.input_schema || t.inputSchema || '{}',
-    })).filter((t: any) => t.name);
+    })).filter((t) => t.name);
 
     if (toolDefs.length > 0) {
       this.toolRegistry?.register(workspaceName, 'vscode', toolDefs);
@@ -375,7 +376,7 @@ export class DaemonState extends CoreState {
     this.mcpServer.refreshTools();
   }
 
-  async listVSCodeModels(familyFilter?: string): Promise<any[]> {
+  async listVSCodeModels(familyFilter?: string): Promise<unknown[]> {
     const connId = this.getFirstVSCodeConnection();
     if (!connId) return [];
 
@@ -385,8 +386,8 @@ export class DaemonState extends CoreState {
       },
     });
 
-    const result = response.list_models || response.listModels || {};
-    return result.models || [];
+    const result = (response.list_models ?? response.listModels ?? {}) as Record<string, unknown>;
+    return (result.models ?? []) as unknown[];
   }
 
   private getFirstVSCodeConnection(): string | null {
@@ -405,8 +406,9 @@ export class DaemonState extends CoreState {
             models_changed: { reason },
           });
           console.log(`[State] Sent ModelsChanged notification to VS Code (reason: ${reason})`);
-        } catch (err: any) {
-          console.error(`[State] Failed to send ModelsChanged notification: ${err.message}`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[State] Failed to send ModelsChanged notification: ${msg}`);
         }
       }
     }

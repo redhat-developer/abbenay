@@ -39,7 +39,7 @@ export interface RegisteredTool {
   /** JSON Schema string for the tool's input */
   inputSchema: string;
   /** Optional executor — only for 'local' tools registered by library consumers */
-  executor?: (args: Record<string, any>) => Promise<any>;
+  executor?: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
 /**
@@ -51,7 +51,7 @@ export interface ToolRegistrationInput {
   description: string;
   inputSchema: string;
   /** Optional inline executor (only meaningful for 'local' source tools) */
-  executor?: (args: Record<string, any>) => Promise<any>;
+  executor?: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
 /**
@@ -241,8 +241,8 @@ export class ToolRegistry {
    * });
    * ```
    */
-  buildExecutor(fallback?: (tool: RegisteredTool, args: Record<string, any>) => Promise<any>): ToolExecutor {
-    return async (toolName: string, args: Record<string, any>): Promise<any> => {
+  buildExecutor(fallback?: (tool: RegisteredTool, args: Record<string, unknown>) => Promise<unknown>): ToolExecutor {
+    return async (toolName: string, args: Record<string, unknown>): Promise<unknown> => {
       const tool = this.resolve(toolName);
       if (!tool) {
         throw new Error(`Tool not found in registry: "${toolName}"`);

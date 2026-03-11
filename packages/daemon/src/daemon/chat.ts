@@ -94,7 +94,7 @@ async function runInteractiveMode(
 
     const toolOptions: ChatToolOptions = {
       toolMode: options.tools === false ? 'none' : 'auto',
-      onToolApprovalNeeded: async (_requestId: string, toolName: string, args: any): Promise<'allow' | 'deny' | 'abort'> => {
+      onToolApprovalNeeded: async (_requestId: string, toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
         process.stderr.write(`\n${YELLOW}⚠ Tool approval required:${RESET} ${BOLD}${toolName}${RESET}\n`);
         process.stderr.write(`${DIM}Arguments:${RESET} ${JSON.stringify(args, null, 2)}\n`);
         return promptApproval(rl);
@@ -122,8 +122,9 @@ async function runInteractiveMode(
           process.stderr.write(`\n${RED}Error: ${chunk.error}${RESET}\n`);
         }
       }
-    } catch (err: any) {
-      process.stderr.write(`\n${RED}Error: ${err.message}${RESET}\n`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`\n${RED}Error: ${msg}${RESET}\n`);
     }
 
     process.stdout.write('\n');

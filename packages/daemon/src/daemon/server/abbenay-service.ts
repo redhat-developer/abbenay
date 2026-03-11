@@ -13,6 +13,130 @@ import {
 } from '../web/server.js';
 import { listAllPolicies, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
 
+interface ProtoClientInfo {
+  client_type?: string | number;
+  client_id?: string;
+  user?: string;
+}
+
+interface RegisterRequestProto {
+  client?: ProtoClientInfo;
+  client_type?: string | number;
+  is_spawner?: boolean;
+  workspace_path?: string;
+}
+
+interface UnregisterRequestProto {
+  client_id: string;
+}
+
+interface ListModelsRequestProto {
+  workspace_paths?: string[];
+  workspacePaths?: string[];
+}
+
+interface DiscoverModelsRequestProto {
+  engine_id?: string;
+  engineId?: string;
+  provider_id?: string;
+  api_key?: string;
+  apiKey?: string;
+  base_url?: string;
+  baseUrl?: string;
+}
+
+interface ProtoMessage {
+  role?: string | number;
+  content?: string;
+  name?: string;
+  tool_call_id?: string;
+  toolCallId?: string;
+  tool_calls?: unknown[];
+  toolCalls?: unknown[];
+}
+
+interface ChatOptionsProto {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  max_tokens?: number;
+  timeout?: number;
+  tool_mode?: string;
+  toolMode?: string;
+  max_tool_iterations?: number;
+  maxToolIterations?: number;
+}
+
+interface ProtoTool {
+  name?: string;
+  description?: string;
+  input_schema?: string;
+  inputSchema?: string;
+}
+
+interface ChatRequestProto {
+  model?: string;
+  messages?: ProtoMessage[];
+  options?: ChatOptionsProto;
+  tools?: ProtoTool[];
+}
+
+interface GetSecretRequestProto {
+  key: string;
+}
+
+interface SetSecretRequestProto {
+  key: string;
+  value: string;
+}
+
+interface DeleteSecretRequestProto {
+  key: string;
+}
+
+interface GetProviderStatusRequestProto {
+  provider_id: string;
+}
+
+interface StartWebServerRequestProto {
+  port?: number;
+}
+
+interface VSCodeResponseProto {
+  register_tools?: { tools: unknown[] };
+  registerTools?: { tools: unknown[] };
+  [key: string]: unknown;
+}
+
+interface ProviderConfigOutput {
+  enabled: boolean;
+  engine: string;
+  api_key_ref: string;
+  base_url: string;
+}
+
+interface PolicyProtoOutput {
+  sampling?: { temperature?: number; top_p?: number; top_k?: number };
+  output?: {
+    max_tokens?: number;
+    reserved_output_tokens?: number;
+    format?: string;
+    system_prompt_snippet?: string;
+    system_prompt_mode?: string;
+  };
+  context?: { context_threshold?: number; compression_strategy?: string };
+  tool?: { max_tool_iterations?: number; tool_mode?: string };
+  reliability?: { retry_on_invalid_json?: boolean; timeout?: number };
+}
+
+interface RequestParams {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  maxTokens?: number;
+  timeout?: number;
+}
+
 /**
  * Map proto client type to enum
  */
@@ -69,15 +193,15 @@ export function createAbbenayService(state: DaemonState) {
      * Register a client with the daemon
      */
     Register(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<RegisterRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const request = call.request;
       
       // Proto: RegisterRequest { ClientInfo client = 1; bool is_spawner = 2; string workspace_path = 3; }
       // ClientInfo { ClientType client_type = 1; string client_id = 2; string user = 3; }
       const clientInfo = request.client || {};
-      const clientType = toClientType(clientInfo.client_type || request.client_type);
+      const clientType = toClientType((clientInfo.client_type ?? request.client_type ?? 'CLIENT_TYPE_CLI') as string | number);
       
       const clientId = state.registerClient(
         clientType,
@@ -95,8 +219,8 @@ export function createAbbenayService(state: DaemonState) {
      * Unregister a client
      */
     Unregister(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<UnregisterRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       state.unregisterClient(call.request.client_id);
       callback(null, {});
@@ -106,8 +230,8 @@ export function createAbbenayService(state: DaemonState) {
      * List providers
      */
     ListProviders(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       state.listProviders().then((providers) => {
         callback(null, {
@@ -121,11 +245,11 @@ export function createAbbenayService(state: DaemonState) {
             base_url: p.baseUrl,
           })),
         });
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         console.error('[gRPC] ListProviders error:', error);
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -134,8 +258,8 @@ export function createAbbenayService(state: DaemonState) {
      * List models (dynamic from provider APIs, workspace-aware, config-gated)
      */
     ListModels(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<ListModelsRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const workspacePaths = call.request.workspace_paths || call.request.workspacePaths || [];
       state.listModels(workspacePaths).then((models) => {
@@ -163,11 +287,11 @@ export function createAbbenayService(state: DaemonState) {
             policy: m.params?.policy,
           })),
         });
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         console.error('[gRPC] ListModels error:', error);
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -176,8 +300,8 @@ export function createAbbenayService(state: DaemonState) {
      * Discover all models a provider offers (ignores config, for browsing/selection)
      */
     DiscoverModels(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<DiscoverModelsRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const engineId = call.request.engine_id || call.request.engineId || call.request.provider_id || '';
       if (!engineId) {
@@ -201,11 +325,11 @@ export function createAbbenayService(state: DaemonState) {
             },
           })),
         });
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         console.error('[gRPC] DiscoverModels error:', error);
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -213,13 +337,12 @@ export function createAbbenayService(state: DaemonState) {
     /**
      * Streaming chat
      */
-    Chat(call: grpc.ServerWritableStream<any, any>): void {
+    Chat(call: grpc.ServerWritableStream<ChatRequestProto, object>): void {
       const request = call.request;
       const model = request.model;
       
-      // Convert proto messages to simple format
-      const messages = (request.messages || []).map((m: any) => ({
-        role: toRole(m.role),
+      const messages = (request.messages || []).map((m: ProtoMessage) => ({
+        role: toRole((m.role ?? 'ROLE_USER') as string | number),
         content: m.content || '',
         // Preserve tool-related fields for conversation history
         name: m.name || undefined,
@@ -235,7 +358,7 @@ export function createAbbenayService(state: DaemonState) {
       
       // Extract per-request options (3-tier merge: request > config > engine default)
       const opts = request.options || {};
-      const requestParams: Record<string, any> = {};
+      const requestParams: RequestParams = {};
       if (opts.temperature != null) requestParams.temperature = opts.temperature;
       if (opts.top_p != null) requestParams.top_p = opts.top_p;
       if (opts.top_k != null) requestParams.top_k = opts.top_k;
@@ -244,8 +367,8 @@ export function createAbbenayService(state: DaemonState) {
       const hasParams = Object.keys(requestParams).length > 0;
       
       // ── Extract tools from proto request ──
-      const protoTools: any[] = request.tools || [];
-      const tools: ToolDefinition[] = protoTools.map((t: any) => ({
+      const protoTools: ProtoTool[] = request.tools || [];
+      const tools: ToolDefinition[] = protoTools.map((t: ProtoTool) => ({
         name: t.name || '',
         description: t.description || '',
         inputSchema: t.input_schema || t.inputSchema || '{}',
@@ -306,9 +429,10 @@ export function createAbbenayService(state: DaemonState) {
               call.write({ done: { finish_reason: chunk.finishReason || 'stop' } });
             }
           }
-        } catch (error: any) {
-          console.error('[gRPC] Chat error:', error.message);
-          call.write({ error: { code: 'INTERNAL', message: error.message } });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error('[gRPC] Chat error:', msg);
+          call.write({ error: { code: 'INTERNAL', message: msg } });
         } finally {
           call.end();
         }
@@ -319,8 +443,8 @@ export function createAbbenayService(state: DaemonState) {
      * Get secret
      */
     GetSecret(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<GetSecretRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const key = call.request.key;
       
@@ -329,10 +453,10 @@ export function createAbbenayService(state: DaemonState) {
           value: value || '',
           found: value !== null,
         });
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -341,8 +465,8 @@ export function createAbbenayService(state: DaemonState) {
      * Set secret
      */
     SetSecret(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<SetSecretRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const { key, value } = call.request;
       
@@ -350,10 +474,10 @@ export function createAbbenayService(state: DaemonState) {
         callback(null, {});
         // Notify VS Code that models may have changed (new API key)
         state.notifyModelsChanged('secret_updated');
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -362,15 +486,15 @@ export function createAbbenayService(state: DaemonState) {
      * Delete secret
      */
     DeleteSecret(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<DeleteSecretRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       state.secretStore.delete(call.request.key).then(() => {
         callback(null, {});
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -379,8 +503,8 @@ export function createAbbenayService(state: DaemonState) {
      * List secrets
      */
     ListSecrets(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       // Return known key names with availability status
       const engines = getEngines();
@@ -392,10 +516,10 @@ export function createAbbenayService(state: DaemonState) {
       
       Promise.all(checks).then((secrets) => {
         callback(null, { secrets });
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -404,8 +528,8 @@ export function createAbbenayService(state: DaemonState) {
      * Get connected workspaces from VS Code clients
      */
     GetConnectedWorkspaces(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const workspaces = state.getVSCodeWorkspaces();
       callback(null, { workspaces });
@@ -418,7 +542,7 @@ export function createAbbenayService(state: DaemonState) {
      * - VS Code sends VSCodeResponse messages (input stream)
      * - Daemon sends VSCodeRequest messages (output stream)
      */
-    VSCodeStream(call: grpc.ServerDuplexStream<any, any>): void {
+    VSCodeStream(call: grpc.ServerDuplexStream<VSCodeResponseProto, object>): void {
       const connId = state.registerVSCodeConnection(call);
       
       console.log(`[gRPC] VS Code stream started: ${connId}`);
@@ -434,16 +558,18 @@ export function createAbbenayService(state: DaemonState) {
           try {
             console.log(`[gRPC] Requesting tools from VS Code (${connId})...`);
             await state.requestVSCodeTools(connId);
-          } catch (toolErr: any) {
-            console.warn(`[gRPC] Failed to get VS Code tools: ${toolErr.message}`);
+          } catch (toolErr: unknown) {
+            const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            console.warn(`[gRPC] Failed to get VS Code tools: ${msg}`);
           }
-        } catch (err: any) {
-          console.error(`[gRPC] Failed to get workspace from VS Code: ${err.message}`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[gRPC] Failed to get workspace from VS Code: ${msg}`);
         }
       }, 100);
       
       // Handle incoming responses from VS Code
-      call.on('data', (response: any) => {
+      call.on('data', (response: VSCodeResponseProto) => {
         console.log(`[gRPC] VS Code response received:`, Object.keys(response));
         
         // Check for unsolicited register_tools notification
@@ -473,8 +599,8 @@ export function createAbbenayService(state: DaemonState) {
      * Get daemon status
      */
     GetStatus(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const clients = state.getClients();
       
@@ -503,8 +629,8 @@ export function createAbbenayService(state: DaemonState) {
      * Health check
      */
     HealthCheck(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       callback(null, {
         healthy: true,
@@ -516,12 +642,12 @@ export function createAbbenayService(state: DaemonState) {
      * Get current configuration
      */
     GetConfig(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const config = state.loadProviderConfig();
       
-      const providers: Record<string, any> = {};
+      const providers: Record<string, ProviderConfigOutput> = {};
       for (const [pid, pcfg] of Object.entries(config)) {
         providers[pid] = {
           enabled: true,
@@ -543,8 +669,8 @@ export function createAbbenayService(state: DaemonState) {
      * Update configuration (not fully implemented yet)
      */
     UpdateConfig(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       // For now, just return the existing config
       const _config = state.loadProviderConfig();
@@ -562,8 +688,8 @@ export function createAbbenayService(state: DaemonState) {
      * List available engines (API implementations)
      */
     ListEngines(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const engines = getEngines();
       callback(null, {
@@ -580,8 +706,8 @@ export function createAbbenayService(state: DaemonState) {
      * Get provider status
      */
     GetProviderStatus(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<GetProviderStatusRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const providerId = call.request.provider_id;
       
@@ -596,8 +722,11 @@ export function createAbbenayService(state: DaemonState) {
           configured: provider.configured,
           healthy: provider.healthy,
         });
-      }).catch(error => {
-        callback({ code: grpc.status.INTERNAL, message: error.message });
+      }).catch((error: unknown) => {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
     },
     
@@ -605,8 +734,8 @@ export function createAbbenayService(state: DaemonState) {
      * Start the embedded web server
      */
     StartWebServer(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<StartWebServerRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       const port = call.request.port || 8787;
       
@@ -628,10 +757,11 @@ export function createAbbenayService(state: DaemonState) {
           port: actualPort,
           url,
         });
-      }).catch((error) => {
+      }).catch((error: unknown) => {
+        const msg = error instanceof Error ? error.message : String(error);
         callback({
           code: grpc.status.INTERNAL,
-          message: `Failed to start web server: ${error.message}`,
+          message: `Failed to start web server: ${msg}`,
         });
       });
     },
@@ -640,15 +770,15 @@ export function createAbbenayService(state: DaemonState) {
      * Stop the embedded web server
      */
     StopWebServer(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       stopEmbeddedWebServer().then(() => {
         callback(null, {});
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         callback({
           code: grpc.status.INTERNAL,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
       });
     },
@@ -657,8 +787,8 @@ export function createAbbenayService(state: DaemonState) {
      * Shutdown the daemon
      */
     Shutdown(
-      call: grpc.ServerUnaryCall<any, any>,
-      callback: grpc.sendUnaryData<any>
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
     ): void {
       console.log('[gRPC] Shutdown requested');
       callback(null, {});
@@ -673,45 +803,45 @@ export function createAbbenayService(state: DaemonState) {
     /**
      * Session RPCs (deferred)
      */
-    SessionChat(call: grpc.ServerWritableStream<any, any>): void {
+    SessionChat(call: grpc.ServerWritableStream<object, object>): void {
       call.write({ error: { code: 'UNIMPLEMENTED', message: 'Session chat not yet implemented' } });
       call.end();
     },
-    CreateSession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    CreateSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    GetSession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    GetSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    ListSessions(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ListSessions(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback(null, { sessions: [], total_count: 0 });
     },
-    DeleteSession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    DeleteSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    WatchSessions(call: grpc.ServerWritableStream<any, any>): void {
+    WatchSessions(call: grpc.ServerWritableStream<object, object>): void {
       call.end();
     },
-    ReplaySession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ReplaySession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    SummarizeSession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    SummarizeSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    ForkSession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ForkSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    ExportSession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ExportSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    ImportSession(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ImportSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
     
     /**
      * List all policies (built-in + custom)
      */
-    ListPolicies(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ListPolicies(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       try {
         const policies = listAllPolicies();
         callback(null, {
@@ -721,34 +851,37 @@ export function createAbbenayService(state: DaemonState) {
             config: policyToProto(p.config),
           })),
         });
-      } catch (error: any) {
-        callback({ code: grpc.status.INTERNAL, message: error.message });
+      } catch (error: unknown) {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     },
 
     /**
      * Tool RPCs (stub - future MCP integration)
      */
-    ListTools(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ListTools(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback(null, { tools: [] });
     },
-    ExecuteTool(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    ExecuteTool(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Tool execution not yet implemented' });
     },
     
     /**
      * MCP Server Registration (stub)
      */
-    RegisterMcpServer(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    RegisterMcpServer(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback(null, {});
     },
-    UnregisterMcpServer(call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>): void {
+    UnregisterMcpServer(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback(null, {});
     },
   };
 }
 
-function policyToProto(cfg: PolicyCfg): any {
+function policyToProto(cfg: PolicyCfg): PolicyProtoOutput {
   return {
     sampling: cfg.sampling ? {
       temperature: cfg.sampling.temperature,

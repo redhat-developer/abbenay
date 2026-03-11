@@ -150,21 +150,20 @@ export function loadConfigFromPath(configPath: string): ConfigFile | null {
   
   try {
     const content = fs.readFileSync(configPath, 'utf-8');
-    const raw = yaml.load(content) as any;
+    const raw = yaml.load(content) as unknown;
     if (!raw) return { providers: {} };
-    
-    // Reject old Rust-era array format — user must delete and reconfigure
-    if (Array.isArray(raw.providers)) {
+
+    const rawObj = raw as Record<string, unknown>;
+    if (Array.isArray(rawObj.providers)) {
       console.warn(`[Config] Ignoring old array-based config at ${configPath}. Delete it and reconfigure.`);
       return { providers: {} };
     }
-    
+
     const config = raw as ConfigFile;
-    
-    // Migrate old schema if needed
+
     if (config.providers) {
       for (const [provId, provCfg] of Object.entries(config.providers)) {
-        migrateProviderConfig(provId, provCfg as any);
+        migrateProviderConfig(provId, provCfg as unknown as Record<string, unknown>);
       }
     }
     
@@ -183,7 +182,7 @@ export function loadConfigFromPath(configPath: string): ConfigFile | null {
  * If no `engine` field is present, assumes the provider key IS the engine ID
  * (backward compat with the old 1:1 mapping).
  */
-function migrateProviderConfig(provId: string, cfg: any): void {
+function migrateProviderConfig(provId: string, cfg: Record<string, unknown>): void {
   // If already new format (has engine field), just rename api_base → base_url
   if (cfg.engine) {
     if (cfg.api_base && !cfg.base_url) {
@@ -206,7 +205,7 @@ function migrateProviderConfig(provId: string, cfg: any): void {
   if (cfg.enabled_models && Array.isArray(cfg.enabled_models)) {
     const models: Record<string, ModelConfig> = {};
     for (const modelId of cfg.enabled_models) {
-      models[modelId] = {}; // Default params — key IS the engine model ID
+      models[String(modelId)] = {};
     }
     cfg.models = models;
     delete cfg.enabled_models;

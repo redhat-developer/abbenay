@@ -52,8 +52,9 @@ export class AbbenayMcpServer {
     app.post('/mcp', async (req: Request, res: Response) => {
       try {
         await this.transport!.handleRequest(req, res, req.body);
-      } catch (error: any) {
-        console.error('[McpServer] Request error:', error.message);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error('[McpServer] Request error:', msg);
         if (!res.headersSent) {
           res.status(500).json({ error: 'MCP request failed' });
         }
@@ -64,8 +65,9 @@ export class AbbenayMcpServer {
     app.get('/mcp', async (req: Request, res: Response) => {
       try {
         await this.transport!.handleRequest(req, res);
-      } catch (error: any) {
-        console.error('[McpServer] SSE request error:', error.message);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error('[McpServer] SSE request error:', msg);
         if (!res.headersSent) {
           res.status(500).json({ error: 'MCP SSE request failed' });
         }
@@ -76,8 +78,9 @@ export class AbbenayMcpServer {
     app.delete('/mcp', async (req: Request, res: Response) => {
       try {
         await this.transport!.handleRequest(req, res);
-      } catch (error: any) {
-        console.error('[McpServer] Delete request error:', error.message);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error('[McpServer] Delete request error:', msg);
         if (!res.headersSent) {
           res.status(500).json({ error: 'MCP delete request failed' });
         }
@@ -106,8 +109,9 @@ export class AbbenayMcpServer {
     if (!this.running) return;
     try {
       await this.mcpServer.close();
-    } catch (error: any) {
-      console.warn('[McpServer] Error closing:', error.message);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn('[McpServer] Error closing:', msg);
     }
     this.running = false;
     console.log('[McpServer] MCP server stopped');
@@ -127,9 +131,9 @@ export class AbbenayMcpServer {
     const fallbackExecutor = this.router.buildFallbackExecutor();
 
     for (const tool of tools) {
-      let schema: Record<string, any>;
+      let schema: Record<string, unknown>;
       try {
-        schema = JSON.parse(tool.inputSchema);
+        schema = JSON.parse(tool.inputSchema) as Record<string, unknown>;
       } catch {
         schema = { type: 'object', properties: {} };
       }
@@ -138,9 +142,9 @@ export class AbbenayMcpServer {
         tool.originalName,
         tool.description,
         schema,
-        async (args: any) => {
+        async (args: Record<string, unknown>) => {
           try {
-            let result: any;
+            let result: unknown;
             if (tool.executor) {
               result = await tool.executor(args);
             } else {
@@ -151,9 +155,10 @@ export class AbbenayMcpServer {
             return {
               content: [{ type: 'text' as const, text }],
             };
-          } catch (error: any) {
+          } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
             return {
-              content: [{ type: 'text' as const, text: error.message }],
+              content: [{ type: 'text' as const, text: msg }],
               isError: true,
             };
           }
