@@ -34,6 +34,7 @@ import {
   type ToolValidationCallback,
 } from './engines.js';
 import { matchesAnyPattern, type ToolRegistry } from './tool-registry.js';
+import { VERSION } from '../version.js';
 
 // ── Virtual provider info (runtime, for API responses) ─────────────────
 
@@ -139,7 +140,7 @@ export interface CoreStateOptions {
  * Core daemon state — pure provider/model logic, no transport.
  */
 export class CoreState {
-  public readonly version = '0.1.0';
+  public readonly version = VERSION;
   public readonly startedAt = new Date();
 
   /** Injected secret store */

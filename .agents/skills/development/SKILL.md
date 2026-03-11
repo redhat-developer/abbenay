@@ -50,13 +50,16 @@ If superseding a prior decision:
 
 ## Version management
 
-There are no hardcoded version numbers in the repository. All `package.json`
-files and `pyproject.toml` use `0.0.0-dev` as a placeholder.
+All package manifests (`package.json`, `pyproject.toml`) and version constants
+(`packages/daemon/src/version.ts`, `packages/python/src/abbenay_grpc/__init__.py`)
+use `0.0.0-dev` as a placeholder in the repository.
 
 - The git tag is the single source of truth for release versions.
-- `scripts/set-version.js` injects the version at build time in the release
-  workflow. It is never committed back.
-- Do not manually edit version fields in package manifests.
+- `scripts/set-version.js` injects the version into all manifests and source
+  constants at build time in the release workflow. It is never committed back.
+- Do not manually edit version fields. If you add a new location that needs a
+  version (e.g., a new package or API response), add a `0.0.0-dev` placeholder
+  and update `scripts/set-version.js` to inject it.
 
 ## Package structure
 

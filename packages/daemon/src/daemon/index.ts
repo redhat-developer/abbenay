@@ -15,8 +15,7 @@ import { startDaemon, stopDaemon, getDaemonStatus } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { startEmbeddedWebServer } from './web/server.js';
 import { getEngines } from '../core/engines.js';
-
-const VERSION = '0.1.0';
+import { VERSION } from '../version.js';
 
 const program = new Command();
 

@@ -272,18 +272,20 @@ function createDistribution() {
         fs.copyFileSync(path.join(VSCODE_ROOT, vsix), path.join(DIST_DIR, vsix));
     }
 
-    // Archive (tar.gz)
+    // Archive
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     const version = pkg.version || '0.0.0-dev';
-    const archiveName = `abbenay-${version}-${PLATFORM}-${ARCH}.tar.gz`;
+    const ext = IS_WIN ? '.zip' : '.tar.gz';
+    const archiveName = `abbenay-${version}-${PLATFORM}-${ARCH}${ext}`;
+    const archivePath = path.join(DIST_DIR, archiveName);
     console.log(`  Creating ${archiveName}...`);
     if (IS_WIN) {
-        run(`powershell Compress-Archive -Path "${PLATFORM_DIR}/*" -DestinationPath "${path.join(DIST_DIR, archiveName.replace('.tar.gz', '.zip'))}" -Force`);
+        run(`powershell Compress-Archive -Path "${PLATFORM_DIR}/*" -DestinationPath "${archivePath}" -Force`);
     } else {
-        run(`tar czf "${path.join(DIST_DIR, archiveName)}" -C "${PLATFORM_DIR}" .`);
+        run(`tar czf "${archivePath}" -C "${PLATFORM_DIR}" .`);
     }
 
-    console.log(`  Distribution: ${path.join(DIST_DIR, archiveName)}`);
+    console.log(`  Distribution: ${archivePath}`);
     if (vsixFiles.length > 0) {
         console.log(`  Extension:    ${path.join(DIST_DIR, vsixFiles[0])}`);
     }

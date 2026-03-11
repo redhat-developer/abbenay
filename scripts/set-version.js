@@ -8,8 +8,11 @@
  * Updates:
  *   - package.json (root)
  *   - packages/daemon/package.json
+ *   - packages/daemon/src/version.ts
  *   - packages/vscode/package.json
+ *   - packages/proto-ts/package.json
  *   - packages/python/pyproject.toml
+ *   - packages/python/src/abbenay_grpc/__init__.py
  *
  * Intended for CI release builds only -- mutations are never committed back.
  */
@@ -36,12 +39,24 @@ function updateJson(filePath) {
 }
 
 function updateToml(filePath) {
-  let content = readFileSync(filePath, 'utf8');
-  content = content.replace(
-    /^version\s*=\s*"[^"]*"/m,
-    `version = "${version}"`,
-  );
-  writeFileSync(filePath, content);
+  const content = readFileSync(filePath, 'utf8');
+  const regex = /^version\s*=\s*"[^"]*"/m;
+  if (!regex.test(content)) {
+    console.error(`  ERROR: no version field found in ${filePath}`);
+    process.exit(1);
+  }
+  const updated = content.replace(regex, `version = "${version}"`);
+  writeFileSync(filePath, updated);
+  console.log(`  ${filePath}: -> ${version}`);
+}
+
+function updateSourceConst(filePath, pattern, replacement) {
+  const content = readFileSync(filePath, 'utf8');
+  if (!pattern.test(content)) {
+    console.error(`  ERROR: version pattern not found in ${filePath}`);
+    process.exit(1);
+  }
+  writeFileSync(filePath, content.replace(pattern, replacement));
   console.log(`  ${filePath}: -> ${version}`);
 }
 
@@ -50,6 +65,17 @@ console.log(`Setting version to ${version}\n`);
 updateJson(join(root, 'package.json'));
 updateJson(join(root, 'packages', 'daemon', 'package.json'));
 updateJson(join(root, 'packages', 'vscode', 'package.json'));
+updateJson(join(root, 'packages', 'proto-ts', 'package.json'));
 updateToml(join(root, 'packages', 'python', 'pyproject.toml'));
+updateSourceConst(
+  join(root, 'packages', 'daemon', 'src', 'version.ts'),
+  /VERSION = '[^']*'/,
+  `VERSION = '${version}'`,
+);
+updateSourceConst(
+  join(root, 'packages', 'python', 'src', 'abbenay_grpc', '__init__.py'),
+  /__version__ = "[^"]*"/,
+  `__version__ = "${version}"`,
+);
 
 console.log('\nDone. These changes are build-time only -- do not commit them.');

@@ -1,6 +1,6 @@
 {
   "name": "@abbenay/proto",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "description": "Abbenay gRPC protocol definitions for TypeScript",
   "main": "src/abbenay/v1/service.ts",
   "types": "src/abbenay/v1/service.ts",
