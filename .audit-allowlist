@@ -1,0 +1,7 @@
+# Accepted npm audit advisories (one GHSA URL per line)
+# These are dev-only dependencies with no upstream fix available.
+# Re-evaluate periodically and remove entries once fixes are released.
+
+# serialize-javascript via mocha via @vscode/test-cli (dev-only, no fix)
+# Added 2026-03-11
+https://github.com/advisories/GHSA-5c6j-r48x-rmvq

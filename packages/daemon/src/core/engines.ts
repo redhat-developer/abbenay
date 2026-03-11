@@ -695,13 +695,14 @@ export async function* streamChat(
           };
           break;
 
-        case 'error':
+        case 'error': {
           console.error(`[Adapter] Stream error for ${engineId}/${engineModelId}:`, part.error);
           const errMsg = part.error instanceof Error ? part.error.message
             : typeof part.error === 'string' ? part.error
             : JSON.stringify(part.error);
           yield { type: 'error', error: errMsg };
           break;
+        }
 
         case 'finish':
           yield { type: 'done', finishReason: part.finishReason || 'stop' };

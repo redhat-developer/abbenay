@@ -618,7 +618,7 @@ export class CoreState {
     if (toolOptions?.onToolApprovalNeeded && this.toolRegistry) {
       const registry = this.toolRegistry;
       const requirePatterns = toolPolicy?.require_approval;
-      const autoPatterns = toolPolicy?.auto_approve;
+      const _autoPatterns = toolPolicy?.auto_approve;
 
       if (requirePatterns && requirePatterns.length > 0) {
         toolValidator = async (toolName: string, args: any): Promise<'allow' | 'deny' | 'abort'> => {

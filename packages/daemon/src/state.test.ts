@@ -8,9 +8,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ProviderInfo, ModelInfo } from './core/state.js';
-import type { ProviderConfig, ConfigFile, ModelConfig } from './core/config.js';
-import type { EngineInfo, DiscoveredModel, ChatParams } from './core/engines.js';
+import type { ConfigFile, ModelConfig } from './core/config.js';
+import type { EngineInfo, DiscoveredModel } from './core/engines.js';
 
 // ── Mock: core/config ────────────────────────────────────────────────────────
 
@@ -523,7 +522,7 @@ describe('DaemonState client management', () => {
   });
 
   it('should track workspace paths', () => {
-    const clientId = state.registerClient('VSCODE' as any, false, '/tmp/workspace');
+    const _clientId = state.registerClient('VSCODE' as any, false, '/tmp/workspace');
     const clients = state.getClients();
 
     expect(clients[0].workspacePath).toBe('/tmp/workspace');

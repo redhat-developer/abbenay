@@ -97,7 +97,7 @@ export function isDaemonRunning(): boolean {
         
         // Also verify socket exists
         return fs.existsSync(SOCKET_FILE);
-    } catch (e) {
+    } catch (_e) {
         // process.kill throws if process doesn't exist
         return false;
     }
@@ -285,9 +285,8 @@ export class DaemonClient {
     /**
      * Register this VS Code extension as a client
      */
-    async register(capabilities: string[] = ['chat', 'tools']): Promise<string> {
+    async register(): Promise<string> {
         const client = this.getClient();
-        const extensionVersion = vscode.extensions.getExtension('abbenay.abbenay-provider')?.packageJSON?.version || '0.1.0';
         
         // Get workspace path from VS Code
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -320,7 +319,7 @@ export class DaemonClient {
         if (this.clientId && this.client) {
             try {
                 await this.client.unregister({ clientId: this.clientId });
-            } catch (e) {
+            } catch (_e) {
                 // Ignore errors during unregister
             }
             this.clientId = null;
@@ -347,7 +346,7 @@ export class DaemonClient {
             const client = this.getClient();
             const response = await client.healthCheck({});
             return response.healthy;
-        } catch (e) {
+        } catch (_e) {
             return false;
         }
     }

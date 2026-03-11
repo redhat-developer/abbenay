@@ -25,7 +25,6 @@ import {
   isValidVirtualName,
   resolveEngineModelId,
   type ConfigFile,
-  type ModelConfig,
 } from './config.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

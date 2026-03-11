@@ -43,7 +43,6 @@ function formatDetail(model: proto.Model): string {
     }
     
     if (parts.length === 0) return 'default';
-    const label = provider || engine;
     if (parts.length === 1 && (parts[0] === provider || parts[0] === engine || parts[0].startsWith(provider))) return `${parts[0]} · default`;
     return parts.join(' · ');
 }

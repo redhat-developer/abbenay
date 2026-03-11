@@ -4,7 +4,7 @@
 
 import * as grpc from '@grpc/grpc-js';
 import { DaemonState, ClientType, type ChatToolOptions } from '../state.js';
-import { getEngines, getEngine, type ToolDefinition } from '../../core/engines.js';
+import { getEngines, type ToolDefinition } from '../../core/engines.js';
 import {
   startEmbeddedWebServer,
   stopEmbeddedWebServer,
@@ -547,7 +547,7 @@ export function createAbbenayService(state: DaemonState) {
       callback: grpc.sendUnaryData<any>
     ): void {
       // For now, just return the existing config
-      const config = state.loadProviderConfig();
+      const _config = state.loadProviderConfig();
       callback(null, {
         default_model: '',
         providers: {},

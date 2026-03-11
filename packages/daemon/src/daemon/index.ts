@@ -12,8 +12,8 @@
 
 import { Command } from 'commander';
 import { startDaemon, stopDaemon, getDaemonStatus } from './daemon.js';
-import { isDaemonRunningSync, getDefaultSocketPath } from './transport.js';
-import { startEmbeddedWebServer, stopEmbeddedWebServer } from './web/server.js';
+import { isDaemonRunningSync } from './transport.js';
+import { startEmbeddedWebServer } from './web/server.js';
 import { getEngines } from '../core/engines.js';
 
 const VERSION = '0.1.0';
@@ -74,7 +74,7 @@ program
   .option('--mcp', 'Start MCP server on /mcp endpoint')
   .action(async (options) => {
     const port = parseInt(options.port, 10);
-    let daemonStartedHere = false;
+    let _daemonStartedHere = false;
     
     try {
       if (isDaemonRunningSync()) {
@@ -94,7 +94,7 @@ program
         await new Promise<void>((resolve) => {
           const shutdown = async () => {
             console.log('\nStopping web server...');
-            try { await sendStopWebServer(); } catch {}
+            try { await sendStopWebServer(); } catch { /* ignore */ }
             resolve();
           };
           process.on('SIGINT', shutdown);
@@ -105,7 +105,7 @@ program
         // ─── Case B: No daemon running ────────────────────────────────
         // Start daemon in-process, then start web server alongside it.
         console.log('No daemon running, starting daemon + web server...');
-        daemonStartedHere = true;
+        _daemonStartedHere = true;
         
         const daemonState = await startDaemon({ keepAlive: false });
         

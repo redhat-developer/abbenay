@@ -243,15 +243,18 @@ function httpRequest(
     const urlObj = new URL(url);
     const postData = body ? JSON.stringify(body) : '';
     
+    const headers: Record<string, string> = { 'Connection': 'close' };
+    if (body) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = String(Buffer.byteLength(postData));
+    }
+
     const req = http.request({
       hostname: urlObj.hostname,
       port: urlObj.port,
       path: urlObj.pathname + urlObj.search,
       method,
-      headers: body ? {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData),
-      } : {},
+      headers,
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => data += chunk);

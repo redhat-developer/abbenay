@@ -9,20 +9,22 @@ If you already have Node.js 22+ and uv on your PATH, you can skip the bootstrap 
 ## Quick Start
 
 ```bash
-./bootstrap.sh                 # downloads Node.js 22 + uv into .build-tools/
+./bootstrap.sh                 # downloads Node.js 22, uv, prek into .build-tools/
 source .build-tools/env.sh     # puts them on PATH
 npm install                    # install dependencies
+prek install && prek install -t commit-msg  # install git hooks
 node build.js                  # full build (SEA + VSIX + zip)
 ```
 
 ## Bootstrap
 
-`bootstrap.sh` downloads two tools into `.build-tools/` (gitignored):
+`bootstrap.sh` downloads three tools into `.build-tools/` (gitignored):
 
 | Tool | Source | Why |
 |------|--------|-----|
 | **Node.js** (version from `.node-version`) | [nodejs.org](https://nodejs.org/) official tarball | Official binaries include the `NODE_SEA_FUSE` sentinel required for SEA injection. Package-manager Node (Homebrew, apt, nvm) usually does not. |
 | **uv** | [astral.sh](https://docs.astral.sh/uv/) | Python toolchain manager. Used to build the Python client wheel via `uvx hatch build` without needing a system Python. |
+| **prek** | [github.com/j178/prek](https://prek.j178.dev/) | Pre-commit hook framework (single Rust binary). Enforces conventional commits and lint checks at commit time. |
 
 After running the bootstrap, source the generated env file to put the tools on PATH:
 
@@ -119,7 +121,6 @@ The build handles macOS-specific SEA requirements automatically: it passes `--ma
 | `build:sea` | `node build.js` | SEA binary build |
 | `dev` | `tsx src/daemon/index.ts` | Run daemon in dev mode (no compile) |
 | `test` | `vitest` | Run tests |
-| `lint` | `eslint src/` | Lint source |
 
 ## Running
 
@@ -173,7 +174,8 @@ CI runs in GitHub Actions (`.github/workflows/ci.yml`). The workflow follows a *
 
 ```
 lint-and-test (ubuntu-latest)
-  └─ ./bootstrap.sh → npm ci → npm run lint → npm test
+  └─ ./bootstrap.sh → npm ci → npm run lint
+  └─ apt install xvfb → xvfb-run -a npm test
 
 build (matrix: linux-x64, linux-arm64, macos-arm64)
   └─ ./bootstrap.sh → npm ci → npm run ci:build
@@ -186,7 +188,7 @@ package-python (ubuntu-latest)
 
 ### How bootstrap integrates with CI
 
-`bootstrap.sh` detects the `$GITHUB_PATH` environment variable (set by GitHub Actions) and automatically appends its PATH entries there, so all subsequent workflow steps have `node`, `npm`, `uv`, and `uvx` available without re-sourcing.
+`bootstrap.sh` detects the `$GITHUB_PATH` environment variable (set by GitHub Actions) and automatically appends its PATH entries there, so all subsequent workflow steps have `node`, `npm`, `uv`, `uvx`, and `prek` available without re-sourcing.
 
 ### Artifacts
 
@@ -220,7 +222,7 @@ Every CI step is a standard npm script. To reproduce a CI build on your machine:
 source .build-tools/env.sh
 npm ci
 npm run lint
-npm test
+npm test                       # or: xvfb-run -a npm test (headless Linux)
 npm run ci:build
 npm run ci:package-python
 ```
@@ -265,6 +267,8 @@ newcompat: {
 
 ## Testing
 
+### Daemon tests (Vitest)
+
 ```bash
 cd packages/daemon
 npm test                    # all tests
@@ -273,6 +277,44 @@ npx vitest run tests/       # integration tests only
 ```
 
 Use `mock/echo`, `mock/fixed`, `mock/error` engines for testing without network or API keys.
+
+### VS Code extension tests (@vscode/test-cli)
+
+The extension uses `@vscode/test-cli` with `@vscode/test-electron` to run tests inside a real VS Code instance. Configuration is in `packages/vscode/.vscode-test.mjs`.
+
+```bash
+cd packages/vscode
+npm test                    # compiles (pretest) then runs vscode-test
+```
+
+On headless Linux (no display server), wrap with `xvfb-run`:
+
+```bash
+xvfb-run -a npm test
+```
+
+From the repo root, `npm test` runs both daemon and extension tests via workspaces.
+
+### Pre-commit hooks (prek)
+
+After bootstrapping, install git hooks once:
+
+```bash
+prek install
+prek install -t commit-msg
+```
+
+This installs two hooks from `.pre-commit-config.yaml`:
+
+- **commit-msg**: validates commit messages against [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) via commitlint
+- **pre-commit**: runs `npm run lint`
+
+To run hooks manually without committing:
+
+```bash
+prek run --all-files       # run all pre-commit hooks
+prek run commitlint        # run just the commitlint hook
+```
 
 ## Debugging
 

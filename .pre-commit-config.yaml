@@ -1,0 +1,22 @@
+repos:
+  - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
+    rev: v9.21.0
+    hooks:
+      - id: commitlint
+        stages: [commit-msg]
+        additional_dependencies: ["@commitlint/config-conventional"]
+  - repo: local
+    hooks:
+      - id: lint
+        name: lint
+        entry: npm run lint
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: audit
+        name: audit allowlist
+        entry: node scripts/audit-check.js
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        files: (^|/)package(-lock)?\.json$

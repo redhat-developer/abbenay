@@ -25,7 +25,7 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Bootstrap
         run: ./bootstrap.sh
@@ -37,19 +37,19 @@ jobs:
         run: npm run ci:build
 
       - name: Upload SEA artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abbenay-daemon-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/${{ matrix.platform }}-${{ matrix.arch }}/
 
       - name: Upload distribution zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abbenay-zip-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/abbenay-${{ matrix.platform }}-${{ matrix.arch }}.zip
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abbenay-vsix-${{ matrix.platform }}-${{ matrix.arch }}
           path: packages/vscode/*.vsix
@@ -57,7 +57,7 @@ jobs:
   package-python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Bootstrap
         run: ./bootstrap.sh
@@ -66,7 +66,7 @@ jobs:
         run: npm run ci:package-python
 
       - name: Upload Python artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abbenay-client-python
           path: packages/python/dist/
@@ -75,10 +75,10 @@ jobs:
     needs: [build, package-python]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: release-assets/
 

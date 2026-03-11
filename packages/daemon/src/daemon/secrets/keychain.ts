@@ -4,7 +4,6 @@
 
 import type { SecretStore } from '../../core/secrets.js';
 import * as path from 'node:path';
-import { createRequire } from 'node:module';
 
 const SERVICE_NAME = 'abbenay';
 
@@ -14,6 +13,7 @@ const SERVICE_NAME = 'abbenay';
 function isSea(): boolean {
   try {
     // node:sea module is only available inside a SEA binary
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const sea = require('node:sea');
     return typeof sea.isSea === 'function' ? sea.isSea() : false;
   } catch {
