@@ -182,3 +182,28 @@ permanent, linkable URLs for each version's binaries, VSIXes, and packages.
 **Rationale:** Keeps the "why" behind architectural choices visible and
 reviewable alongside the code. Lightweight alternative to full ADRs --
 each entry is a paragraph, not a document.
+
+---
+
+## DR-016: Escalate auto-fixable lint rules to error
+
+**Date:** 2026-03-11  
+**Decision:** Promote `eqeqeq` and `curly` from `warn` to `error` in all ESLint
+configs. Configure `eqeqeq` with `{ null: 'ignore' }` to allow the idiomatic
+TypeScript `!= null` pattern (checks both `null` and `undefined`).  
+**Rationale:** Warnings that have auto-fix are easy to resolve and should never
+accumulate. Making them errors means the prek pre-commit hook catches them
+before code is committed. The `null: 'ignore'` option avoids forcing verbose
+`!== null && !== undefined` checks when `!= null` is the idiomatic pattern.
+
+---
+
+## DR-017: Defensive checks over one-time fixes
+
+**Date:** 2026-03-11  
+**Decision:** When a quality problem is found, the preferred response is to add
+a lint rule, test, or hook that prevents recurrence -- not just fix the
+immediate instance.  
+**Rationale:** One-time fixes decay as new code is written. Automated checks
+are self-sustaining. This principle is codified in the pr-readiness skill and
+applies to all contributors, human and AI.

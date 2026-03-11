@@ -30,34 +30,34 @@ const OUR_VENDOR_PREFIX = 'abbenay-';
  * and concatenate all text values.
  */
 function extractTextFromPromptTsx(obj: any): string {
-    if (obj == null) return '';
-    if (typeof obj === 'string') return obj;
+    if (obj == null) {return '';}
+    if (typeof obj === 'string') {return obj;}
 
     const parts: string[] = [];
 
     // Direct text property on the node
     if (typeof obj.text === 'string') {
-        if (obj.lineBreakBefore) parts.push('\n');
+        if (obj.lineBreakBefore) {parts.push('\n');}
         parts.push(obj.text);
     }
 
     // Recurse into .node (top-level wrapper)
     if (obj.node) {
         const inner = extractTextFromPromptTsx(obj.node);
-        if (inner) parts.push(inner);
+        if (inner) {parts.push(inner);}
     }
 
     // Recurse into .children array
     if (Array.isArray(obj.children)) {
         for (const child of obj.children) {
             const inner = extractTextFromPromptTsx(child);
-            if (inner) parts.push(inner);
+            if (inner) {parts.push(inner);}
         }
     }
 
     // If we found nothing, try .value as a last resort
     if (parts.length === 0 && obj.value != null) {
-        if (typeof obj.value === 'string') return obj.value;
+        if (typeof obj.value === 'string') {return obj.value;}
         return extractTextFromPromptTsx(obj.value);
     }
 

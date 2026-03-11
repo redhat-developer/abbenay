@@ -29,7 +29,7 @@ you what is broken.
    npm ci
    ```
 
-3. **Lint** -- MUST exit 0 with zero errors:
+3. **Lint** -- MUST exit 0 with zero errors and no new warnings:
 
    ```bash
    npm run lint
@@ -70,6 +70,21 @@ you what is broken.
 - If a test is flaky, you MUST diagnose and fix the root cause before pushing.
   Do not dismiss flaky tests as acceptable. A test that sometimes fails is
   broken and MUST be repaired.
+- **Lint warnings MUST NOT increase.** If the lint baseline has N warnings,
+  your change must leave it at N or fewer. Auto-fixable warnings (e.g.,
+  `eqeqeq`, `curly`) MUST be resolved by running `eslint --fix` before
+  committing. If you encounter warnings unrelated to your change, fix them
+  anyway -- the goal is zero warnings, not zero responsibility.
+- **Prefer defensive checks over one-time fixes.** When you find a quality
+  problem, the preferred response is to add a lint rule, test, or hook that
+  prevents recurrence -- not just to fix the immediate instance. One-time
+  fixes decay; automated checks are self-sustaining. If you can turn a
+  warning into an error, add a pre-commit hook, or write a regression test,
+  do that instead of (or in addition to) the manual fix.
+- **Do not suppress or exclude lint rules** to make warnings disappear.
+  Inline `eslint-disable` comments are acceptable only when the code is
+  genuinely correct and the rule cannot be configured to allow it. Blanket
+  disables at the file or directory level require justification in the PR.
 - prek pre-commit hooks enforce lint and conventional commits at commit time,
   but hooks can be bypassed with `--no-verify`. These rules remain the
   authoritative standard regardless of hook status.
