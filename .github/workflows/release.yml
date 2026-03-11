@@ -104,7 +104,7 @@ jobs:
         with:
           path: release-assets/
 
-      - name: Create GitHub Release
+      - name: Upload release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -114,12 +114,22 @@ jobs:
             prerelease_flag="--prerelease"
           fi
 
-          gh release create "$tag" \
-            --title "$tag" \
-            --generate-notes \
-            $prerelease_flag \
-            release-assets/abbenay-archive-*/*.tar.gz \
-            release-assets/abbenay-vsix-*/*.vsix \
-            release-assets/abbenay-core/*.tgz \
-            release-assets/abbenay-client-python/*.whl \
+          assets=(
+            release-assets/abbenay-archive-*/*.tar.gz
+            release-assets/abbenay-vsix-*/*.vsix
+            release-assets/abbenay-core/*.tgz
+            release-assets/abbenay-client-python/*.whl
             release-assets/abbenay-client-python/*.tar.gz
+          )
+
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "Release $tag exists — uploading artifacts"
+            gh release upload "$tag" --clobber "${assets[@]}"
+          else
+            echo "Creating release $tag"
+            gh release create "$tag" \
+              --title "$tag" \
+              --generate-notes \
+              $prerelease_flag \
+              "${assets[@]}"
+          fi
