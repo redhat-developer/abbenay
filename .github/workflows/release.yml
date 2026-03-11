@@ -109,6 +109,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
           prerelease_flag=""
           if echo "$tag" | grep -qE '(alpha|beta|rc)'; then
             prerelease_flag="--prerelease"
@@ -122,14 +123,42 @@ jobs:
             release-assets/abbenay-client-python/*.tar.gz
           )
 
+          # Strip pre-release suffix for the VSIX version (vsce requires pure semver)
+          vsix_ver="${ver%%-*}"
+
+          body="$(cat <<BODY
+          ## Artifacts
+
+          | File | What it is | Install |
+          |------|-----------|---------|
+          | \`abbenay-*-linux-x64.tar.gz\` | Daemon + sidecars (Linux x64) | Extract and run \`./abbenay-daemon\` |
+          | \`abbenay-*-linux-arm64.tar.gz\` | Daemon + sidecars (Linux arm64) | Extract and run \`./abbenay-daemon\` |
+          | \`abbenay-*-darwin-arm64.tar.gz\` | Daemon + sidecars (macOS Apple Silicon) | Extract and run \`./abbenay-daemon\` |
+          | \`abbenay-provider-linux-x64-${vsix_ver}.vsix\` | VS Code extension (Linux x64) | \`code --install-extension <file>\` |
+          | \`abbenay-provider-linux-arm64-${vsix_ver}.vsix\` | VS Code extension (Linux arm64) | \`code --install-extension <file>\` |
+          | \`abbenay-provider-darwin-arm64-${vsix_ver}.vsix\` | VS Code extension (macOS arm64) | \`code --install-extension <file>\` |
+          | \`abbenay-core-${ver}.tgz\` | \`@abbenay/core\` npm package | \`npm install <file>\` |
+          | \`abbenay_client-*.whl\` | Python gRPC client | \`pip install <file>\` |
+          | \`abbenay_client-*.tar.gz\` | Python client sdist | \`pip install <file>\` |
+
+          ### Which do I need?
+
+          - **VS Code user**: Download the \`.vsix\` for your platform. It includes the daemon.
+          - **CLI / standalone daemon**: Download the \`.tar.gz\` archive for your platform.
+          - **Node.js library consumer**: Download \`abbenay-core-*.tgz\`.
+          - **Python gRPC client**: Download the \`.whl\` file.
+          BODY
+          )"
+
           if gh release view "$tag" > /dev/null 2>&1; then
             echo "Release $tag exists — uploading artifacts"
+            gh release edit "$tag" --notes "${body}"
             gh release upload "$tag" --clobber "${assets[@]}"
           else
             echo "Creating release $tag"
             gh release create "$tag" \
               --title "$tag" \
-              --generate-notes \
+              --notes "${body}" \
               $prerelease_flag \
               "${assets[@]}"
           fi

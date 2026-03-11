@@ -206,12 +206,37 @@ Every CI run produces downloadable artifacts:
 
 A separate workflow (`.github/workflows/release.yml`) triggers when you push a `v*` tag. It builds all platforms and creates a GitHub Release with the artifacts permanently attached.
 
+You can create a release from the GitHub UI (recommended) or from the CLI:
+
 ```bash
-git tag v0.0.1-alpha
+git tag v2026.3.1-alpha
 git push --tags
 ```
 
-Tags containing `alpha`, `beta`, or `rc` are automatically marked as prereleases. Release notes are auto-generated from commit history.
+Tags containing `alpha`, `beta`, or `rc` are automatically marked as prereleases. The workflow uses CalVer (`vYYYY.M.MICRO[-prerelease]`); do not use leading zeros in the month (semver prohibits them).
+
+### Release artifacts
+
+Each release produces these artifacts:
+
+| Artifact | Description | Who needs it |
+|----------|-------------|-------------|
+| `abbenay-VERSION-linux-x64.tar.gz` | Standalone daemon binary + sidecars (proto, static, keytar) for Linux x64 | Standalone / CLI users on Linux x64 |
+| `abbenay-VERSION-linux-arm64.tar.gz` | Same, for Linux arm64 | Standalone / CLI users on Linux arm64 |
+| `abbenay-VERSION-darwin-arm64.tar.gz` | Same, for macOS Apple Silicon | Standalone / CLI users on macOS |
+| `abbenay-provider-linux-x64-VERSION.vsix` | VS Code extension with embedded daemon (Linux x64) | VS Code users on Linux x64 |
+| `abbenay-provider-linux-arm64-VERSION.vsix` | Same, for Linux arm64 | VS Code users on Linux arm64 |
+| `abbenay-provider-darwin-arm64-VERSION.vsix` | Same, for macOS arm64 | VS Code users on macOS |
+| `abbenay-core-VERSION.tgz` | `@abbenay/core` npm package (platform-independent) | Node.js consumers building on the core library |
+| `abbenay_client-VERSION-py3-none-any.whl` | Python gRPC client wheel (platform-independent) | Python consumers of the gRPC API |
+| `abbenay_client-VERSION.tar.gz` | Python client sdist | Alternative to the wheel |
+
+**Quick guide:**
+
+- **VS Code user** -- download the `.vsix` matching your OS/arch, then `code --install-extension <file>`. The daemon is bundled inside.
+- **CLI / standalone daemon** -- download the `.tar.gz` for your platform, extract, and run `./abbenay-daemon`.
+- **Node.js library** -- `npm install abbenay-core-*.tgz`.
+- **Python gRPC client** -- `pip install abbenay_client-*.whl`.
 
 ### Reproducing CI locally
 
