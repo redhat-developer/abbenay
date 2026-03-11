@@ -122,8 +122,9 @@ program
         // Keep alive until Ctrl+C (shutdown handler is already registered by startDaemon)
         await new Promise(() => {});
       }
-    } catch (error: any) {
-      console.error('Failed to start web server:', error.message || error);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Failed to start web server:', msg);
       process.exit(1);
     }
   });

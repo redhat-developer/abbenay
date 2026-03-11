@@ -78,9 +78,10 @@ export class McpClientPool {
       await this.refreshTools(serverId, client);
       console.log(`[McpClientPool] Connected to ${serverId} (${status.toolCount} tools)`);
 
-    } catch (error: any) {
-      status.error = error.message;
-      console.error(`[McpClientPool] Failed to connect to ${serverId}: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      status.error = msg;
+      console.error(`[McpClientPool] Failed to connect to ${serverId}: ${msg}`);
       throw error;
     }
   }
@@ -93,8 +94,9 @@ export class McpClientPool {
     if (client) {
       try {
         await client.close();
-      } catch (error: any) {
-        console.warn(`[McpClientPool] Error closing ${serverId}: ${error.message}`);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`[McpClientPool] Error closing ${serverId}: ${msg}`);
       }
       this.clients.delete(serverId);
     }
@@ -152,7 +154,7 @@ export class McpClientPool {
    * @param toolName - Original tool name (not namespaced)
    * @param args - Tool arguments
    */
-  async callTool(source: string, toolName: string, args: Record<string, any>): Promise<any> {
+  async callTool(source: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
     // Extract server ID from source: "mcp:github" → "github"
     const serverId = source.startsWith('mcp:') ? source.slice(4) : source;
     const client = this.clients.get(serverId);
@@ -167,9 +169,9 @@ export class McpClientPool {
       throw new Error(`Tool "${toolName}" not found on MCP server "${serverId}"`);
     }
 
-    // AI SDK tools have an execute function
-    if (typeof (tool as any).execute === 'function') {
-      return (tool as any).execute(args);
+    const toolWithExecute = tool as { execute?: (args: Record<string, unknown>) => Promise<unknown> };
+    if (typeof toolWithExecute.execute === 'function') {
+      return toolWithExecute.execute(args);
     }
 
     throw new Error(`Tool "${toolName}" on MCP server "${serverId}" has no execute function`);
@@ -230,7 +232,7 @@ export class McpClientPool {
   /**
    * Build the appropriate transport for a config entry.
    */
-  private buildTransport(config: McpServerConfig): any {
+  private buildTransport(config: McpServerConfig): StdioMCPTransport | { type: 'sse'; url: string; headers?: Record<string, string> } {
     if (config.transport === 'stdio') {
       if (!config.command) {
         throw new Error('stdio transport requires a command');
@@ -258,7 +260,7 @@ export class McpClientPool {
    */
   private async refreshTools(serverId: string, client: MCPClient): Promise<void> {
     const toolList = await client.listTools();
-    const tools = (toolList.tools || []).map((t: any) => ({
+    const tools = (toolList.tools || []).map((t: { name: string; description?: string; inputSchema?: unknown }) => ({
       name: t.name,
       description: t.description || '',
       inputSchema: JSON.stringify(t.inputSchema || {}),

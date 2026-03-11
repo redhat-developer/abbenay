@@ -13,20 +13,20 @@ import type { EngineInfo, DiscoveredModel } from './core/engines.js';
 
 // ── Mock: core/config ────────────────────────────────────────────────────────
 
-const mockLoadConfig = vi.fn<any>().mockReturnValue({ providers: {} });
-const mockLoadWorkspaceConfig = vi.fn<any>().mockReturnValue(null);
-const mockMergeConfigs = vi.fn<any>();
-const mockMergeMultipleWorkspaceConfigs = vi.fn<any>().mockReturnValue({ providers: {} });
-const mockResolveEngineModelId = vi.fn<any>().mockImplementation(
+const mockLoadConfig = vi.fn().mockReturnValue({ providers: {} });
+const mockLoadWorkspaceConfig = vi.fn().mockReturnValue(null);
+const mockMergeConfigs = vi.fn();
+const mockMergeMultipleWorkspaceConfigs = vi.fn().mockReturnValue({ providers: {} });
+const mockResolveEngineModelId = vi.fn().mockImplementation(
   (name: string, cfg: ModelConfig) => cfg.model_id || name
 );
 
 vi.mock('./core/config.js', () => ({
-  loadConfig: (...a: any[]) => mockLoadConfig(...a),
-  loadWorkspaceConfig: (...a: any[]) => mockLoadWorkspaceConfig(...a),
-  mergeConfigs: (...a: any[]) => mockMergeConfigs(...a),
-  mergeMultipleWorkspaceConfigs: (...a: any[]) => mockMergeMultipleWorkspaceConfigs(...a),
-  resolveEngineModelId: (...a: any[]) => mockResolveEngineModelId(...a),
+  loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
+  loadWorkspaceConfig: (...a: unknown[]) => mockLoadWorkspaceConfig(...a),
+  mergeConfigs: (...a: unknown[]) => mockMergeConfigs(...a),
+  mergeMultipleWorkspaceConfigs: (...a: unknown[]) => mockMergeMultipleWorkspaceConfigs(...a),
+  resolveEngineModelId: (...a: unknown[]) => mockResolveEngineModelId(...a),
 }));
 
 // ── Mock: core/engines ───────────────────────────────────────────────────────
@@ -47,20 +47,20 @@ const OPENROUTER_ENGINE: EngineInfo = {
   createModel: () => { throw new Error('mock'); },
 };
 
-const mockGetEngines = vi.fn<any>().mockReturnValue([MOCK_ENGINE, OPENROUTER_ENGINE]);
-const mockGetEngine = vi.fn<any>().mockImplementation((id: string) => {
+const mockGetEngines = vi.fn().mockReturnValue([MOCK_ENGINE, OPENROUTER_ENGINE]);
+const mockGetEngine = vi.fn().mockImplementation((id: string) => {
   if (id === 'mock') return MOCK_ENGINE;
   if (id === 'openrouter') return OPENROUTER_ENGINE;
   return undefined;
 });
-const mockFetchModels = vi.fn<any>().mockResolvedValue([]);
-const mockStreamChat = vi.fn<any>();
+const mockFetchModels = vi.fn().mockResolvedValue([]);
+const mockStreamChat = vi.fn();
 
 vi.mock('./core/engines.js', () => ({
-  getEngines: (...a: any[]) => mockGetEngines(...a),
-  getEngine: (...a: any[]) => mockGetEngine(...a),
-  fetchModels: (...a: any[]) => mockFetchModels(...a),
-  streamChat: (...a: any[]) => mockStreamChat(...a),
+  getEngines: (...a: unknown[]) => mockGetEngines(...a),
+  getEngine: (...a: unknown[]) => mockGetEngine(...a),
+  fetchModels: (...a: unknown[]) => mockFetchModels(...a),
+  streamChat: (...a: unknown[]) => mockStreamChat(...a),
 }));
 
 // ── Mock: daemon/secrets/keychain ────────────────────────────────────────────
@@ -86,7 +86,7 @@ vi.mock('./daemon/secrets/keychain.js', () => ({
 
 // ── Import DaemonState (after mocks) ─────────────────────────────────────────
 
-import { DaemonState } from './daemon/state.js';
+import { DaemonState, ClientType } from './daemon/state.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -512,7 +512,7 @@ describe('DaemonState.runHealthChecks', () => {
 
 describe('DaemonState client management', () => {
   it('should register and unregister clients', () => {
-    const clientId = state.registerClient('VSCODE' as any);
+    const clientId = state.registerClient(ClientType.VSCODE);
 
     expect(state.clientCount).toBe(1);
     expect(state.getClients()).toHaveLength(1);
@@ -522,7 +522,7 @@ describe('DaemonState client management', () => {
   });
 
   it('should track workspace paths', () => {
-    const _clientId = state.registerClient('VSCODE' as any, false, '/tmp/workspace');
+    const _clientId = state.registerClient(ClientType.VSCODE, false, '/tmp/workspace');
     const clients = state.getClients();
 
     expect(clients[0].workspacePath).toBe('/tmp/workspace');

@@ -13,7 +13,7 @@
  */
 
 import { streamText, jsonSchema } from 'ai';
-import type { LanguageModel, ToolSet } from 'ai';
+import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
 
 import { mockStreamChat, getMockModels } from './mock.js';
 
@@ -54,7 +54,7 @@ export interface EngineInfo {
  * This allows provider packages to be truly optional — only the engines
  * a consumer actually uses need to be installed.
  */
-async function loadProviderFactory(packageName: string, exportName: string): Promise<any> {
+async function loadProviderFactory(packageName: string, exportName: string): Promise<unknown> {
   try {
     const mod = await import(packageName);
     const factory = mod[exportName];
@@ -62,8 +62,9 @@ async function loadProviderFactory(packageName: string, exportName: string): Pro
       throw new Error(`Package '${packageName}' does not export '${exportName}'`);
     }
     return factory;
-  } catch (err: any) {
-    if (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND') {
+  } catch (err: unknown) {
+    const code = err && typeof err === 'object' && 'code' in err ? (err as { code?: string }).code : undefined;
+    if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
       throw new Error(
         `AI SDK provider package '${packageName}' is not installed. ` +
         `Install it with: npm install ${packageName}`
@@ -73,6 +74,8 @@ async function loadProviderFactory(packageName: string, exportName: string): Pro
   }
 }
 
+type DedicatedProviderFactory = (config: Record<string, unknown>) => (modelId: string) => Promise<LanguageModel>;
+
 /** Create model via a dedicated @ai-sdk/* provider package (dynamically loaded) */
 async function dedicatedProvider(
   packageName: string,
@@ -80,13 +83,15 @@ async function dedicatedProvider(
   config: ProviderFactoryConfig,
   modelId: string,
 ): Promise<LanguageModel> {
-  const factory = await loadProviderFactory(packageName, exportName);
+  const factory = await loadProviderFactory(packageName, exportName) as DedicatedProviderFactory;
   const provider = factory({
     ...(config.apiKey ? { apiKey: config.apiKey } : {}),
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
   });
   return provider(modelId);
 }
+
+type OpenAIChatProviderFactory = (config: Record<string, unknown>) => { chatModel: (modelId: string) => Promise<LanguageModel> };
 
 /** Create model via @ai-sdk/openai-compatible (dynamically loaded) */
 async function openaiCompatibleProvider(
@@ -95,7 +100,7 @@ async function openaiCompatibleProvider(
   config: ProviderFactoryConfig,
   modelId: string,
 ): Promise<LanguageModel> {
-  const factory = await loadProviderFactory('@ai-sdk/openai-compatible', 'createOpenAICompatible');
+  const factory = await loadProviderFactory('@ai-sdk/openai-compatible', 'createOpenAICompatible') as OpenAIChatProviderFactory;
   const provider = factory({
     name,
     baseURL: config.baseURL || defaultBaseURL,
@@ -342,8 +347,8 @@ export interface ToolDefinition {
  */
 export type ToolExecutor = (
   toolName: string,
-  args: Record<string, any>,
-) => Promise<any>;
+  args: Record<string, unknown>,
+) => Promise<unknown>;
 
 /**
  * Callback for tool execution validation (approval tiers).
@@ -352,7 +357,7 @@ export type ToolExecutor = (
  */
 export type ToolValidationCallback = (
   toolName: string,
-  args: any,
+  args: unknown,
 ) => Promise<'allow' | 'deny' | 'abort'>;
 
 // ── Chat chunk types (yielded by streamChat) ────────────────────────────
@@ -365,8 +370,8 @@ export type ToolValidationCallback = (
  */
 export type ChatChunk =
   | { type: 'text'; text: string }
-  | { type: 'tool'; name: string; state: string; status?: string; call?: { params: any; result: any }; done: boolean }
-  | { type: 'approval_request'; requestId: string; toolName: string; args: any }
+  | { type: 'tool'; name: string; state: string; status?: string; call?: { params: unknown; result: unknown }; done: boolean }
+  | { type: 'approval_request'; requestId: string; toolName: string; args: unknown }
   | { type: 'approval_result'; requestId: string; decision: 'allow' | 'deny' | 'abort' }
   | { type: 'error'; error: string }
   | { type: 'done'; finishReason: string };
@@ -421,8 +426,9 @@ export async function fetchModels(
 
   try {
     return await fetchModelsFromApi(engineId, engine, apiKey, baseUrl);
-  } catch (error: any) {
-    console.error(`[Adapter] Failed to fetch models for engine ${engineId}:`, error.message || error);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[Adapter] Failed to fetch models for engine ${engineId}:`, msg);
     return [];
   }
 }
@@ -476,18 +482,22 @@ async function fetchModelsFromApi(
     throw new Error(`HTTP ${resp.status}: ${await resp.text().catch(() => 'unknown')}`);
   }
 
-  const data = await resp.json() as any;
-  const models = data.data || data.models || [];
+  const data = await resp.json() as unknown;
+  const obj = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+  const models = Array.isArray(obj.data) ? obj.data : Array.isArray(obj.models) ? obj.models : [];
 
-  return models.map((m: any) => ({
-    id: m.id || m.name,
+  return models.map((m: unknown) => {
+    const item = m && typeof m === 'object' ? m as Record<string, unknown> : {};
+    return {
+      id: String(item.id ?? item.name ?? ''),
     engine: engineId,
-    contextWindow: m.context_length || m.context_window || 0,
+    contextWindow: Number(item.context_length ?? item.context_window ?? 0),
     capabilities: {
       supportsTools: engine.supportsTools,
       supportsVision: false,
     },
-  }));
+  };
+  });
 }
 
 /** Fetch models from Anthropic's /v1/models API */
@@ -510,18 +520,22 @@ async function fetchAnthropicModels(
     throw new Error(`Anthropic HTTP ${resp.status}`);
   }
 
-  const data = await resp.json() as any;
-  const models = data.data || [];
+  const data = await resp.json() as unknown;
+  const obj = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+  const models = Array.isArray(obj.data) ? obj.data : [];
 
-  return models.map((m: any) => ({
-    id: m.id,
+  return models.map((m: unknown) => {
+    const item = m && typeof m === 'object' ? m as Record<string, unknown> : {};
+    return {
+      id: String(item.id ?? ''),
     engine: engineId,
-    contextWindow: m.max_tokens || 0,
+    contextWindow: Number(item.max_tokens ?? 0),
     capabilities: {
       supportsTools: true,
       supportsVision: true,
     },
-  }));
+  };
+  });
 }
 
 /** Fetch models from Google's Gemini API */
@@ -538,20 +552,30 @@ async function fetchGeminiModels(
     throw new Error(`Gemini HTTP ${resp.status}`);
   }
 
-  const data = await resp.json() as any;
-  const models = data.models || [];
+  const data = await resp.json() as unknown;
+  const obj = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+  const models = Array.isArray(obj.models) ? obj.models : [];
 
   return models
-    .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
-    .map((m: any) => ({
-      id: m.name?.replace('models/', '') || m.name,
+    .filter((m: unknown) => {
+      const item = m && typeof m === 'object' ? m as Record<string, unknown> : {};
+      const methods = item.supportedGenerationMethods;
+      return Array.isArray(methods) && methods.includes('generateContent');
+    })
+    .map((m: unknown) => {
+      const item = m && typeof m === 'object' ? m as Record<string, unknown> : {};
+      const name = item.name;
+      const id = typeof name === 'string' ? name.replace('models/', '') : String(name ?? '');
+      return {
+        id,
       engine: engineId,
-      contextWindow: m.inputTokenLimit || 0,
+      contextWindow: Number(item.inputTokenLimit ?? 0),
       capabilities: {
         supportsTools: true,
         supportsVision: true,
       },
-    }));
+    };
+    });
 }
 
 // ── Stream chat (actual layer) ─────────────────────────────────────────
@@ -574,10 +598,18 @@ async function fetchGeminiModels(
  * @param toolExecutor - Callback to execute tool calls (required if tools provided)
  * @param toolValidator - Optional callback for approval tiers
  */
+export interface ChatMessage {
+  role: string;
+  content: string;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: unknown[];
+}
+
 export async function* streamChat(
   engineId: string,
   engineModelId: string,
-  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: any[] }>,
+  messages: ChatMessage[],
   apiKey?: string,
   baseUrl?: string,
   params?: ChatParams,
@@ -617,15 +649,14 @@ export async function* streamChat(
     let aiTools: ToolSet | undefined;
 
     if (hasTools) {
-      const toolRecord: Record<string, any> = {};
+      const toolRecord: Record<string, { description: string; inputSchema: ReturnType<typeof jsonSchema>; execute: (args: Record<string, unknown>) => Promise<unknown> }> = {};
       for (const t of tools) {
-        let schema: any;
+        let schema: JSONSchema7;
         try {
-          schema = JSON.parse(t.inputSchema);
+          schema = JSON.parse(t.inputSchema) as JSONSchema7;
         } catch {
           schema = { type: 'object', properties: {} };
         }
-        // Ensure schema always has type: "object" — Anthropic requires it
         if (!schema.type) {
           schema.type = 'object';
         }
@@ -633,12 +664,10 @@ export async function* streamChat(
           schema.properties = {};
         }
 
-        // Construct tool object directly (bypasses tool() generic inference issues with jsonSchema)
         toolRecord[t.name] = {
           description: t.description,
-          parameters: jsonSchema<any>(schema),
-          execute: async (args: any) => {
-            // Validation callback (approval tiers)
+          inputSchema: jsonSchema(schema),
+          execute: async (args: Record<string, unknown>) => {
             if (toolValidator) {
               const decision = await toolValidator(t.name, args);
               if (decision === 'deny') return { error: 'Tool execution denied by policy' };
@@ -648,11 +677,10 @@ export async function* streamChat(
           },
         };
       }
-      aiTools = toolRecord;
+      aiTools = toolRecord as ToolSet;
     }
 
-    // Build streamText options
-    const streamOptions: any = {
+    const streamOptions = {
       model,
       messages: aiMessages,
       ...(aiTools ? { tools: aiTools, maxSteps } : {}),
@@ -714,8 +742,8 @@ export async function* streamChat(
     if (gotContent) {
       yield { type: 'done', finishReason: 'stop' };
     }
-  } catch (error: any) {
-    const errorMessage = error.message || String(error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[Adapter] Chat error for ${engineId}/${engineModelId}:`, errorMessage);
     yield { type: 'error', error: `${engineId}/${engineModelId}: ${errorMessage}` };
     yield { type: 'done', finishReason: 'error' };
@@ -727,9 +755,7 @@ export async function* streamChat(
 /**
  * Convert our internal message format to Vercel AI SDK ModelMessage format.
  */
-function convertMessages(
-  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: any[] }>,
-): any[] {
+function convertMessages(messages: ChatMessage[]): ModelMessage[] {
   return messages.map(m => {
     switch (m.role) {
       case 'system':
@@ -739,18 +765,19 @@ function convertMessages(
         return { role: 'user' as const, content: m.content };
 
       case 'assistant':
-        // Assistant messages may have tool calls
         if (m.tool_calls && m.tool_calls.length > 0) {
-          const parts: any[] = [];
+          const parts: AssistantModelMessage['content'] = [];
           if (m.content) {
             parts.push({ type: 'text', text: m.content });
           }
           for (const tc of m.tool_calls) {
+            const item = tc && typeof tc === 'object' ? tc as Record<string, unknown> : {};
+            const args = item.arguments;
             parts.push({
               type: 'tool-call',
-              toolCallId: tc.id,
-              toolName: tc.name,
-              input: typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : (tc.arguments || {}),
+              toolCallId: String(item.id ?? ''),
+              toolName: String(item.name ?? ''),
+              input: typeof args === 'string' ? JSON.parse(args) as Record<string, unknown> : (args && typeof args === 'object' ? args as Record<string, unknown> : {}),
             });
           }
           return { role: 'assistant' as const, content: parts };

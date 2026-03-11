@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { mockStreamChat, getMockModels } from './mock.js';
+import { mockStreamChat, getMockModels, type MockChatChunk } from './mock.js';
 
 /**
  * Helper: collect all chunks from the mock provider
@@ -16,8 +16,8 @@ import { mockStreamChat, getMockModels } from './mock.js';
 async function collectChat(
   modelId: string,
   messages: Array<{ role: string; content: string }>,
-): Promise<{ text: string; chunks: any[]; finishReason?: string }> {
-  const chunks: any[] = [];
+): Promise<{ text: string; chunks: MockChatChunk[]; finishReason?: string }> {
+  const chunks: MockChatChunk[] = [];
   let text = '';
   let finishReason: string | undefined;
   

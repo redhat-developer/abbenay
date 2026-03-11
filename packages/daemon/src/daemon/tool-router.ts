@@ -13,7 +13,7 @@ import type { RegisteredTool } from '../core/tool-registry.js';
  */
 export type VSCodeToolInvoker = (
   toolName: string,
-  args: Record<string, any>,
+  args: Record<string, unknown>,
 ) => Promise<{ resultJson: string; isError: boolean }>;
 
 /**
@@ -22,8 +22,8 @@ export type VSCodeToolInvoker = (
 export type McpToolCaller = (
   source: string,
   toolName: string,
-  args: Record<string, any>,
-) => Promise<any>;
+  args: Record<string, unknown>,
+) => Promise<unknown>;
 
 export class ToolRouter {
   private vsCodeInvoker?: VSCodeToolInvoker;
@@ -49,8 +49,8 @@ export class ToolRouter {
    * This handles 'vscode' and 'mcp' source tools by routing to the
    * appropriate transport backend.
    */
-  buildFallbackExecutor(): (tool: RegisteredTool, args: Record<string, any>) => Promise<any> {
-    return async (tool: RegisteredTool, args: Record<string, any>): Promise<any> => {
+  buildFallbackExecutor(): (tool: RegisteredTool, args: Record<string, unknown>) => Promise<unknown> {
+    return async (tool: RegisteredTool, args: Record<string, unknown>): Promise<unknown> => {
       switch (tool.sourceType) {
         case 'vscode': {
           if (!this.vsCodeInvoker) {

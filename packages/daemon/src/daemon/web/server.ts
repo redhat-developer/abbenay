@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
-import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName, type ConfigFile } from '../../core/config.js';
+import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig } from '../../core/policies.js';
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
@@ -120,9 +120,10 @@ export function createWebApp(state: DaemonState): Express {
           baseUrl: p.baseUrl,
         })),
       });
-    } catch (err: any) {
-      console.error('[Web] /api/providers error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/providers error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -181,9 +182,10 @@ export function createWebApp(state: DaemonState): Express {
           },
         })),
       });
-    } catch (err: any) {
-      console.error('[Web] /api/discover-models error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/discover-models error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -211,9 +213,10 @@ export function createWebApp(state: DaemonState): Express {
           params: m.params,
         })),
       });
-    } catch (err: any) {
-      console.error('[Web] /api/models error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/models error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -237,9 +240,10 @@ export function createWebApp(state: DaemonState): Express {
       }
       
       res.json({ config, path: configPath });
-    } catch (err: any) {
-      console.error('[Web] /api/config GET error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/config GET error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -263,12 +267,14 @@ export function createWebApp(state: DaemonState): Express {
       
       res.json({ success: true, path: savedPath });
       state.notifyModelsChanged('config_changed');
-      state.refreshMcpConnections().catch((err: any) => {
-        console.error('[Web] MCP refresh after config change failed:', err.message);
+      state.refreshMcpConnections().catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[Web] MCP refresh after config change failed:', msg);
       });
-    } catch (err: any) {
-      console.error('[Web] /api/config POST error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/config POST error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -307,9 +313,10 @@ export function createWebApp(state: DaemonState): Express {
       }
       
       res.json({ workspaces });
-    } catch (err: any) {
-      console.error('[Web] /api/workspaces error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/workspaces error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -332,9 +339,10 @@ export function createWebApp(state: DaemonState): Express {
           workspacePath: c.workspacePath || '',
         })),
       });
-    } catch (err: any) {
-      console.error('[Web] /api/status error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/status error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -352,9 +360,10 @@ export function createWebApp(state: DaemonState): Express {
         })
       );
       res.json({ secrets });
-    } catch (err: any) {
-      console.error('[Web] /api/secrets error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/secrets error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -373,9 +382,10 @@ export function createWebApp(state: DaemonState): Express {
       await state.secretStore.set(key, value);
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
-    } catch (err: any) {
-      console.error('[Web] /api/secrets POST error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/secrets POST error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -393,9 +403,10 @@ export function createWebApp(state: DaemonState): Express {
       await state.secretStore.set(key, value);
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
-    } catch (err: any) {
-      console.error('[Web] /api/secrets POST error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/secrets POST error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -407,9 +418,10 @@ export function createWebApp(state: DaemonState): Express {
       await state.secretStore.delete(req.params.key);
       res.json({ success: true });
       state.notifyModelsChanged('secret_deleted');
-    } catch (err: any) {
-      console.error('[Web] /api/secrets DELETE error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/secrets DELETE error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -435,9 +447,10 @@ export function createWebApp(state: DaemonState): Express {
       }
       
       res.json({ exists });
-    } catch (err: any) {
-      console.error('[Web] /api/key-status error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/key-status error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -446,7 +459,7 @@ export function createWebApp(state: DaemonState): Express {
   const pendingApprovals = new Map<string, {
     resolve: (decision: 'allow' | 'deny' | 'abort') => void;
     toolName: string;
-    args: any;
+    args: Record<string, unknown>;
     chatId: string;
   }>();
 
@@ -522,7 +535,7 @@ export function createWebApp(state: DaemonState): Express {
     };
 
     // Convert web messages to the format state.chat() expects
-    const chatMessages = messages.map((m: any) => ({
+    const chatMessages = messages.map((m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }) => ({
       role: m.role || 'user',
       content: m.content || '',
       name: m.name || undefined,
@@ -531,7 +544,7 @@ export function createWebApp(state: DaemonState): Express {
     }));
 
     // Build request params (per-request overrides)
-    const requestParams: Record<string, any> = {};
+    const requestParams: Record<string, unknown> = {};
     if (temperature != null) requestParams.temperature = temperature;
     if (top_p != null) requestParams.top_p = top_p;
     if (top_k != null) requestParams.top_k = top_k;
@@ -540,19 +553,19 @@ export function createWebApp(state: DaemonState): Express {
     const hasParams = Object.keys(requestParams).length > 0;
 
     // Build tool options
-    const toolDefs = Array.isArray(tools) ? tools.map((t: any) => ({
+    const toolDefs = Array.isArray(tools) ? tools.map((t: { name?: string; description?: string; input_schema?: string | Record<string, unknown> }) => ({
       name: t.name || '',
       description: t.description || '',
       inputSchema: typeof t.input_schema === 'string' ? t.input_schema : JSON.stringify(t.input_schema || {}),
-    })).filter((t: any) => t.name) : undefined;
+    })).filter((t) => t.name) : undefined;
 
     const toolOptions: ChatToolOptions = {
       toolMode: tool_mode || 'auto',
       tools: toolDefs && toolDefs.length > 0 ? toolDefs : undefined,
-      onToolApprovalNeeded: async (requestId: string, toolName: string, args: any): Promise<'allow' | 'deny' | 'abort'> => {
+      onToolApprovalNeeded: async (requestId: string, toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
         safeWrite(`data: ${JSON.stringify({ type: 'approval_request', chatId, requestId, toolName, args })}\n\n`);
         return new Promise((resolve) => {
-          pendingApprovals.set(requestId, { resolve, toolName, args, chatId });
+          pendingApprovals.set(requestId, { resolve, toolName, args: args as Record<string, unknown>, chatId });
         });
       },
     };
@@ -585,7 +598,7 @@ export function createWebApp(state: DaemonState): Express {
           if (chunk.type === 'text' && chunk.text) {
             safeWrite(`data: ${JSON.stringify({ type: 'text', content: chunk.text })}\n\n`);
           } else if (chunk.type === 'tool') {
-            const toolData: any = { type: 'tool', name: chunk.name, state: chunk.state, done: chunk.done };
+            const toolData: Record<string, unknown> = { type: 'tool', name: chunk.name, state: chunk.state, done: chunk.done };
             if (chunk.call) {
               toolData.call = { params: chunk.call.params, result: chunk.call.result };
             }
@@ -600,9 +613,10 @@ export function createWebApp(state: DaemonState): Express {
             safeWrite(`data: ${JSON.stringify({ type: 'done', finish_reason: chunk.finishReason || 'stop' })}\n\n`);
           }
         }
-      } catch (err: any) {
-        console.error('[Web] Chat stream error:', err.message);
-        safeWrite(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[Web] Chat stream error:', msg);
+        safeWrite(`data: ${JSON.stringify({ type: 'error', error: msg })}\n\n`);
       } finally {
         safeWrite('data: [DONE]\n\n');
         safeEnd();
@@ -631,10 +645,10 @@ export function createWebApp(state: DaemonState): Express {
       if (!config.providers) config.providers = {};
       
       // Initialize or update provider config
-      const existing: any = config.providers[providerId] || {};
+      const existing: Partial<ProviderConfig> & { display_name?: string } = config.providers[providerId] ? { ...config.providers[providerId] } : {};
       if (engine) existing.engine = engine;
-      delete existing.display_name; // clean up legacy field
-      config.providers[providerId] = existing;
+      delete existing.display_name;
+      config.providers[providerId] = existing as ProviderConfig;
       
       if (apiKey) {
         const keychainName = `${providerId.toUpperCase()}_API_KEY`;
@@ -658,9 +672,10 @@ export function createWebApp(state: DaemonState): Express {
       
       res.json({ success: true });
       state.notifyModelsChanged('provider_configured');
-    } catch (err: any) {
-      console.error('[Web] /api/provider configure error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/provider configure error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -694,9 +709,10 @@ export function createWebApp(state: DaemonState): Express {
       
       res.json({ success: true });
       state.notifyModelsChanged('provider_removed');
-    } catch (err: any) {
-      console.error('[Web] /api/provider delete error:', err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] /api/provider delete error:', msg);
+      res.status(500).json({ error: msg });
     }
   });
   
@@ -739,8 +755,9 @@ export function createWebApp(state: DaemonState): Express {
       }
       
       res.json({ mcp_servers: result });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -749,8 +766,9 @@ export function createWebApp(state: DaemonState): Express {
     try {
       await state.mcpClientPool.reconnect(req.params.id);
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -768,8 +786,9 @@ export function createWebApp(state: DaemonState): Express {
         })),
         total: tools.length,
       });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -780,8 +799,9 @@ export function createWebApp(state: DaemonState): Express {
     try {
       const policies = listAllPolicies();
       res.json({ policies });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -810,8 +830,9 @@ export function createWebApp(state: DaemonState): Express {
       custom[name] = config;
       saveCustomPolicies(custom);
       res.json({ success: true, name });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -831,8 +852,9 @@ export function createWebApp(state: DaemonState): Express {
       delete custom[name];
       saveCustomPolicies(custom);
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -852,8 +874,9 @@ export function createWebApp(state: DaemonState): Express {
       }
       await state.mcpServer.start(app);
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -862,8 +885,9 @@ export function createWebApp(state: DaemonState): Express {
     try {
       await state.mcpServer.stop();
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   });
 

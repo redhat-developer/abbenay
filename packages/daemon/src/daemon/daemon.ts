@@ -105,7 +105,7 @@ export async function startDaemon(opts?: { keepAlive?: boolean }): Promise<Daemo
   
   // Load proto and create server
   const proto = loadProto();
-  const abbenayProto = (proto.abbenay as any).v1;
+  const abbenayProto = (proto as unknown as { abbenay: { v1: { Abbenay: { service: grpc.ServiceDefinition } } } }).abbenay.v1;
   
   server = new grpc.Server();
   
@@ -134,8 +134,9 @@ export async function startDaemon(opts?: { keepAlive?: boolean }): Promise<Daemo
   console.log(`Version: ${state.version}`);
   
   // Initialize MCP connections from config (non-blocking)
-  state.initMcpConnections().catch((err: any) => {
-    console.error('[Daemon] MCP initialization error:', err.message);
+  state.initMcpConnections().catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[Daemon] MCP initialization error:', msg);
   });
   
   // Handle shutdown signals

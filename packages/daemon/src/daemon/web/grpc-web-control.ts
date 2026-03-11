@@ -42,7 +42,24 @@ function resolveProtoDir(): string {
 const PROTO_DIR = resolveProtoDir();
 const PROTO_PATH = path.join(PROTO_DIR, 'abbenay', 'v1', 'service.proto');
 
-function createClient(): any {
+interface AbbenayGrpcClient {
+  StartWebServer(request: { port: number }, callback: (err: Error | null, response: StartWebServerResponse) => void): void;
+  StopWebServer(request: object, callback: (err: Error | null, response: object) => void): void;
+  close(): void;
+}
+
+interface StartWebServerResponse {
+  started: boolean;
+  already_running: boolean;
+  port: number;
+  url: string;
+}
+
+interface GrpcProto {
+  abbenay: { v1: { Abbenay: new (address: string, creds: grpc.ChannelCredentials) => AbbenayGrpcClient } };
+}
+
+function createClient(): AbbenayGrpcClient {
   const socketPath = getDefaultSocketPath();
   const address = `unix://${socketPath}`;
   
@@ -55,16 +72,16 @@ function createClient(): any {
     includeDirs: [PROTO_DIR],
   });
   
-  const proto = grpc.loadPackageDefinition(packageDef);
-  return new (proto as any).abbenay.v1.Abbenay(
+  const proto = grpc.loadPackageDefinition(packageDef) as unknown as GrpcProto;
+  return new proto.abbenay.v1.Abbenay(
     address,
     grpc.credentials.createInsecure(),
   );
 }
 
-function callUnary(client: any, method: string, request: any): Promise<any> {
+function callUnary<T>(client: AbbenayGrpcClient, method: string, request: object): Promise<T> {
   return new Promise((resolve, reject) => {
-    client[method](request, (error: any, response: any) => {
+    (client as Record<string, (req: object, cb: (err: Error | null, res: T) => void) => void>)[method](request, (error: Error | null, response: T) => {
       if (error) reject(error);
       else resolve(response);
     });
@@ -82,7 +99,7 @@ export async function sendStartWebServer(port: number): Promise<{
 }> {
   const client = createClient();
   try {
-    const result = await callUnary(client, 'StartWebServer', { port });
+    const result = await callUnary<StartWebServerResponse>(client, 'StartWebServer', { port });
     return result;
   } finally {
     client.close();

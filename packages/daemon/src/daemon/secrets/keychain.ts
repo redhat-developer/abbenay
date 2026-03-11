@@ -52,15 +52,13 @@ export class KeychainSecretStore implements SecretStore {
       } else {
         // Normal mode: import from node_modules
         const mod = await import('keytar');
-        // Handle ESM/CJS interop — keytar puts functions on .default
-        this.keytar = (mod.default && typeof mod.default.getPassword === 'function')
-          ? mod.default as any
-          : mod;
+        const keytarApi = (mod as { default?: typeof import('keytar') }).default ?? mod;
+        this.keytar = typeof keytarApi.getPassword === 'function' ? keytarApi : mod;
       }
       return this.keytar;
-    } catch (error: any) {
-      this.loadError = error.message;
-      console.warn(`[Secrets] keytar not available: ${error.message}. Keychain storage disabled.`);
+    } catch (error: unknown) {
+      this.loadError = error instanceof Error ? error.message : String(error);
+      console.warn(`[Secrets] keytar not available: ${this.loadError}. Keychain storage disabled.`);
       return null;
     }
   }
@@ -74,7 +72,7 @@ export class KeychainSecretStore implements SecretStore {
     const keytarNodePath = path.join(exeDir, 'keytar.node');
     
     // Create a minimal module and load the native addon via process.dlopen
-    const keytarModule = { exports: {} } as any;
+    const keytarModule: { exports: Record<string, unknown> } = { exports: {} };
     process.dlopen(keytarModule, keytarNodePath);
     
     return keytarModule.exports as typeof import('keytar');
@@ -86,8 +84,9 @@ export class KeychainSecretStore implements SecretStore {
     
     try {
       return await kt.getPassword(SERVICE_NAME, key);
-    } catch (error: any) {
-      console.error(`[Secrets] Failed to get key '${key}':`, error.message);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[Secrets] Failed to get key '${key}':`, msg);
       return null;
     }
   }
@@ -100,8 +99,9 @@ export class KeychainSecretStore implements SecretStore {
     
     try {
       await kt.setPassword(SERVICE_NAME, key, value);
-    } catch (error: any) {
-      throw new Error(`Failed to store key '${key}': ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to store key '${key}': ${msg}`);
     }
   }
   
@@ -111,8 +111,9 @@ export class KeychainSecretStore implements SecretStore {
     
     try {
       return await kt.deletePassword(SERVICE_NAME, key);
-    } catch (error: any) {
-      console.error(`[Secrets] Failed to delete key '${key}':`, error.message);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[Secrets] Failed to delete key '${key}':`, msg);
       return false;
     }
   }

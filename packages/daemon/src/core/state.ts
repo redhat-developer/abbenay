@@ -25,6 +25,7 @@ import {
   getEngine,
   fetchModels,
   streamChat,
+  type ChatMessage,
   type EngineInfo,
   type ChatParams,
   type ChatChunk,
@@ -105,7 +106,7 @@ export interface ChatToolOptions {
    * blocks until the user responds; the CLI prompts via readline.
    * Return 'allow' to proceed, 'deny' to skip this call, 'abort' to stop all tools.
    */
-  onToolApprovalNeeded?: (requestId: string, toolName: string, args: any) => Promise<'allow' | 'deny' | 'abort'>;
+  onToolApprovalNeeded?: (requestId: string, toolName: string, args: unknown) => Promise<'allow' | 'deny' | 'abort'>;
 }
 
 // ── Builder options ─────────────────────────────────────────────────────
@@ -504,7 +505,7 @@ export class CoreState {
    */
   async* chat(
     compositeModelId: string,
-    messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: any[] }>,
+    messages: ChatMessage[],
     requestParams?: ChatParams,
     toolOptions?: ChatToolOptions,
     toolExecutor?: ToolExecutor,
@@ -622,7 +623,7 @@ export class CoreState {
       const _autoPatterns = toolPolicy?.auto_approve;
 
       if (requirePatterns && requirePatterns.length > 0) {
-        toolValidator = async (toolName: string, args: any): Promise<'allow' | 'deny' | 'abort'> => {
+        toolValidator = async (toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
           const resolved = registry.resolve(toolName);
           const nsName = resolved?.namespacedName || toolName;
 
@@ -813,7 +814,7 @@ function mergeParams(
 async function* streamChatWithJsonRetry(
   engine: string,
   engineModelId: string,
-  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: any[] }>,
+  messages: ChatMessage[],
   apiKey: string | undefined,
   baseUrl: string | undefined,
   params: ChatParams | undefined,
