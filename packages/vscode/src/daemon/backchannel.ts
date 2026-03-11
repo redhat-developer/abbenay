@@ -216,17 +216,21 @@ export class BackchannelHandler {
      */
     private async handleRequest(request: proto.VSCodeRequest): Promise<proto.VSCodeResponse> {
         const oneof = request.request;
-        const requestCase = oneof?.$case ?? '';
         
-        logger.info(`[Backchannel] Handling request: ${request.requestId} ($case=${requestCase})`);
+        if (!oneof) {
+            logger.warn(`[Backchannel] Request ${request.requestId} has no oneof payload`);
+            return { requestId: request.requestId, response: { $case: 'error' as const, error: { message: 'Missing request payload', code: 'INVALID_REQUEST' } } };
+        }
+
+        logger.info(`[Backchannel] Handling request: ${request.requestId} ($case=${oneof.$case})`);
         
-        switch (requestCase) {
+        switch (oneof.$case) {
             case 'invokeTool':
-                return this.handleInvokeTool(request.requestId, oneof.invokeTool!);
+                return this.handleInvokeTool(request.requestId, oneof.invokeTool);
             case 'listModels':
-                return this.handleListModels(request.requestId, oneof.listModels!);
+                return this.handleListModels(request.requestId, oneof.listModels);
             case 'sendChat':
-                return this.handleSendChat(request.requestId, oneof.sendChat!);
+                return this.handleSendChat(request.requestId, oneof.sendChat);
             case 'getWorkspace':
                 return this.handleGetWorkspace(request.requestId);
             case 'listTools':
@@ -239,12 +243,15 @@ export class BackchannelHandler {
                 }
                 return { requestId: request.requestId };
             }
-            default:
-                logger.warn(`[Backchannel] Unknown request type: $case=${requestCase}, keys=${JSON.stringify(Object.keys(request))}`);
+            default: {
+                const exhaustive: never = oneof;
+                const caseValue = (exhaustive as { $case: string }).$case;
+                logger.warn(`[Backchannel] Unknown request type: $case=${caseValue}, keys=${JSON.stringify(Object.keys(request))}`);
                 return {
                     requestId: request.requestId,
-                    response: { $case: 'error' as const, error: { message: `Unknown request type: ${requestCase}`, code: 'INVALID_REQUEST' } },
+                    response: { $case: 'error' as const, error: { message: `Unknown request type: ${caseValue}`, code: 'INVALID_REQUEST' } },
                 };
+            }
         }
     }
 
@@ -454,7 +461,7 @@ export class BackchannelHandler {
                 name: t.name,
                 description: t.description,
                 inputSchema: JSON.stringify(t.inputSchema || {}),
-                tags: t.tags || [],
+                tags: [...(t.tags || [])],
             }));
 
             logger.info(`[Backchannel] Found ${toolInfos.length} VS Code tools`);
@@ -506,7 +513,7 @@ export class BackchannelHandler {
                 name: t.name,
                 description: t.description,
                 inputSchema: JSON.stringify(t.inputSchema || {}),
-                tags: t.tags || [],
+                tags: [...(t.tags || [])],
             }));
 
             // Send as an unsolicited response on the backchannel
