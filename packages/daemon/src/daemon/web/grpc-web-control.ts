@@ -81,7 +81,7 @@ function createClient(): AbbenayGrpcClient {
 
 function callUnary<T>(client: AbbenayGrpcClient, method: string, request: object): Promise<T> {
   return new Promise((resolve, reject) => {
-    (client as Record<string, (req: object, cb: (err: Error | null, res: T) => void) => void>)[method](request, (error: Error | null, response: T) => {
+    (client as unknown as Record<string, (req: object, cb: (err: Error | null, res: T) => void) => void>)[method](request, (error: Error | null, response: T) => {
       if (error) reject(error);
       else resolve(response);
     });

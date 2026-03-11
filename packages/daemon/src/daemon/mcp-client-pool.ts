@@ -169,7 +169,7 @@ export class McpClientPool {
       throw new Error(`Tool "${toolName}" not found on MCP server "${serverId}"`);
     }
 
-    const toolWithExecute = tool as { execute?: (args: Record<string, unknown>) => Promise<unknown> };
+    const toolWithExecute = tool as unknown as { execute?: (args: Record<string, unknown>) => Promise<unknown> };
     if (typeof toolWithExecute.execute === 'function') {
       return toolWithExecute.execute(args);
     }
