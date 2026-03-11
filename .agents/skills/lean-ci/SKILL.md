@@ -37,7 +37,7 @@ locally-runnable scripts; CI just calls them.
 |------------|-------------|-------------------|
 | `npm run lint` | Lint all workspace packages | Quality gate |
 | `npm test` | Test all workspace packages | Quality gate |
-| `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + zip) | Build artifacts |
+| `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + tar.gz) | Build artifacts |
 | `npm run ci:package-python` | Build Python wheel via `uvx hatch build` | Python artifact |
 
 ## Workflow structure
@@ -47,7 +47,8 @@ The CI workflow (`.github/workflows/ci.yml`) has three jobs:
 - **lint-and-test**: runs on ubuntu-latest with xvfb (for VS Code extension
   tests), gates all other jobs
 - **build**: matrix across linux-x64, linux-arm64, macos-arm64; produces SEA
-  binaries, VSIX, and distribution zips
+  binaries, platform-specific VSIXes, and distribution tar.gz archives; runs
+  `@abbenay/core` smoke test on all runners
 - **package-python**: produces the Python client wheel
 
 ## Rules for modifications
@@ -90,9 +91,13 @@ Right (logic in npm script):
 
 ## Release workflow
 
-`.github/workflows/release.yml` triggers on `v*` tags. It builds all platforms,
-then creates a GitHub Release with the artifacts attached. Tags containing
-`alpha`, `beta`, or `rc` are automatically marked as prereleases.
+`.github/workflows/release.yml` triggers on `v*` tags. It injects the version
+from the tag into all `package.json` files via `scripts/set-version.js`, builds
+all platforms, then creates a GitHub Release with the artifacts attached. Tags
+containing `alpha`, `beta`, or `rc` are automatically marked as prereleases.
+
+Release assets: platform-specific `.vsix` files, `.tar.gz` daemon archives
+(with version in filename), `@abbenay/core` npm tarball, and Python wheel.
 
 To create a release:
 
