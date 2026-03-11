@@ -33,8 +33,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Inject version from tag
+        run: node scripts/set-version.js "${GITHUB_REF_NAME#v}"
+
       - name: Build
         run: npm run ci:build
+
+      - name: Smoke test @abbenay/core
+        run: node --input-type=module -e "import { CoreState } from './index.js'" 
+        working-directory: packages/daemon/dist/core
+
+      - name: Pack @abbenay/core
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        run: npm pack
+        working-directory: packages/daemon/dist/core
 
       - name: Upload SEA artifact
         uses: actions/upload-artifact@v7
@@ -42,17 +54,24 @@ jobs:
           name: abbenay-daemon-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/${{ matrix.platform }}-${{ matrix.arch }}/
 
-      - name: Upload distribution zip
+      - name: Upload distribution archive
         uses: actions/upload-artifact@v7
         with:
-          name: abbenay-zip-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/abbenay-${{ matrix.platform }}-${{ matrix.arch }}.zip
+          name: abbenay-archive-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*.tar.gz
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v7
         with:
           name: abbenay-vsix-${{ matrix.platform }}-${{ matrix.arch }}
           path: packages/vscode/*.vsix
+
+      - name: Upload core tarball
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: abbenay-core
+          path: packages/daemon/dist/core/*.tgz
 
   package-python:
     runs-on: ubuntu-latest
@@ -61,6 +80,9 @@ jobs:
 
       - name: Bootstrap
         run: ./bootstrap.sh
+
+      - name: Inject version from tag
+        run: node scripts/set-version.js "${GITHUB_REF_NAME#v}"
 
       - name: Build Python wheel
         run: npm run ci:package-python
@@ -96,7 +118,8 @@ jobs:
             --title "$tag" \
             --generate-notes \
             $prerelease_flag \
-            release-assets/abbenay-zip-*/*.zip \
+            release-assets/abbenay-archive-*/*.tar.gz \
             release-assets/abbenay-vsix-*/*.vsix \
+            release-assets/abbenay-core/*.tgz \
             release-assets/abbenay-client-python/*.whl \
             release-assets/abbenay-client-python/*.tar.gz

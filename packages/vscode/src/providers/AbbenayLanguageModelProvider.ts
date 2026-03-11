@@ -32,18 +32,18 @@ function formatDetail(model: proto.Model): string {
     const params = model.params;
     if (params) {
         const paramParts: string[] = [];
-        if (params.temperature != null) paramParts.push(`temp=${params.temperature}`);
-        if (params.topP != null) paramParts.push(`top_p=${params.topP}`);
-        if (params.topK != null) paramParts.push(`top_k=${params.topK}`);
-        if (params.maxTokens != null) paramParts.push(`max=${params.maxTokens}`);
-        if (params.systemPrompt) paramParts.push('sys_prompt');
+        if (params.temperature != null) {paramParts.push(`temp=${params.temperature}`);}
+        if (params.topP != null) {paramParts.push(`top_p=${params.topP}`);}
+        if (params.topK != null) {paramParts.push(`top_k=${params.topK}`);}
+        if (params.maxTokens != null) {paramParts.push(`max=${params.maxTokens}`);}
+        if (params.systemPrompt) {paramParts.push('sys_prompt');}
         if (paramParts.length > 0) {
             parts.push(paramParts.join(', '));
         }
     }
     
-    if (parts.length === 0) return 'default';
-    if (parts.length === 1 && (parts[0] === provider || parts[0] === engine || parts[0].startsWith(provider))) return `${parts[0]} · default`;
+    if (parts.length === 0) {return 'default';}
+    if (parts.length === 1 && (parts[0] === provider || parts[0] === engine || parts[0].startsWith(provider))) {return `${parts[0]} · default`;}
     return parts.join(' · ');
 }
 
@@ -60,12 +60,12 @@ function formatTooltip(model: proto.Model): string {
     }
     const params = model.params;
     if (params) {
-        if (params.temperature != null) lines.push(`Temperature: ${params.temperature}`);
-        if (params.topP != null) lines.push(`Top P: ${params.topP}`);
-        if (params.topK != null) lines.push(`Top K: ${params.topK}`);
-        if (params.maxTokens != null) lines.push(`Max Tokens: ${params.maxTokens}`);
-        if (params.timeout != null) lines.push(`Timeout: ${params.timeout}ms`);
-        if (params.systemPrompt) lines.push(`System Prompt: ${params.systemPrompt.substring(0, 50)}...`);
+        if (params.temperature != null) {lines.push(`Temperature: ${params.temperature}`);}
+        if (params.topP != null) {lines.push(`Top P: ${params.topP}`);}
+        if (params.topK != null) {lines.push(`Top K: ${params.topK}`);}
+        if (params.maxTokens != null) {lines.push(`Max Tokens: ${params.maxTokens}`);}
+        if (params.timeout != null) {lines.push(`Timeout: ${params.timeout}ms`);}
+        if (params.systemPrompt) {lines.push(`System Prompt: ${params.systemPrompt.substring(0, 50)}...`);}
     }
     return lines.join('\n');
 }
@@ -168,10 +168,10 @@ class AbbenayHandler implements vscode.LanguageModelChatProvider {
 
         try {
             for await (const chunk of stream) {
-                if (token.isCancellationRequested) break;
+                if (token.isCancellationRequested) {break;}
 
                 const c = chunk.chunk;
-                if (!c) continue;
+                if (!c) {continue;}
 
                 switch (c.$case) {
                     case 'text': {

@@ -1,6 +1,6 @@
 {
   "name": "@abbenay/daemon",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "description": "Abbenay daemon - unified AI service",
   "type": "module",
   "main": "dist/index.js",

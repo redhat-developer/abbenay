@@ -2,7 +2,7 @@
   "name": "abbenay-provider",
   "displayName": "Abbenay Provider",
   "description": "Use any LLM with any VS Code extension - OpenAI, Anthropic, Google, Ollama & more. The open alternative to Copilot.",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "publisher": "abbenay",
   "license": "MIT",
   "icon": "images/icon.png",

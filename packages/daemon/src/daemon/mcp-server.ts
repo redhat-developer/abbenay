@@ -14,6 +14,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Express, Request, Response } from 'express';
 import type { ToolRegistry } from '../core/tool-registry.js';
 import type { ToolRouter } from './tool-router.js';
+import { VERSION } from '../version.js';
 
 export class AbbenayMcpServer {
   private mcpServer: McpServer;
@@ -26,7 +27,7 @@ export class AbbenayMcpServer {
   ) {
     this.mcpServer = new McpServer({
       name: 'abbenay',
-      version: '0.1.0',
+      version: VERSION,
     });
   }
 

@@ -104,7 +104,7 @@ async function build() {
   const rootPkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
   const corePkg = {
     name: '@abbenay/core',
-    version: rootPkg.version || '0.1.0',
+    version: rootPkg.version || '0.0.0-dev',
     type: 'module',
     main: 'index.js',
     types: 'index.d.ts',

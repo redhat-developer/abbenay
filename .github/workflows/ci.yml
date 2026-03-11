@@ -63,6 +63,10 @@ jobs:
       - name: Build
         run: npm run ci:build
 
+      - name: Smoke test @abbenay/core
+        run: node --input-type=module -e "import { CoreState } from './index.js'"
+        working-directory: packages/daemon/dist/core
+
       - name: Upload SEA artifact
         uses: actions/upload-artifact@v7
         with:

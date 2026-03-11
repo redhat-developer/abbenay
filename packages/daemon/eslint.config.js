@@ -13,7 +13,7 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
       ],
       'no-inner-declarations': 'off',
-      eqeqeq: 'warn',
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
       semi: 'off',
     },
   },

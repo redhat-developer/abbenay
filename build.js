@@ -219,8 +219,9 @@ function packageExtension() {
     // Bundle the extension code with esbuild
     run('node esbuild.js --production', { cwd: VSCODE_ROOT });
 
-    // Package as VSIX
-    run('npx vsce package --no-dependencies', { cwd: VSCODE_ROOT });
+    // Map our platform-arch to VS Code marketplace target identifiers
+    const vsceTarget = `${PLATFORM}-${ARCH}`;
+    run(`npx vsce package --no-dependencies --target ${vsceTarget}`, { cwd: VSCODE_ROOT });
 
     const vsixFiles = fs.readdirSync(VSCODE_ROOT).filter(f => f.endsWith('.vsix'));
     if (vsixFiles.length > 0) {
@@ -271,16 +272,20 @@ function createDistribution() {
         fs.copyFileSync(path.join(VSCODE_ROOT, vsix), path.join(DIST_DIR, vsix));
     }
 
-    // Zip
-    const zipName = `abbenay-${PLATFORM}-${ARCH}.zip`;
-    console.log(`  Creating ${zipName}...`);
+    // Archive
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const version = pkg.version || '0.0.0-dev';
+    const ext = IS_WIN ? '.zip' : '.tar.gz';
+    const archiveName = `abbenay-${version}-${PLATFORM}-${ARCH}${ext}`;
+    const archivePath = path.join(DIST_DIR, archiveName);
+    console.log(`  Creating ${archiveName}...`);
     if (IS_WIN) {
-        run(`powershell Compress-Archive -Path "${PLATFORM_DIR}/*" -DestinationPath "${path.join(DIST_DIR, zipName)}" -Force`);
+        run(`powershell Compress-Archive -Path "${PLATFORM_DIR}/*" -DestinationPath "${archivePath}" -Force`);
     } else {
-        run(`cd "${PLATFORM_DIR}" && zip -r "../${zipName}" .`);
+        run(`tar czf "${archivePath}" -C "${PLATFORM_DIR}" .`);
     }
 
-    console.log(`  Distribution: ${path.join(DIST_DIR, zipName)}`);
+    console.log(`  Distribution: ${archivePath}`);
     if (vsixFiles.length > 0) {
         console.log(`  Extension:    ${path.join(DIST_DIR, vsixFiles[0])}`);
     }
