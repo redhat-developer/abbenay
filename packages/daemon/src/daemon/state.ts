@@ -94,7 +94,7 @@ export class DaemonState extends CoreState {
    * Call this after the daemon starts to connect to configured MCP servers.
    */
   async initMcpConnections(): Promise<void> {
-    const config = this.loadProviderConfig();
+    const _config = this.loadProviderConfig();
     // loadProviderConfig only returns providers; load full config for mcp_servers
     const { loadConfig } = await import('../core/config.js');
     const fullConfig = loadConfig();

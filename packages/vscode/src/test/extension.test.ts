@@ -8,8 +8,8 @@ suite('Extension Smoke Tests', () => {
     if (ext && !ext.isActive) {
       try {
         await ext.activate();
-      } catch {
-        // activation may partially fail (no daemon) -- that's expected in tests
+      } catch (err) {
+        console.error('Extension activation error (expected without daemon):', err);
       }
     }
   });

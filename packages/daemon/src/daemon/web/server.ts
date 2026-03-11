@@ -20,7 +20,7 @@ import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUs
 import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig } from '../../core/policies.js';
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
-import { getEngines, getEngine, getProviderTemplates } from '../../core/engines.js';
+import { getEngines, getProviderTemplates } from '../../core/engines.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -287,7 +287,7 @@ export function createWebApp(state: DaemonState): Express {
         const connIds = state.getVSCodeConnectionIds();
         for (const connId of connIds) {
           try {
-            const ws = await state.requestWorkspace(connId);
+            const _ws = await state.requestWorkspace(connId);
             // requestWorkspace updates the cache internally
           } catch {
             // VS Code might not respond in time, that's OK
@@ -517,7 +517,7 @@ export function createWebApp(state: DaemonState): Express {
     const safeEnd = () => {
       if (!ended && !res.writableEnded) {
         ended = true;
-        try { res.end(); } catch {}
+        try { res.end(); } catch { /* ignore */ }
       }
     };
 
@@ -680,7 +680,7 @@ export function createWebApp(state: DaemonState): Express {
       if (config.providers && config.providers[providerId]) {
         const keychainName = config.providers[providerId].api_key_keychain_name;
         if (keychainName) {
-          try { await state.secretStore.delete(keychainName); } catch {}
+          try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
         }
         
         delete config.providers[providerId];

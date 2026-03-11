@@ -13,7 +13,6 @@ import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import type { DaemonState } from './state.js';
 import type { ChatToolOptions } from '../core/state.js';
-import type { ChatChunk } from '../core/engines.js';
 
 interface ChatOptions {
   model: string;

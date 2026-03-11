@@ -66,7 +66,7 @@ export function cleanupSocket(): void {
   if (fs.existsSync(socketPath)) {
     try {
       fs.unlinkSync(socketPath);
-    } catch (error) {
+    } catch (_error) {
       // Ignore errors - socket might be in use
     }
   }

@@ -10,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   getDefaultSocketPath,
-  getPidFilePath,
   ensureSocketDir,
   cleanupSocket,
   writePidFile,
@@ -121,7 +120,7 @@ export async function startDaemon(opts?: { keepAlive?: boolean }): Promise<Daemo
     server!.bindAsync(
       `unix://${socketPath}`,
       grpc.ServerCredentials.createInsecure(),
-      (error, port) => {
+      (error, _port) => {
         if (error) {
           reject(error);
         } else {

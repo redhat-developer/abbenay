@@ -285,7 +285,7 @@ export class DaemonClient {
     /**
      * Register this VS Code extension as a client
      */
-    async register(_capabilities: string[] = ['chat', 'tools']): Promise<string> {
+    async register(): Promise<string> {
         const client = this.getClient();
         
         // Get workspace path from VS Code
