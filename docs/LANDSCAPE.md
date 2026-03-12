@@ -81,8 +81,7 @@ daemon / extension / web, in-process tool execution with approval
 policies.
 
 **Trade-offs:** not designed for team-wide centralized control, no
-built-in cost tracking or billing, fewer providers than mature gateways,
-earlier in development.
+built-in cost tracking or billing, earlier in development.
 
 ---
 
@@ -90,8 +89,8 @@ earlier in development.
 
 | Capability | LiteLLM | Portkey | LLM Gateway | Abbenay |
 |------------|---------|---------|-------------|---------|
-| **Provider count** | 100+ | 250+ | ~15 | 19 |
-| **OpenAI-compatible API** | Yes | Yes | Yes | No (gRPC + library) |
+| **Built-in engines** | 100+ | 250+ | ~15 | 18 + any OpenAI-compatible¹ |
+| **OpenAI-compatible API** | Yes | Yes | Yes | No (gRPC + library)² |
 | **Embeddable library** | Python SDK | No | No | Yes (`@abbenay/core`) |
 | **Standalone daemon** | Proxy server | Proxy server | Proxy server | Optional daemon |
 | **CLI chat** | No | No | No | Yes |
@@ -99,7 +98,7 @@ earlier in development.
 | **MCP tool aggregation** | MCP Gateway | MCP Gateway | No | MCP client pool |
 | **Tool approval policies** | No | No | No | Yes (per-tool tiers) |
 | **Streaming** | Yes | Yes | Yes | Yes (Vercel AI SDK) |
-| **Retries / fallbacks** | Yes | Yes | Limited | Not yet |
+| **Retries / fallbacks** | Yes | Yes | Limited | Limited (JSON retry) |
 | **Load balancing** | Yes | Yes | No | Not yet |
 | **Caching** | Simple + semantic | Simple + semantic | No | Not yet |
 | **Guardrails** | Via plugins | 50+ built-in | No | Via policies |
@@ -151,6 +150,21 @@ These tools are not mutually exclusive. Example combinations:
 - **Abbenay + Portkey**: Use Portkey's MCP Gateway for org-wide MCP
   server management, while developers use Abbenay locally for chat and
   tool approval workflows.
+
+---
+
+## Footnotes
+
+¹ Abbenay ships 18 pre-configured engines (OpenAI, Anthropic, Gemini,
+Mistral, xAI, DeepSeek, Groq, Cohere, Amazon Bedrock, Fireworks,
+Together AI, Perplexity, Azure, OpenRouter, Ollama, LM Studio, Cerebras,
+Meta). Any provider that exposes an OpenAI-compatible REST API can be
+used by pointing a configured engine's `base_url` at it — no code
+changes required.
+
+² Abbenay *consumes* OpenAI-compatible provider APIs but does not
+*expose* one. Client access is via the `@abbenay/core` library
+(in-process), gRPC (daemon), or the CLI.
 
 ---
 
