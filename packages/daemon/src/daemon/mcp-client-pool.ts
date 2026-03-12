@@ -232,7 +232,7 @@ export class McpClientPool {
   /**
    * Build the appropriate transport for a config entry.
    */
-  private buildTransport(config: McpServerConfig): StdioMCPTransport | { type: 'sse'; url: string; headers?: Record<string, string> } {
+  private buildTransport(config: McpServerConfig): StdioMCPTransport | { type: 'sse' | 'http'; url: string; headers?: Record<string, string> } {
     if (config.transport === 'stdio') {
       if (!config.command) {
         throw new Error('stdio transport requires a command');
@@ -244,12 +244,11 @@ export class McpClientPool {
       });
     }
 
-    // HTTP/SSE transport
     if (!config.url) {
       throw new Error('http transport requires a url');
     }
     return {
-      type: 'sse' as const,
+      type: 'http' as const,
       url: config.url,
       headers: config.headers,
     };
