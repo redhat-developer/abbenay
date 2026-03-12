@@ -13,10 +13,13 @@ import * as readline from 'node:readline';
 import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { DaemonState } from './state.js';
+import { SessionStore } from '../core/session-store.js';
+import { getSessionsDir } from '../core/paths.js';
 import type { ChatToolOptions } from '../core/state.js';
 
 interface ChatOptions {
-  model: string;
+  model?: string;
+  session?: string;
   system?: string;
   policy?: string;
   tools?: boolean;
@@ -44,6 +47,37 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
 
   await state.initMcpConnections();
 
+  // Resolve session if requested
+  let sessionId: string | undefined;
+  let model = options.model || '';
+  const store = new SessionStore(getSessionsDir());
+
+  if (options.session) {
+    if (options.session === 'new') {
+      if (!model) {
+        console.error('--model is required when creating a new session');
+        process.exit(1);
+      }
+      const session = await store.create(model);
+      sessionId = session.id;
+      console.error(`${DIM}Created session: ${sessionId}${RESET}`);
+    } else {
+      try {
+        const session = await store.get(options.session, true);
+        sessionId = session.id;
+        model = session.model;
+      } catch {
+        console.error(`Session not found: ${options.session}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  if (!model) {
+    console.error('--model is required (or use --session to resume a session)');
+    process.exit(1);
+  }
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stderr,
@@ -53,27 +87,42 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
 
   const messages: Array<{ role: string; content: string }> = [];
 
+  // Load existing session messages
+  if (sessionId && options.session !== 'new') {
+    const session = await store.get(sessionId, true);
+    for (const msg of session.messages) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
+    if (messages.length > 0) {
+      console.error(`${DIM}Loaded ${messages.length} message(s) from session${RESET}`);
+    }
+  }
+
   if (options.system) {
     messages.push({ role: 'system', content: options.system });
   }
 
-  console.error(`${BOLD}Abbenay Chat${RESET} — model: ${CYAN}${options.model}${RESET}`);
+  const sessionLabel = sessionId ? ` session: ${DIM}${sessionId.substring(0, 8)}${RESET}` : '';
+  console.error(`${BOLD}Abbenay Chat${RESET} — model: ${CYAN}${model}${RESET}${sessionLabel}`);
   console.error(`${DIM}Type your message, then press Enter. Ctrl+D to exit.${RESET}\n`);
 
   if (options.json) {
-    await runJsonMode(state, options, messages, rl);
+    await runJsonMode(state, { ...options, model }, messages, rl);
   } else {
-    await runInteractiveMode(state, options, messages, rl);
+    await runInteractiveMode(state, { ...options, model }, messages, rl, sessionId, store);
   }
 }
 
 async function runInteractiveMode(
   state: DaemonState,
-  options: ChatOptions,
+  options: ChatOptions & { model: string },
   messages: Array<{ role: string; content: string }>,
   rl: readline.Interface,
+  sessionId?: string,
+  store?: SessionStore,
 ): Promise<void> {
   const sessionApproved = new Set<string>();
+  let isFirstTurn = sessionId ? messages.filter(m => m.role === 'user').length === 0 : false;
 
   const prompt = (): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -94,6 +143,10 @@ async function runInteractiveMode(
     if (!trimmed) continue;
 
     messages.push({ role: 'user', content: trimmed });
+
+    if (sessionId && store) {
+      await store.appendMessage(sessionId, { role: 'user', content: trimmed });
+    }
 
     const toolOptions: ChatToolOptions = {
       toolMode: options.tools === false ? 'none' : 'auto',
@@ -141,6 +194,16 @@ async function runInteractiveMode(
     process.stdout.write('\n');
     if (fullResponse) {
       messages.push({ role: 'assistant', content: fullResponse });
+      if (sessionId && store) {
+        await store.appendMessage(sessionId, { role: 'assistant', content: fullResponse });
+        if (isFirstTurn) {
+          const title = trimmed.substring(0, 60).replace(/\n/g, ' ').trim();
+          if (title) {
+            await store.updateTitle(sessionId, title);
+          }
+          isFirstTurn = false;
+        }
+      }
     }
   }
 
@@ -149,7 +212,7 @@ async function runInteractiveMode(
 
 async function runJsonMode(
   state: DaemonState,
-  options: ChatOptions,
+  options: ChatOptions & { model: string },
   messages: Array<{ role: string; content: string }>,
   rl: readline.Interface,
 ): Promise<void> {

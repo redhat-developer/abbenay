@@ -892,6 +892,135 @@ export function createWebApp(state: DaemonState): Express {
     }
   });
 
+  // ── Session Management ───────────────────────────────────────────────
+
+  app.post('/api/sessions', async (req, res) => {
+    try {
+      const { model, title, policy, metadata } = req.body;
+      if (!model) {
+        res.status(400).json({ error: 'model is required' });
+        return;
+      }
+      const session = await state.sessionStore.create(model, title, policy, metadata);
+      res.json(session);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] POST /api/sessions error:', msg);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.get('/api/sessions', async (req, res) => {
+    try {
+      const model = req.query.model as string | undefined;
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const offset = req.query.offset ? Number(req.query.offset) : undefined;
+      const result = await state.sessionStore.list({ model, limit, offset });
+      res.json(result);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Web] GET /api/sessions error:', msg);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.get('/api/sessions/:id', async (req, res) => {
+    try {
+      const includeMessages = req.query.includeMessages !== 'false';
+      const session = await state.sessionStore.get(req.params.id, includeMessages);
+      res.json(session);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(404).json({ error: msg });
+    }
+  });
+
+  app.delete('/api/sessions/:id', async (req, res) => {
+    try {
+      await state.sessionStore.delete(req.params.id);
+      res.json({ success: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(404).json({ error: msg });
+    }
+  });
+
+  app.post('/api/sessions/:id/chat', async (req, res) => {
+    const sessionId = req.params.id;
+    const { message } = req.body;
+
+    if (!message || !message.content) {
+      res.status(400).json({ error: 'message with content is required' });
+      return;
+    }
+
+    const chatMessage = {
+      role: (message.role as string) || 'user',
+      content: message.content as string,
+    };
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+    res.flushHeaders();
+
+    let ended = false;
+    const safeWrite = (data: string): boolean => {
+      if (ended || res.writableEnded) return false;
+      try { res.write(data); return true; } catch { return false; }
+    };
+    const safeEnd = () => {
+      if (!ended && !res.writableEnded) {
+        ended = true;
+        try { res.end(); } catch { /* ignore */ }
+      }
+    };
+
+    res.on('close', () => { ended = true; });
+
+    (async () => {
+      try {
+        const session = await state.sessionStore.get(sessionId, true);
+        await state.sessionStore.appendMessage(sessionId, chatMessage);
+
+        const allMessages = [...session.messages, chatMessage];
+        let fullText = '';
+
+        for await (const chunk of state.chat(session.model, allMessages)) {
+          if (ended) break;
+          if (chunk.type === 'text' && chunk.text) {
+            fullText += chunk.text;
+            safeWrite(`data: ${JSON.stringify({ type: 'text', content: chunk.text })}\n\n`);
+          } else if (chunk.type === 'error') {
+            safeWrite(`data: ${JSON.stringify({ type: 'error', error: chunk.error })}\n\n`);
+          } else if (chunk.type === 'done') {
+            safeWrite(`data: ${JSON.stringify({ type: 'done', finish_reason: chunk.finishReason || 'stop' })}\n\n`);
+          }
+        }
+
+        if (fullText) {
+          await state.sessionStore.appendMessage(sessionId, { role: 'assistant', content: fullText });
+        }
+
+        if (session.messages.length === 0 && session.title === 'New Session') {
+          const title = chatMessage.content.substring(0, 60).replace(/\n/g, ' ').trim();
+          if (title) {
+            await state.sessionStore.updateTitle(sessionId, title);
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[Web] Session chat error:', msg);
+        safeWrite(`data: ${JSON.stringify({ type: 'error', error: msg })}\n\n`);
+      } finally {
+        safeWrite('data: [DONE]\n\n');
+        safeEnd();
+      }
+    })();
+  });
+
   // ── OpenAI-compatible API (/v1/*) ─────────────────────────────────────
   registerOpenAIRoutes(app, state);
 

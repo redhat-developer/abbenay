@@ -83,6 +83,34 @@ export function getConfigDir(): string {
     return path.join(configHome, APP_NAME);
 }
 
+// ── Data directory ──────────────────────────────────────────────────
+
+/**
+ * Get the persistent user data directory (sessions, exports, etc.).
+ *
+ * - macOS:   ~/Library/Application Support/abbenay
+ * - Windows: %LOCALAPPDATA%/abbenay
+ * - Linux:   $XDG_DATA_HOME/abbenay → ~/.local/share/abbenay
+ */
+export function getDataDir(): string {
+    if (process.platform === 'darwin') {
+        return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME);
+    }
+
+    if (process.platform === 'win32') {
+        const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+        return path.join(localAppData, APP_NAME);
+    }
+
+    const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+    return path.join(dataHome, APP_NAME);
+}
+
+/** Sessions directory:  <dataDir>/sessions */
+export function getSessionsDir(): string {
+    return path.join(getDataDir(), 'sessions');
+}
+
 // ── Workspace config directory ───────────────────────────────────────
 
 /**

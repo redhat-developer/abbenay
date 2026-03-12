@@ -64,6 +64,7 @@ Reusable library with zero transport dependencies. Can be used standalone by age
 | `core/mock.ts` | Mock engine for testing |
 | `core/policies.ts` | Policy system — built-in + custom policies, resolution, flattening |
 | `core/tool-registry.ts` | Tool collection, namespacing, policy filtering, executor builder |
+| `core/session-store.ts` | File-based session persistence (CRUD, index, messages) |
 | `core/index.ts` | Public API surface |
 
 ### @abbenay/daemon (`src/daemon/`)
@@ -363,8 +364,6 @@ Defined in `proto/abbenay/v1/service.proto`. The daemon loads protos dynamically
 
 | RPC | Description |
 |-----|-------------|
-| `SessionChat` | Chat within a persistent session |
-| `CreateSession` / `GetSession` / `ListSessions` / `DeleteSession` | Session CRUD |
 | `WatchSessions` / `ReplaySession` / `SummarizeSession` | Session features |
 | `ForkSession` / `ExportSession` / `ImportSession` | Session branching |
 | `ListTools` / `ExecuteTool` | Tool execution (future MCP) |
@@ -386,7 +385,19 @@ The `VSCodeStream` RPC enables bidirectional communication:
 
 ## Session Management
 
-Session management is **deferred**. Stub RPCs exist in the proto and service handlers return `UNIMPLEMENTED` or empty results. Full session persistence (create, fork, export, replay) will be implemented in a future release.
+Sessions are persisted as JSON files in `$XDG_DATA_HOME/abbenay/sessions/`
+(Linux) or `~/Library/Application Support/abbenay/sessions/` (macOS). See DR-021.
+
+The `SessionStore` class (core layer) handles CRUD operations and maintains an
+`index.json` for fast listing without reading every session file.
+
+**Available transports:**
+- gRPC: `CreateSession`, `GetSession`, `ListSessions`, `DeleteSession`, `SessionChat`
+- Web API: `POST/GET/DELETE /api/sessions`, `POST /api/sessions/:id/chat` (SSE)
+- CLI: `aby sessions list/show/delete`, `aby chat --session <id|new>`
+
+**Not yet implemented:** `ForkSession`, `ExportSession`, `ImportSession`,
+`ReplaySession`, `SummarizeSession`, web dashboard session sidebar.
 
 ## Data Flow
 
@@ -433,6 +444,8 @@ Session management is **deferred**. Stub RPCs exist in the proto and service han
    - POST /api/config → saveConfig()
    - POST /api/secrets → state.secretStore.set()
    - POST /api/chat → state.chat() (SSE stream)
+   - POST/GET/DELETE /api/sessions → state.sessionStore.*()
+   - POST /api/sessions/:id/chat → session-scoped chat (SSE)
    - GET /v1/models → state.listModels() (OpenAI format)
    - POST /v1/chat/completions → state.chat() (OpenAI format, streaming or JSON)
    ↓
@@ -448,6 +461,7 @@ Session management is **deferred**. Stub RPCs exist in the proto and service han
 | PID file | `$XDG_RUNTIME_DIR/abbenay/abbenay.pid` | Daemon process ID |
 | User Config | `~/.config/abbenay/config.yaml` | User-level provider config |
 | Workspace Config | `<ws>/.config/abbenay/config.yaml` | Workspace-level config |
+| Session Data | `$XDG_DATA_HOME/abbenay/sessions/` | Persisted chat sessions |
 | Logs | Stdout/stderr | Daemon logs |
 
 ## Security
