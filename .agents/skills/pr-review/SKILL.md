@@ -66,8 +66,31 @@ always identity operations. Simplify them.
 2. Read all Copilot comments and CI logs.
 3. Fix all issues in a single commit (or minimal commits).
 4. Reply to each comment with the fix commit hash.
-5. Update the PR description to include the new commit(s).
-6. If CI failure is unrelated to your changes (e.g., flaky prebuild-install),
+5. **Resolve each review thread** after replying. Replying alone does not
+   resolve the thread. Use the GitHub GraphQL API:
+
+   ```bash
+   # List unresolved threads
+   gh api graphql -f query='{
+     repository(owner: "OWNER", name: "REPO") {
+       pullRequest(number: N) {
+         reviewThreads(first: 20) {
+           nodes { id isResolved comments(first:1) { nodes { body } } }
+         }
+       }
+     }
+   }'
+
+   # Resolve a thread
+   gh api graphql -f query='mutation {
+     resolveReviewThread(input: {threadId: "THREAD_ID"}) {
+       thread { isResolved }
+     }
+   }'
+   ```
+
+6. Update the PR description to include the new commit(s).
+7. If CI failure is unrelated to your changes (e.g., flaky prebuild-install),
    fix it anyway — the PR owns the green build.
 
 ## Lessons from past reviews

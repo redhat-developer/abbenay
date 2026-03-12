@@ -34,7 +34,13 @@ const program = new Command();
 program
   .name('abbenay')
   .description('Abbenay - Unified AI Daemon')
-  .version(VERSION);
+  .version(VERSION)
+  .option('--verbose', 'Enable debug logging (same as ABBENAY_DEBUG=1)')
+  .hook('preAction', () => {
+    if (program.opts().verbose) {
+      process.env.ABBENAY_DEBUG = '1';
+    }
+  });
 
 program
   .command('daemon')

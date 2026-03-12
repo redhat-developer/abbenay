@@ -11,7 +11,7 @@
 import * as readline from 'node:readline';
 import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
-import type { DaemonState } from './state.js';
+import { DaemonState } from './state.js';
 import type { ChatToolOptions } from '../core/state.js';
 
 interface ChatOptions {
@@ -33,11 +33,10 @@ const RED    = '\x1b[31m';
 export async function runInteractiveChat(options: ChatOptions): Promise<void> {
   let state: DaemonState;
 
-  // Start daemon in-process if not already running
   if (isDaemonRunningSync()) {
-    console.error(`${DIM}Daemon already running — connecting...${RESET}`);
-    // For now, start a lightweight in-process state (no gRPC overhead)
-    state = await startDaemon({ keepAlive: false });
+    console.error(`${DIM}Daemon already running — using in-process state...${RESET}`);
+    state = new DaemonState();
+    await state.initMcpConnections();
   } else {
     console.error(`${DIM}Starting daemon...${RESET}`);
     state = await startDaemon({ keepAlive: false });
@@ -134,7 +133,6 @@ async function runInteractiveMode(
   }
 
   rl.close();
-  process.exit(0);
 }
 
 async function runJsonMode(
@@ -150,7 +148,7 @@ async function runJsonMode(
   }
   const input = chunks.join('\n').trim();
   if (!input) {
-    process.exit(0);
+    return;
   }
 
   messages.push({ role: 'user', content: input });
