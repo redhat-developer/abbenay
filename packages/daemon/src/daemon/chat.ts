@@ -97,7 +97,7 @@ async function runInteractiveMode(
 
     const toolOptions: ChatToolOptions = {
       toolMode: options.tools === false ? 'none' : 'auto',
-      onToolApprovalNeeded: async (_requestId: string, toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
+      onToolApprovalNeeded: async (_requestId: string, toolName: string, args: unknown, _namespacedName?: string): Promise<'allow' | 'deny' | 'abort'> => {
         if (sessionApproved.has(toolName)) {
           return 'allow';
         }
@@ -181,10 +181,10 @@ function promptApproval(rl: readline.Interface): Promise<'allow' | 'allow-always
     const handler = (line: string) => {
       const answer = line.trim();
       const lower = answer.toLowerCase();
-      if (lower === 'a' || lower === 'allow' || lower === 'y' || lower === 'yes') {
-        resolve('allow');
-      } else if (answer === 'A' || lower === 'always') {
+      if (answer === 'A' || lower === 'always') {
         resolve('allow-always');
+      } else if (lower === 'a' || lower === 'allow' || lower === 'y' || lower === 'yes') {
+        resolve('allow');
       } else if (lower === 'd' || lower === 'deny' || lower === 'n' || lower === 'no') {
         resolve('deny');
       } else if (lower === 'b' || lower === 'abort') {

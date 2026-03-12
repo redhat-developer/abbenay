@@ -50,7 +50,7 @@ All three tiers are enforced. The default for tools matching no tier is
    Tools matching `auto_approve` patterns execute without pause.
    Tools matching neither tier default to **require approval** (secure-by-default,
    see DR-019). Users who want the previous auto-approve-all behavior can set
-   `tool_policy.auto_approve: ['*']`.
+   `tool_policy.auto_approve: ['*:*/*']`.
 
 6. **`max_tool_iterations` enforcement**
    Enforce the cap in the tool loop inside `streamChat` / `CoreState.chat()`.

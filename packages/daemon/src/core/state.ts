@@ -107,7 +107,7 @@ export interface ChatToolOptions {
    * blocks until the user responds; the CLI prompts via readline.
    * Return 'allow' to proceed, 'deny' to skip this call, 'abort' to stop all tools.
    */
-  onToolApprovalNeeded?: (requestId: string, toolName: string, args: unknown) => Promise<'allow' | 'deny' | 'abort'>;
+  onToolApprovalNeeded?: (requestId: string, toolName: string, args: unknown, namespacedName?: string) => Promise<'allow' | 'deny' | 'abort'>;
 }
 
 // ── Builder options ─────────────────────────────────────────────────────
@@ -619,22 +619,30 @@ export class CoreState {
     // ── Build tool validator from policy + caller's approval callback ──
     // Secure-by-default: all tools require approval unless explicitly
     // listed in auto_approve.  See DR-019.
+    // Precedence: require_approval > auto_approve > default (ask).
     let toolValidator: ToolValidationCallback | undefined;
     if (toolOptions?.onToolApprovalNeeded && this.toolRegistry) {
       const registry = this.toolRegistry;
+      const requirePatterns = toolPolicy?.require_approval;
       const autoPatterns = toolPolicy?.auto_approve;
 
       toolValidator = async (toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
         const resolved = registry.resolve(toolName);
         const nsName = resolved?.namespacedName || toolName;
 
+        if (matchesAnyPattern(requirePatterns, nsName)) {
+          const requestId = crypto.randomUUID();
+          debug(`[State] Tool "${toolName}" (${nsName}) requires approval (explicit) — requestId=${requestId}`);
+          return toolOptions.onToolApprovalNeeded!(requestId, toolName, args, nsName);
+        }
+
         if (matchesAnyPattern(autoPatterns, nsName)) {
           return 'allow';
         }
 
         const requestId = crypto.randomUUID();
-        debug(`[State] Tool "${toolName}" (${nsName}) requires approval — requestId=${requestId}`);
-        return toolOptions.onToolApprovalNeeded!(requestId, toolName, args);
+        debug(`[State] Tool "${toolName}" (${nsName}) requires approval (default) — requestId=${requestId}`);
+        return toolOptions.onToolApprovalNeeded!(requestId, toolName, args, nsName);
       };
     }
 

@@ -1919,7 +1919,6 @@ function dashboard() {
     
     async setToolPolicy(toolName, policy) {
       this.toolPolicy[toolName] = policy;
-      // Rebuild the tool_policy config arrays
       const disabled_tools = [];
       const require_approval = [];
       const auto_approve = [];
@@ -1928,17 +1927,16 @@ function dashboard() {
         else if (p === 'ask') require_approval.push(name);
         else if (p === 'always') auto_approve.push(name);
       }
-      const tool_policy = {};
-      if (disabled_tools.length > 0) tool_policy.disabled_tools = disabled_tools;
-      if (require_approval.length > 0) tool_policy.require_approval = require_approval;
-      if (auto_approve.length > 0) tool_policy.auto_approve = auto_approve;
       
       try {
-        // Read current config, update tool_policy, save
         const resp = await fetch('/api/config?location=user');
         const data = await resp.json();
         const config = data.config || {};
-        config.tool_policy = tool_policy;
+        const existing = config.tool_policy || {};
+        existing.disabled_tools = disabled_tools.length > 0 ? disabled_tools : undefined;
+        existing.require_approval = require_approval.length > 0 ? require_approval : undefined;
+        existing.auto_approve = auto_approve.length > 0 ? auto_approve : undefined;
+        config.tool_policy = existing;
         await fetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2109,6 +2107,7 @@ function dashboard() {
                     chatId: data.chatId,
                     requestId: data.requestId,
                     toolName: data.toolName,
+                    namespacedName: data.namespacedName,
                     args: data.args,
                   };
                   this.chatMessages[idx].content += `\n\n⏸️ **Waiting for approval:** \`${data.toolName}\`\n`;
@@ -2152,9 +2151,9 @@ function dashboard() {
 
     async resolveApprovalAndRemember() {
       if (!this.pendingApproval) return;
-      const toolName = this.pendingApproval.toolName;
+      const policyKey = this.pendingApproval.namespacedName || this.pendingApproval.toolName;
       await this.resolveApproval('allow');
-      await this.setToolPolicy(toolName, 'always');
+      await this.setToolPolicy(policyKey, 'always');
     },
   };
 }

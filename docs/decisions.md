@@ -233,4 +233,4 @@ knowing. Defaulting to "ask" matches browser permission semantics — the user
 must grant trust explicitly. Friction is mitigated by session-scoped "allow
 always" in the CLI (not persisted) and "Allow & Remember" in the web UI
 (persisted to `config.yaml`). Users who want the previous behavior can set
-`tool_policy.auto_approve: ['*']`.
+`tool_policy.auto_approve: ['*:*/*']`.

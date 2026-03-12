@@ -562,8 +562,8 @@ export function createWebApp(state: DaemonState): Express {
     const toolOptions: ChatToolOptions = {
       toolMode: tool_mode || 'auto',
       tools: toolDefs && toolDefs.length > 0 ? toolDefs : undefined,
-      onToolApprovalNeeded: async (requestId: string, toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
-        safeWrite(`data: ${JSON.stringify({ type: 'approval_request', chatId, requestId, toolName, args })}\n\n`);
+      onToolApprovalNeeded: async (requestId: string, toolName: string, args: unknown, namespacedName?: string): Promise<'allow' | 'deny' | 'abort'> => {
+        safeWrite(`data: ${JSON.stringify({ type: 'approval_request', chatId, requestId, toolName, namespacedName, args })}\n\n`);
         return new Promise((resolve) => {
           pendingApprovals.set(requestId, { resolve, toolName, args, chatId });
         });
