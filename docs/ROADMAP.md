@@ -96,36 +96,45 @@ Pipe mode (`--json`): emit newline-delimited JSON chunks for scripting.
 
 ---
 
-## 3. OpenAI-Compatible HTTP Server — planned
+## 3. OpenAI-Compatible HTTP Server — partial (M1 done)
 
-Abbenay acts as a *client* to OpenAI-compatible providers but does not expose its own
-OpenAI-compatible API. The existing `POST /api/chat` uses a custom SSE format.
+Abbenay now exposes an OpenAI-compatible API alongside the existing `/api/*` routes,
+making it a drop-in replacement for any OpenAI-compatible client (Cursor, Continue,
+aider, any `openai` SDK script, etc.). See DR-020.
 
-### Endpoints to implement
+### What exists
+
+| Layer | Status |
+|---|---|
+| `GET /v1/models` — list virtual models in OpenAI format | done |
+| `POST /v1/chat/completions` — streaming SSE (`data: {...}\ndata: [DONE]`) | done |
+| `POST /v1/chat/completions` — non-streaming JSON response | done |
+| Tool calls mapped to OpenAI `tool_calls` format in stream | done |
+| `aby serve` CLI command (starts OpenAI-compat server) | done |
+| Format translation helpers with unit tests | done |
+| Integration tests (models, streaming, non-streaming, errors, tools) | done |
+
+### What needs to happen
 
 | Endpoint | Priority |
 |---|---|
-| `GET  /v1/models` | high — list virtual models |
-| `POST /v1/chat/completions` | high — streaming + non-streaming |
 | `POST /v1/completions` | low — legacy |
 | `POST /v1/embeddings` | low — if engines support it |
+| Usage/token stats (real counts from providers) | medium |
+| Optional Bearer token auth (`config.yaml → server.api_key`) | medium |
+| Rate limiting | low |
 
-### Design notes
+### Key files
 
-- Mount at `/v1/` on the existing Express app (alongside `/api/`)
-- Map Abbenay virtual model IDs to OpenAI `model` field
-- Translate tool calls to OpenAI `tool_calls` format in response chunks
-- Support `stream: true` (SSE with `data: {...}\ndata: [DONE]`) and `stream: false`
-- API key auth: optional Bearer token configurable via `config.yaml → server.api_key`
-- This makes Abbenay a drop-in replacement for any OpenAI-compatible client
-  (Cursor, Continue, aider, etc.)
+- `packages/daemon/src/daemon/web/openai-compat.ts` — route registration + format helpers
+- `packages/daemon/src/daemon/web/openai-compat.test.ts` — unit tests
+- `packages/daemon/tests/integration/openai-compat.test.ts` — integration tests
 
 ### Milestones
 
-- **M1**: `/v1/models` + `/v1/chat/completions` (streaming)
-- **M2**: Non-streaming completions, usage stats
-- **M3**: Tool calls in OpenAI format
-- **M4**: Optional auth, rate limiting
+- **M1**: `/v1/models` + `/v1/chat/completions` (streaming + non-streaming + tools) — **done**
+- **M2**: Usage stats, optional auth
+- **M3**: Rate limiting, `/v1/completions` (legacy)
 
 ---
 
@@ -273,7 +282,7 @@ by wiring to `ToolRegistry`.
 | Phase | Sections | Rationale | Status |
 |---|---|---|---|
 | **Phase 1** | 1 (M1–M2, M4) + 2 | Tool approval in web + CLI chat | **done** |
-| **Phase 2** | 5 (M1–M3) | Session CRUD + UI — enables persistent conversations | next |
-| **Phase 3** | 3 (M1–M2) | OpenAI-compatible server — unlocks third-party integrations | |
+| **Phase 2** | 3 (M1) | OpenAI-compatible server — unlocks third-party integrations | **done** |
+| **Phase 3** | 5 (M1–M3) | Session CRUD + UI — enables persistent conversations | next |
 | **Phase 4** | 6 + 5 (M4–M5) | Session sharing, fork, replay | |
 | **Phase 5** | 4 + 7 | Policy Phase 2 (context.*) + remaining gRPC stubs | |
