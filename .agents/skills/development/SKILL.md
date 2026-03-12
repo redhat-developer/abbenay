@@ -96,6 +96,50 @@ The monorepo produces these packages:
 3. Wire it into `build.js` if it's part of the standard build flow.
 4. Update the lean-ci skill if it changes workflow structure.
 
+## Documentation
+
+Every user-facing change MUST include corresponding documentation updates.
+Documentation is not a follow-up task — it ships with the code.
+
+### Rules
+
+- New CLI commands, flags, or subcommands MUST be documented in `README.md`
+  (quick start / usage section) and `docs/DEVELOPMENT.md` (detailed reference).
+- New or changed APIs in `@abbenay/core` MUST be documented in `docs/CORE.md`.
+- Changes to build steps, CI, or release packaging MUST be reflected in
+  `docs/DEVELOPMENT.md` and the lean-ci skill.
+- A PR that adds a feature without updating the relevant docs is incomplete.
+
+## Testing
+
+Every behavioral change MUST include tests. Tests are not optional and are not
+a follow-up task.
+
+### Rules
+
+- New CLI commands MUST have unit tests exercising their data layer (e.g.,
+  test the functions the command calls, not the process spawn).
+- New or changed core library functions MUST have unit tests.
+- Bug fixes SHOULD include a regression test proving the fix.
+- PRs that add features or fix bugs without tests are incomplete.
+- Use the `mock` engine for tests that would otherwise require network access
+  or API keys.
+- Tests MUST NOT sort data before asserting it is sorted — this is tautological
+  and will always pass regardless of the actual ordering. Instead, compare the
+  original order against a separately sorted copy, or assert pairwise ordering
+  on the unsorted result.
+
+## CLI commands
+
+- Read-only CLI commands (listing, querying) MUST use the lightest possible
+  state construction. Do not start daemons, servers, or listeners for commands
+  that only read data. Use `CoreState` directly instead of `startDaemon()`.
+- Never show API keys or secrets on command lines in documentation or examples.
+  Demonstrate env var usage (e.g., `# reads OPENAI_API_KEY from env`) and
+  reserve `--api-key` flags for exceptional cases only.
+- Avoid `process.exit()` in command handlers. Let the command return naturally
+  so cleanup runs and `--json` output is not polluted by startup/shutdown logs.
+
 ## Dependencies
 
 - Use `npm install --save-dev` for dev dependencies; `npm install --save` for

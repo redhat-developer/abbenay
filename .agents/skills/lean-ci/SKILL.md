@@ -120,6 +120,22 @@ git push --tags
 It detects `$GITHUB_PATH` and appends tool paths automatically so subsequent
 workflow steps inherit them without sourcing `env.sh`.
 
+## System dependencies in CI
+
+Linux build jobs MUST install `libsecret-1-dev` before `npm ci`. The `keytar`
+native module uses `prebuild-install` to download a prebuilt binary, but this
+can fail (network issues, rate limits), causing a fallback to source compilation
+via `node-gyp`. Without `libsecret-1-dev`, the fallback fails and the build
+breaks non-deterministically. Always install it as a safety net:
+
+```yaml
+- name: Install system dependencies (Linux)
+  if: runner.os == 'Linux'
+  run: sudo apt-get update -qq && sudo apt-get install -y -qq libsecret-1-dev
+```
+
+The `lint-and-test` job also installs `xvfb` for VS Code extension tests.
+
 ## VS Code extension tests in CI
 
 The `lint-and-test` job installs `xvfb` and runs tests via `xvfb-run -a npm test`

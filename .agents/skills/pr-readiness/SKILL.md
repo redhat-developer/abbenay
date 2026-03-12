@@ -137,6 +137,17 @@ branch at all times. A stale or inaccurate PR description is a defect.
 - If a PR grows significantly beyond its original scope, consider splitting
   it into focused PRs instead.
 
+### Completeness checklist
+
+Before marking a PR ready for review, verify:
+
+- [ ] New features have tests (see development skill for details).
+- [ ] User-facing changes have doc updates (README, DEVELOPMENT.md, etc.).
+- [ ] Architectural decisions are recorded in `docs/decisions.md`.
+
+A PR that adds code without corresponding tests and documentation is
+incomplete and MUST NOT be merged.
+
 ### PR body template
 
 ```markdown
@@ -154,5 +165,7 @@ branch at all times. A stale or inaccurate PR description is a defect.
 - [ ] `npm run lint` passes locally (0 errors)
 - [ ] `npm test` passes locally
 - [ ] `npm run ci:build` passes locally
+- [ ] New features have tests
+- [ ] Docs updated for user-facing changes
 - [ ] <any additional manual verification>
 ```

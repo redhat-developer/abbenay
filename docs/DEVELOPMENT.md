@@ -132,11 +132,25 @@ npm run web           # start web dashboard
 npm run status        # check status
 
 # Production (compiled SEA binary)
-abbenay daemon
-abbenay web
-abbenay status
-aby daemon            # short alias
+abbenay daemon              # start daemon
+abbenay web                 # start web dashboard
+abbenay status              # check status
+abbenay list-engines        # show all supported engines (sorted, formatted)
+abbenay list-models         # show configured models from your config
+abbenay list-models --discover ollama   # query an engine for available models
+abbenay chat -m openai/gpt-4o          # interactive chat
+aby daemon                  # short alias
 ```
+
+### CLI list commands
+
+| Command | What it shows | Network? |
+|---------|--------------|----------|
+| `list-engines` | All 19 supported engines with auth, tool support, and base URL | No |
+| `list-models` | Configured provider/model pairs from your config (usable with `chat -m`) | No |
+| `list-models --discover <engine>` | All models available from an engine's API | Yes |
+
+All list commands support `--json` for machine-readable output.
 
 ## Development Workflow
 
