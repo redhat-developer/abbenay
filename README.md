@@ -79,10 +79,21 @@ npm run web       # Start web dashboard at http://localhost:8787
 With the compiled binary (or SEA):
 
 ```bash
-abbenay daemon    # Start daemon
-abbenay web       # Start web dashboard
-abbenay status    # Check status
-aby daemon        # Short alias — aby is equivalent to abbenay
+abbenay daemon        # Start daemon
+abbenay web           # Start web dashboard
+abbenay status        # Check status
+abbenay list-engines  # Show all supported engines
+abbenay list-models   # Show configured models (from your config)
+abbenay chat -m openai/gpt-4o   # Interactive chat
+aby daemon            # Short alias — aby is equivalent to abbenay
+```
+
+To discover what models an engine offers:
+
+```bash
+abbenay list-models --discover ollama           # keyless — works immediately
+abbenay list-models --discover openai           # reads OPENAI_API_KEY from env
+abbenay list-models --discover anthropic --api-key sk-...
 ```
 
 ### Using the core library

@@ -96,6 +96,35 @@ The monorepo produces these packages:
 3. Wire it into `build.js` if it's part of the standard build flow.
 4. Update the lean-ci skill if it changes workflow structure.
 
+## Documentation
+
+Every user-facing change MUST include corresponding documentation updates.
+Documentation is not a follow-up task — it ships with the code.
+
+### Rules
+
+- New CLI commands, flags, or subcommands MUST be documented in `README.md`
+  (quick start / usage section) and `docs/DEVELOPMENT.md` (detailed reference).
+- New or changed APIs in `@abbenay/core` MUST be documented in `docs/CORE.md`.
+- Changes to build steps, CI, or release packaging MUST be reflected in
+  `docs/DEVELOPMENT.md` and the lean-ci skill.
+- A PR that adds a feature without updating the relevant docs is incomplete.
+
+## Testing
+
+Every behavioral change MUST include tests. Tests are not optional and are not
+a follow-up task.
+
+### Rules
+
+- New CLI commands MUST have unit tests exercising their data layer (e.g.,
+  test the functions the command calls, not the process spawn).
+- New or changed core library functions MUST have unit tests.
+- Bug fixes SHOULD include a regression test proving the fix.
+- PRs that add features or fix bugs without tests are incomplete.
+- Use the `mock` engine for tests that would otherwise require network access
+  or API keys.
+
 ## Dependencies
 
 - Use `npm install --save-dev` for dev dependencies; `npm install --save` for
