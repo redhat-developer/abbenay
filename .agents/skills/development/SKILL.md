@@ -124,6 +124,21 @@ a follow-up task.
 - PRs that add features or fix bugs without tests are incomplete.
 - Use the `mock` engine for tests that would otherwise require network access
   or API keys.
+- Tests MUST NOT sort data before asserting it is sorted — this is tautological
+  and will always pass regardless of the actual ordering. Instead, compare the
+  original order against a separately sorted copy, or assert pairwise ordering
+  on the unsorted result.
+
+## CLI commands
+
+- Read-only CLI commands (listing, querying) MUST use the lightest possible
+  state construction. Do not start daemons, servers, or listeners for commands
+  that only read data. Use `CoreState` directly instead of `startDaemon()`.
+- Never show API keys or secrets on command lines in documentation or examples.
+  Demonstrate env var usage (e.g., `# reads OPENAI_API_KEY from env`) and
+  reserve `--api-key` flags for exceptional cases only.
+- Avoid `process.exit()` in command handlers. Let the command return naturally
+  so cleanup runs and `--json` output is not polluted by startup/shutdown logs.
 
 ## Dependencies
 

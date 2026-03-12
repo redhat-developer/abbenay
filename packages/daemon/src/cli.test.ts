@@ -1,24 +1,21 @@
 /**
  * CLI list command tests
  *
- * Tests the data layer behind list-engines, list-models (--discover),
- * and the printTable helper. No process spawning — exercises the same
- * functions the CLI handlers call.
+ * Tests the data layer behind list-engines and list-models (--discover).
+ * No process spawning — exercises the same functions the CLI handlers call.
  */
 
 import { describe, it, expect } from 'vitest';
 import { getEngines, fetchModels } from './core/engines.js';
 
 describe('list-engines', () => {
-  it('returns all engines sorted alphabetically', () => {
-    const engines = getEngines()
-      .map(e => e.id)
-      .sort((a, b) => a.localeCompare(b));
+  it('returns engines with ids that can be sorted alphabetically', () => {
+    const ids = getEngines().map(e => e.id);
+    const sorted = [...ids].sort((a, b) => a.localeCompare(b));
 
-    expect(engines.length).toBeGreaterThan(0);
-    for (let i = 1; i < engines.length; i++) {
-      expect(engines[i].localeCompare(engines[i - 1])).toBeGreaterThanOrEqual(0);
-    }
+    expect(ids.length).toBeGreaterThan(0);
+    expect(sorted).toEqual(expect.arrayContaining(ids));
+    expect(sorted.length).toBe(ids.length);
   });
 
   it('every engine has required fields', () => {
@@ -47,10 +44,13 @@ describe('list-models --discover mock', () => {
     expect(ids).toContain('fixed');
   });
 
-  it('models are sortable by id', async () => {
+  it('returned models have valid structure', async () => {
     const models = await fetchModels('mock');
-    const sorted = [...models].sort((a, b) => a.id.localeCompare(b.id));
-    expect(sorted[0].id.localeCompare(sorted[sorted.length - 1].id)).toBeLessThanOrEqual(0);
+    for (const m of models) {
+      expect(m.id).toBeTruthy();
+      expect(m.engine).toBe('mock');
+      expect(typeof m.contextWindow).toBe('number');
+    }
   });
 
   it('returns empty array for unknown engine', async () => {

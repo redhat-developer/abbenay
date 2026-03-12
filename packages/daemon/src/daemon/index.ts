@@ -219,10 +219,12 @@ program
         const rows = models.map(m => [m.id, m.contextWindow ? String(m.contextWindow) : '-']);
         printTable(['Model ID', 'Context Window'], rows);
       }
-      process.exit(0);
+      return;
     }
 
-    const state = await startDaemon({ keepAlive: false });
+    const { CoreState } = await import('../core/state.js');
+    const { KeychainSecretStore } = await import('./secrets/keychain.js');
+    const state = new CoreState({ secretStore: new KeychainSecretStore() });
     const models = await state.listModels();
     models.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -236,7 +238,6 @@ program
       printTable(['Model ID', 'Engine'], rows);
       console.log(`\nUse with: abbenay chat -m <MODEL ID>`);
     }
-    process.exit(0);
   });
 
 // Default: show help

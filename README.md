@@ -93,7 +93,7 @@ To discover what models an engine offers:
 ```bash
 abbenay list-models --discover ollama           # keyless — works immediately
 abbenay list-models --discover openai           # reads OPENAI_API_KEY from env
-abbenay list-models --discover anthropic --api-key sk-...
+abbenay list-models --discover anthropic        # reads ANTHROPIC_API_KEY from env
 ```
 
 ### Using the core library
