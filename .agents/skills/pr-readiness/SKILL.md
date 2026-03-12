@@ -142,8 +142,11 @@ branch at all times. A stale or inaccurate PR description is a defect.
 Before marking a PR ready for review, verify:
 
 - [ ] New features have tests (see development skill for details).
+- [ ] New branching/policy logic has explicit tests for each branch.
 - [ ] User-facing changes have doc updates (README, DEVELOPMENT.md, etc.).
 - [ ] Architectural decisions are recorded in `docs/decisions.md`.
+- [ ] `npm run test:coverage -w packages/daemon` run locally; uncovered lines
+  in changed files reviewed and justified.
 
 A PR that adds code without corresponding tests and documentation is
 incomplete and MUST NOT be merged.

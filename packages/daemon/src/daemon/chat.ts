@@ -174,25 +174,29 @@ async function runJsonMode(
   }
 }
 
+export type ApprovalInput = 'allow' | 'allow-always' | 'deny' | 'abort' | null;
+
+export function parseApprovalInput(raw: string): ApprovalInput {
+  const answer = raw.trim();
+  const lower = answer.toLowerCase();
+  if (answer === 'A' || lower === 'always') return 'allow-always';
+  if (lower === 'a' || lower === 'allow' || lower === 'y' || lower === 'yes') return 'allow';
+  if (lower === 'd' || lower === 'deny' || lower === 'n' || lower === 'no') return 'deny';
+  if (lower === 'b' || lower === 'abort') return 'abort';
+  return null;
+}
+
 function promptApproval(rl: readline.Interface): Promise<'allow' | 'allow-always' | 'deny' | 'abort'> {
   return new Promise((resolve) => {
     process.stderr.write(`${YELLOW}[a]llow once / allow [A]lways / [d]eny / a[b]ort all?${RESET} `);
 
     const handler = (line: string) => {
-      const answer = line.trim();
-      const lower = answer.toLowerCase();
-      if (answer === 'A' || lower === 'always') {
-        resolve('allow-always');
-      } else if (lower === 'a' || lower === 'allow' || lower === 'y' || lower === 'yes') {
-        resolve('allow');
-      } else if (lower === 'd' || lower === 'deny' || lower === 'n' || lower === 'no') {
-        resolve('deny');
-      } else if (lower === 'b' || lower === 'abort') {
-        resolve('abort');
+      const decision = parseApprovalInput(line);
+      if (decision) {
+        resolve(decision);
       } else {
         process.stderr.write(`${YELLOW}[a]llow once / allow [A]lways / [d]eny / a[b]ort all?${RESET} `);
         rl.once('line', handler);
-        return;
       }
     };
 

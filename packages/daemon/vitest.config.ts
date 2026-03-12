@@ -7,8 +7,14 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 15000,
     include: [
-      'src/**/*.test.ts',            // Unit tests (co-located with source)
-      'tests/**/*.test.ts',          // Integration tests
+      'src/**/*.test.ts',
+      'tests/**/*.test.ts',
     ],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'tests/**'],
+    },
   },
 });
