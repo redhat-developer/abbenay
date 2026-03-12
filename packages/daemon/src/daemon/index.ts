@@ -92,13 +92,17 @@ interface ServerOptions {
   port: number;
   mcp?: boolean;
   /** Lines printed after the server URL, before "Press Ctrl+C" */
-  bannerLines?: (url: string) => string[];
+  bannerLines?: (url: string, mcpStarted: boolean) => string[];
 }
 
 function validatePort(raw: string): number {
-  const port = parseInt(raw, 10);
-  if (!Number.isFinite(port) || port < 0 || port > 65535) {
-    console.error(`Invalid port: "${raw}". Must be an integer between 0 and 65535.`);
+  if (!/^\d+$/.test(raw)) {
+    console.error(`Invalid port: "${raw}". Must be an integer between 1 and 65535.`);
+    process.exit(1);
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error(`Invalid port: "${raw}". Must be an integer between 1 and 65535.`);
     process.exit(1);
   }
   return port;
@@ -113,7 +117,24 @@ async function runServer(opts: ServerOptions): Promise<void> {
     const result = await sendStartWebServer(port);
 
     if (result.already_running) console.log('(server was already running)');
-    for (const line of (bannerLines?.(result.url) ?? [`Server: ${result.url}`])) {
+
+    if (mcp) {
+      try {
+        const http = await import('node:http');
+        await new Promise<void>((resolve, reject) => {
+          const req = http.request(`${result.url}/api/mcp-server/start`, { method: 'POST' }, (res) => {
+            res.resume();
+            res.on('end', () => resolve());
+          });
+          req.on('error', reject);
+          req.end();
+        });
+      } catch {
+        console.warn('Warning: could not start MCP server on existing daemon');
+      }
+    }
+
+    for (const line of (bannerLines?.(result.url, !!mcp) ?? [`Server: ${result.url}`])) {
       console.log(line);
     }
 
@@ -135,7 +156,7 @@ async function runServer(opts: ServerOptions): Promise<void> {
       await daemonState.mcpServer.start(app);
     }
 
-    for (const line of (bannerLines?.(url) ?? [`Server: ${url}`])) {
+    for (const line of (bannerLines?.(url, !!mcp) ?? [`Server: ${url}`])) {
       console.log(line);
     }
 
@@ -156,17 +177,20 @@ program
       await runServer({
         port,
         mcp: true,
-        bannerLines: (url) => [
-          '',
-          `  Abbenay is running on ${url}`,
-          '',
-          `    Dashboard  ${url}`,
-          `    REST API   ${url}/api/*`,
-          `    OpenAI API ${url}/v1/chat/completions`,
-          `    Models     ${url}/v1/models`,
-          `    MCP        ${url}/mcp`,
-          '',
-        ],
+        bannerLines: (url, mcpStarted) => {
+          const lines = [
+            '',
+            `  Abbenay is running on ${url}`,
+            '',
+            `    Dashboard  ${url}`,
+            `    REST API   ${url}/api/*`,
+            `    OpenAI API ${url}/v1/chat/completions`,
+            `    Models     ${url}/v1/models`,
+          ];
+          if (mcpStarted) lines.push(`    MCP        ${url}/mcp`);
+          lines.push('');
+          return lines;
+        },
       });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -186,9 +210,9 @@ program
       await runServer({
         port,
         mcp: options.mcp,
-        bannerLines: (url) => {
+        bannerLines: (url, mcpStarted) => {
           const lines = [`Abbenay Web Dashboard: ${url}`];
-          if (options.mcp) lines.push(`MCP Server: ${url}/mcp`);
+          if (mcpStarted) lines.push(`MCP Server: ${url}/mcp`);
           return lines;
         },
       });
@@ -210,12 +234,12 @@ program
       await runServer({
         port,
         mcp: options.mcp,
-        bannerLines: (url) => {
+        bannerLines: (url, mcpStarted) => {
           const lines = [
             `Abbenay API server: ${url}`,
             `OpenAI-compatible endpoint: ${url}/v1/chat/completions`,
           ];
-          if (options.mcp) lines.push(`MCP Server: ${url}/mcp`);
+          if (mcpStarted) lines.push(`MCP Server: ${url}/mcp`);
           return lines;
         },
       });
