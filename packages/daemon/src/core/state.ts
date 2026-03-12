@@ -617,26 +617,25 @@ export class CoreState {
     }
 
     // ── Build tool validator from policy + caller's approval callback ──
+    // Secure-by-default: all tools require approval unless explicitly
+    // listed in auto_approve.  See DR-019.
     let toolValidator: ToolValidationCallback | undefined;
     if (toolOptions?.onToolApprovalNeeded && this.toolRegistry) {
       const registry = this.toolRegistry;
-      const requirePatterns = toolPolicy?.require_approval;
-      const _autoPatterns = toolPolicy?.auto_approve;
+      const autoPatterns = toolPolicy?.auto_approve;
 
-      if (requirePatterns && requirePatterns.length > 0) {
-        toolValidator = async (toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
-          const resolved = registry.resolve(toolName);
-          const nsName = resolved?.namespacedName || toolName;
+      toolValidator = async (toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
+        const resolved = registry.resolve(toolName);
+        const nsName = resolved?.namespacedName || toolName;
 
-          if (matchesAnyPattern(requirePatterns, nsName)) {
-            const requestId = crypto.randomUUID();
-            debug(`[State] Tool "${toolName}" (${nsName}) requires approval — requestId=${requestId}`);
-            return toolOptions.onToolApprovalNeeded!(requestId, toolName, args);
-          }
-
+        if (matchesAnyPattern(autoPatterns, nsName)) {
           return 'allow';
-        };
-      }
+        }
+
+        const requestId = crypto.randomUUID();
+        debug(`[State] Tool "${toolName}" (${nsName}) requires approval — requestId=${requestId}`);
+        return toolOptions.onToolApprovalNeeded!(requestId, toolName, args);
+      };
     }
 
     // ── Resolve maxSteps for tool loop ──

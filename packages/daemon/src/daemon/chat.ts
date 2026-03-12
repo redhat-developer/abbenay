@@ -4,8 +4,9 @@
  * Starts the daemon in-process if not already running, then enters a
  * readline-based REPL that streams responses to stdout.
  *
- * Tool calls that match `require_approval` patterns pause and prompt the user
- * for approval before executing.
+ * All tool calls require approval by default (secure-by-default, DR-019).
+ * Users can choose "allow always" to session-approve a tool for the
+ * remainder of the chat session without persisting to config.
  */
 
 import * as readline from 'node:readline';
@@ -72,6 +73,8 @@ async function runInteractiveMode(
   messages: Array<{ role: string; content: string }>,
   rl: readline.Interface,
 ): Promise<void> {
+  const sessionApproved = new Set<string>();
+
   const prompt = (): Promise<string | null> => {
     return new Promise((resolve) => {
       rl.prompt();
@@ -95,9 +98,17 @@ async function runInteractiveMode(
     const toolOptions: ChatToolOptions = {
       toolMode: options.tools === false ? 'none' : 'auto',
       onToolApprovalNeeded: async (_requestId: string, toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
+        if (sessionApproved.has(toolName)) {
+          return 'allow';
+        }
         process.stderr.write(`\n${YELLOW}⚠ Tool approval required:${RESET} ${BOLD}${toolName}${RESET}\n`);
         process.stderr.write(`${DIM}Arguments:${RESET} ${JSON.stringify(args, null, 2)}\n`);
-        return promptApproval(rl);
+        const decision = await promptApproval(rl);
+        if (decision === 'allow-always') {
+          sessionApproved.add(toolName);
+          return 'allow';
+        }
+        return decision;
       },
     };
 
@@ -163,20 +174,23 @@ async function runJsonMode(
   }
 }
 
-function promptApproval(rl: readline.Interface): Promise<'allow' | 'deny' | 'abort'> {
+function promptApproval(rl: readline.Interface): Promise<'allow' | 'allow-always' | 'deny' | 'abort'> {
   return new Promise((resolve) => {
-    process.stderr.write(`${YELLOW}[a]llow / [d]eny / a[b]ort all?${RESET} `);
+    process.stderr.write(`${YELLOW}[a]llow once / allow [A]lways / [d]eny / a[b]ort all?${RESET} `);
 
     const handler = (line: string) => {
-      const answer = line.trim().toLowerCase();
-      if (answer === 'a' || answer === 'allow' || answer === 'y' || answer === 'yes') {
+      const answer = line.trim();
+      const lower = answer.toLowerCase();
+      if (lower === 'a' || lower === 'allow' || lower === 'y' || lower === 'yes') {
         resolve('allow');
-      } else if (answer === 'd' || answer === 'deny' || answer === 'n' || answer === 'no') {
+      } else if (answer === 'A' || lower === 'always') {
+        resolve('allow-always');
+      } else if (lower === 'd' || lower === 'deny' || lower === 'n' || lower === 'no') {
         resolve('deny');
-      } else if (answer === 'b' || answer === 'abort') {
+      } else if (lower === 'b' || lower === 'abort') {
         resolve('abort');
       } else {
-        process.stderr.write(`${YELLOW}[a]llow / [d]eny / a[b]ort all?${RESET} `);
+        process.stderr.write(`${YELLOW}[a]llow once / allow [A]lways / [d]eny / a[b]ort all?${RESET} `);
         rl.once('line', handler);
         return;
       }

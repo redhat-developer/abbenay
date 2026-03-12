@@ -220,3 +220,17 @@ have leading zeros (semver prohibits them).
 VS Code uses a separate `--pre-release` flag instead. CalVer was chosen over
 semver because the project is not yet stable enough for semver semantics to be
 meaningful, and date-based versions communicate recency at a glance.
+
+## DR-019: Secure-by-default tool approval
+
+**Date:** 2026-03-12  
+**Decision:** All tool calls require user approval unless the tool is explicitly
+listed in `tool_policy.auto_approve`. The previous default (auto-approve
+everything when no policy is configured) is replaced by ask-by-default.  
+**Rationale:** MCP servers can expose arbitrary tools. A malicious or
+misconfigured server could execute destructive operations without the user
+knowing. Defaulting to "ask" matches browser permission semantics — the user
+must grant trust explicitly. Friction is mitigated by session-scoped "allow
+always" in the CLI (not persisted) and "Allow & Remember" in the web UI
+(persisted to `config.yaml`). Users who want the previous behavior can set
+`tool_policy.auto_approve: ['*']`.
