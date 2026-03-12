@@ -7,7 +7,8 @@
  */
 
 export function debug(...args: unknown[]): void {
-  if (process.env.ABBENAY_DEBUG) {
+  const flag = process.env.ABBENAY_DEBUG;
+  if (flag === '1' || flag?.toLowerCase() === 'true') {
     console.error(...args);
   }
 }

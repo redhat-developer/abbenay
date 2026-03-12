@@ -36,6 +36,7 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
   if (isDaemonRunningSync()) {
     console.error(`${DIM}Daemon already running — using in-process state...${RESET}`);
     state = new DaemonState();
+    await state.initMcpConnections();
   } else {
     console.error(`${DIM}Starting daemon...${RESET}`);
     state = await startDaemon({ keepAlive: false });
