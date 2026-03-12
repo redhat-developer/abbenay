@@ -1021,6 +1021,26 @@ export function createWebApp(state: DaemonState): Express {
           if (chunk.type === 'text' && chunk.text) {
             fullText += chunk.text;
             safeWrite(`data: ${JSON.stringify({ type: 'text', content: chunk.text })}\n\n`);
+          } else if (chunk.type === 'tool') {
+            const toolData: Record<string, unknown> = { type: 'tool', name: chunk.name, state: chunk.state, done: chunk.done };
+            if (chunk.call) {
+              toolData.call = { params: chunk.call.params, result: chunk.call.result };
+            }
+            safeWrite(`data: ${JSON.stringify(toolData)}\n\n`);
+
+            if (chunk.done && chunk.call) {
+              const callId = `call_${chunk.name}_${Date.now()}`;
+              await state.sessionStore.appendMessage(sessionId, {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ id: callId, type: 'function', function: { name: chunk.name, arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}' } }],
+              });
+              await state.sessionStore.appendMessage(sessionId, {
+                role: 'tool',
+                content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
+                tool_call_id: callId,
+              });
+            }
           } else if (chunk.type === 'error') {
             safeWrite(`data: ${JSON.stringify({ type: 'error', error: chunk.error })}\n\n`);
           } else if (chunk.type === 'done') {

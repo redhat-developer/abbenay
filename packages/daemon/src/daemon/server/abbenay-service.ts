@@ -944,10 +944,33 @@ export function createAbbenayService(state: DaemonState) {
           const toolOptions: ChatToolOptions = { toolMode, maxToolIterations };
 
           let fullText = '';
+          const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+
           for await (const chunk of state.chat(session.model, allMessages, hasParams ? requestParams : undefined, toolOptions)) {
             if (chunk.type === 'text' && chunk.text) {
               fullText += chunk.text;
               call.write({ text: { text: chunk.text } });
+            } else if (chunk.type === 'tool') {
+              if (chunk.done && chunk.call) {
+                const callId = `call_${chunk.name}_${Date.now()}`;
+                pendingToolCalls.push({
+                  id: callId,
+                  name: chunk.name || '',
+                  arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}',
+                });
+
+                // Persist assistant tool_calls message + tool result
+                await state.sessionStore.appendMessage(sessionId, {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [{ id: callId, type: 'function', function: { name: chunk.name, arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}' } }],
+                });
+                await state.sessionStore.appendMessage(sessionId, {
+                  role: 'tool',
+                  content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
+                  tool_call_id: callId,
+                });
+              }
             } else if (chunk.type === 'error') {
               call.write({ error: { code: 'INTERNAL', message: chunk.error } });
             } else if (chunk.type === 'done') {

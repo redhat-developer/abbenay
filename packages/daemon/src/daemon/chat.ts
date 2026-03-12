@@ -86,11 +86,15 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
 
   const messages: Array<{ role: string; content: string }> = [];
 
-  // Load existing session messages
+  // Load existing session messages (including tool call data)
   if (sessionId && options.session !== 'new') {
     const session = await store.get(sessionId, true);
     for (const msg of session.messages) {
-      messages.push({ role: msg.role, content: msg.content });
+      const loaded: Record<string, unknown> = { role: msg.role, content: msg.content };
+      if (msg.tool_calls) loaded.tool_calls = msg.tool_calls;
+      if (msg.tool_call_id) loaded.tool_call_id = msg.tool_call_id;
+      if (msg.name) loaded.name = msg.name;
+      messages.push(loaded as { role: string; content: string });
     }
     if (messages.length > 0) {
       console.error(`${DIM}Loaded ${messages.length} message(s) from session${RESET}`);
@@ -180,6 +184,23 @@ async function runInteractiveMode(
               ? chunk.call.result.substring(0, 200)
               : JSON.stringify(chunk.call?.result || {}).substring(0, 200);
             process.stderr.write(`${GREEN}✓${RESET} ${DIM}${result}${RESET}\n`);
+
+            if (chunk.call && sessionId && store) {
+              const callId = `call_${chunk.name}_${Date.now()}`;
+              const toolCallMsg = {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ id: callId, type: 'function', function: { name: chunk.name, arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}' } }],
+              };
+              const toolResultMsg = {
+                role: 'tool',
+                content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
+                tool_call_id: callId,
+              };
+              messages.push(toolCallMsg, toolResultMsg);
+              await store.appendMessage(sessionId, toolCallMsg);
+              await store.appendMessage(sessionId, toolResultMsg);
+            }
           }
         } else if (chunk.type === 'error') {
           process.stderr.write(`\n${RED}Error: ${chunk.error}${RESET}\n`);
