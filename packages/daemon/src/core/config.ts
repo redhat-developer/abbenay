@@ -97,8 +97,8 @@ export interface McpServerConfig {
   args?: string[];
   /** URL for HTTP/SSE transport */
   url?: string;
-  /** Transport type */
-  transport: 'stdio' | 'http';
+  /** Transport type: stdio, http (Streamable HTTP), or sse (legacy SSE) */
+  transport: 'stdio' | 'http' | 'sse';
   /** Whether this server is enabled */
   enabled: boolean;
   /** HTTP headers (for authenticated endpoints) */
