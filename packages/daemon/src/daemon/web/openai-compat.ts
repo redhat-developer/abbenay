@@ -151,7 +151,6 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
       top_p,
       max_tokens,
       max_completion_tokens,
-      tools,
     } = req.body;
 
     if (!model) {
@@ -163,12 +162,15 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
       return;
     }
 
-    const chatMessages = messages.map((m: { role?: string; content?: string; name?: string; tool_call_id?: string }) => ({
-      role: m.role || 'user',
-      content: m.content || '',
-      name: m.name || undefined,
-      tool_call_id: m.tool_call_id || undefined,
-    }));
+    const chatMessages = messages.map(
+      (m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown }) => ({
+        role: m.role || 'user',
+        content: m.content || '',
+        name: m.name || undefined,
+        tool_call_id: m.tool_call_id || undefined,
+        tool_calls: m.tool_calls || undefined,
+      }),
+    );
 
     const requestParams: Record<string, unknown> = {};
     if (temperature != null) requestParams.temperature = temperature;
@@ -177,24 +179,12 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
     if (effectiveMaxTokens != null) requestParams.maxTokens = effectiveMaxTokens;
     const hasParams = Object.keys(requestParams).length > 0;
 
-    interface OpenAIToolDef {
-      type?: string;
-      function?: { name?: string; description?: string; parameters?: unknown };
-    }
-    const toolDefs = Array.isArray(tools)
-      ? (tools as OpenAIToolDef[])
-          .filter((t) => t.type === 'function' && t.function)
-          .map((t) => ({
-            name: t.function!.name || '',
-            description: t.function!.description || '',
-            inputSchema: JSON.stringify(t.function!.parameters ?? {}),
-          }))
-          .filter((t) => t.name)
-      : undefined;
-
+    // OpenAI-compatible transport has no approval UI, so tools are disabled
+    // to preserve secure-by-default (DR-019). M2 can add opt-in via config
+    // that would parse `tools` from the request and wire onToolApprovalNeeded.
     const toolOptions: ChatToolOptions = {
-      toolMode: toolDefs && toolDefs.length > 0 ? 'auto' : 'none',
-      tools: toolDefs && toolDefs.length > 0 ? toolDefs : undefined,
+      toolMode: 'none',
+      tools: undefined,
     };
 
     const chatId = generateChatId();

@@ -152,10 +152,13 @@ program
   .command('serve')
   .description('Start OpenAI-compatible API server (serves /v1/models, /v1/chat/completions)')
   .option('-p, --port <port>', 'Port to listen on', '8787')
-  .option('--host <host>', 'Host to bind to', '127.0.0.1')
   .option('--mcp', 'Start MCP server on /mcp endpoint')
   .action(async (options) => {
     const port = parseInt(options.port, 10);
+    if (!Number.isFinite(port) || port < 0 || port > 65535) {
+      console.error(`Invalid port: "${options.port}". Must be an integer between 0 and 65535.`);
+      process.exit(1);
+    }
 
     try {
       if (isDaemonRunningSync()) {
