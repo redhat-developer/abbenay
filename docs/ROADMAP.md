@@ -6,10 +6,10 @@ Status legend: **done** | **partial** | **stub** | **planned**
 
 ## 1. Tool Approval Tiers — done (M1–M2)
 
-The `ToolPolicyConfig` already defines three tiers (`auto_approve`, `require_approval`,
-`disabled_tools`) and the web dashboard already lets users assign per-tool policies.
-`disabled_tools` is enforced at chat time. The other two are **not enforced** — every
-non-disabled tool executes immediately.
+The `ToolPolicyConfig` defines three tiers (`auto_approve`, `require_approval`,
+`disabled_tools`) and the web dashboard lets users assign per-tool policies.
+All three tiers are enforced. The default for tools matching no tier is
+**require approval** (secure-by-default, DR-019).
 
 ### What exists
 
@@ -46,9 +46,11 @@ non-disabled tool executes immediately.
 4. **CLI chat command** (see section 2 below)
    The CLI `aby chat` command needs an interactive `readline` prompt for approvals.
 
-5. **`auto_approve` tier**
-   Tools matching `auto_approve` patterns execute without pause (current behavior).
-   Tools matching neither tier default to `auto_approve` (current behavior preserved).
+5. **`auto_approve` tier** — done
+   Tools matching `auto_approve` patterns execute without pause.
+   Tools matching neither tier default to **require approval** (secure-by-default,
+   see DR-019). Users who want the previous auto-approve-all behavior can set
+   `tool_policy.auto_approve: ['*:*/*']`.
 
 6. **`max_tool_iterations` enforcement**
    Enforce the cap in the tool loop inside `streamChat` / `CoreState.chat()`.

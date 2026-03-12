@@ -554,7 +554,8 @@
                   <pre style="margin-top: 4px; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 0.85em; overflow-x: auto;" x-text="JSON.stringify(pendingApproval.args, null, 2)"></pre>
                 </details>
                 <div style="display: flex; gap: 8px;">
-                  <button class="btn btn-primary" @click="resolveApproval('allow')">Allow</button>
+                  <button class="btn btn-primary" @click="resolveApproval('allow')">Allow Once</button>
+                  <button class="btn btn-primary" @click="resolveApprovalAndRemember()" style="background: #0a6640;">Allow &amp; Remember</button>
                   <button class="btn btn-secondary" @click="resolveApproval('deny')">Deny</button>
                   <button class="btn btn-secondary" @click="resolveApproval('abort')" style="color: #c00;">Abort All</button>
                 </div>
@@ -775,7 +776,7 @@
                         <select :value="getToolPolicy(tool.name)" @change="setToolPolicy(tool.name, $event.target.value)"
                                 style="width: auto; padding: 2px 6px; font-size: 0.8rem;">
                           <option value="always">Always</option>
-                          <option value="ask">Ask (soon)</option>
+                          <option value="ask">Ask</option>
                           <option value="disable">Disable</option>
                         </select>
                       </td>
@@ -1913,12 +1914,11 @@ function dashboard() {
     },
     
     getToolPolicy(toolName) {
-      return this.toolPolicy[toolName] || 'always';
+      return this.toolPolicy[toolName] || 'ask';
     },
     
     async setToolPolicy(toolName, policy) {
       this.toolPolicy[toolName] = policy;
-      // Rebuild the tool_policy config arrays
       const disabled_tools = [];
       const require_approval = [];
       const auto_approve = [];
@@ -1927,19 +1927,16 @@ function dashboard() {
         else if (p === 'ask') require_approval.push(name);
         else if (p === 'always') auto_approve.push(name);
       }
-      // Only write non-default entries (default is 'always', so no need to save those)
-      const tool_policy = {};
-      if (disabled_tools.length > 0) tool_policy.disabled_tools = disabled_tools;
-      if (require_approval.length > 0) tool_policy.require_approval = require_approval;
-      // auto_approve is the default, only include if explicitly set
-      if (auto_approve.length > 0) tool_policy.auto_approve = auto_approve;
       
       try {
-        // Read current config, update tool_policy, save
         const resp = await fetch('/api/config?location=user');
         const data = await resp.json();
         const config = data.config || {};
-        config.tool_policy = tool_policy;
+        const existing = config.tool_policy || {};
+        existing.disabled_tools = disabled_tools.length > 0 ? disabled_tools : undefined;
+        existing.require_approval = require_approval.length > 0 ? require_approval : undefined;
+        existing.auto_approve = auto_approve.length > 0 ? auto_approve : undefined;
+        config.tool_policy = existing;
         await fetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2110,6 +2107,7 @@ function dashboard() {
                     chatId: data.chatId,
                     requestId: data.requestId,
                     toolName: data.toolName,
+                    namespacedName: data.namespacedName,
                     args: data.args,
                   };
                   this.chatMessages[idx].content += `\n\n⏸️ **Waiting for approval:** \`${data.toolName}\`\n`;
@@ -2149,6 +2147,13 @@ function dashboard() {
       } catch (e) {
         console.error('Failed to send approval:', e);
       }
+    },
+
+    async resolveApprovalAndRemember() {
+      if (!this.pendingApproval) return;
+      const policyKey = this.pendingApproval.namespacedName || this.pendingApproval.toolName;
+      await this.resolveApproval('allow');
+      await this.setToolPolicy(policyKey, 'always');
     },
   };
 }
