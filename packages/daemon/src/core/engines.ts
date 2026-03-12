@@ -16,6 +16,7 @@ import { streamText, jsonSchema, tool } from 'ai';
 import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
 
 import { mockStreamChat, getMockModels } from './mock.js';
+import { debug } from './debug.js';
 
 // ── Provider config type for factory functions ─────────────────────────
 
@@ -632,7 +633,7 @@ export async function* streamChat(
     return;
   }
 
-  console.log(`[Adapter] streamChat: engine="${engineId}", model="${engineModelId}", messages=${messages.length}, tools=${tools?.length || 0}`);
+  debug(`[Adapter] streamChat: engine="${engineId}", model="${engineModelId}", messages=${messages.length}, tools=${tools?.length || 0}`);
 
   try {
     // Create the Vercel AI SDK model instance (async — loads provider package on demand)

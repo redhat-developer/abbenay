@@ -9,6 +9,7 @@
  */
 
 import type { SecretStore } from './secrets.js';
+import { debug } from './debug.js';
 import {
   loadConfig,
   loadWorkspaceConfig,
@@ -511,7 +512,7 @@ export class CoreState {
     toolExecutor?: ToolExecutor,
   ): AsyncGenerator<ChatChunk> {
     const toolMode = toolOptions?.toolMode || 'auto';
-    console.log(`[State] Chat request: compositeModelId="${compositeModelId}", messages=${messages.length}, toolMode="${toolMode}", tools=${toolOptions?.tools?.length || 0}`);
+    debug(`[State] Chat request: compositeModelId="${compositeModelId}", messages=${messages.length}, toolMode="${toolMode}", tools=${toolOptions?.tools?.length || 0}`);
 
     // ── Validate passthrough mode ──
     if (toolMode === 'passthrough' && (!toolOptions?.tools || toolOptions.tools.length === 0)) {
@@ -532,7 +533,7 @@ export class CoreState {
 
     const providerId = compositeModelId.substring(0, slashIdx);
     const modelName = compositeModelId.substring(slashIdx + 1);
-    console.log(`[State] Chat: providerId="${providerId}", modelName="${modelName}"`);
+    debug(`[State] Chat: providerId="${providerId}", modelName="${modelName}"`);
 
     // ── Look up virtual provider ──
     const config = this.loadProviderConfig();
@@ -584,7 +585,7 @@ export class CoreState {
     // ── Merge params (4-tier: request > config > policy > engine default) ──
     const mergedParams = mergeParams(modelCfg, requestParams, flatPolicy);
 
-    console.log(`[State] Chat: engine="${providerCfg.engine}", engineModelId="${engineModelId}", toolMode="${effectiveToolMode}", baseUrl="${providerCfg.base_url || '(none)'}"`);
+    debug(`[State] Chat: engine="${providerCfg.engine}", engineModelId="${engineModelId}", toolMode="${effectiveToolMode}", baseUrl="${providerCfg.base_url || '(none)'}"`);
 
     // ── Resolve tools based on mode ──
     let tools: ToolDefinition[] | undefined;
@@ -611,7 +612,7 @@ export class CoreState {
         resolvedExecutor = this.toolRegistry.buildExecutor(
           toolExecutor ? (tool, args) => toolExecutor!(tool.originalName, args) : undefined,
         );
-        console.log(`[State] Auto-loaded ${tools.length} tools from registry`);
+        debug(`[State] Auto-loaded ${tools.length} tools from registry`);
       }
     }
 
@@ -629,7 +630,7 @@ export class CoreState {
 
           if (matchesAnyPattern(requirePatterns, nsName)) {
             const requestId = crypto.randomUUID();
-            console.log(`[State] Tool "${toolName}" (${nsName}) requires approval — requestId=${requestId}`);
+            debug(`[State] Tool "${toolName}" (${nsName}) requires approval — requestId=${requestId}`);
             return toolOptions.onToolApprovalNeeded!(requestId, toolName, args);
           }
 
