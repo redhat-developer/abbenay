@@ -120,7 +120,7 @@ a follow-up task.
 - New CLI commands MUST have unit tests exercising their data layer (e.g.,
   test the functions the command calls, not the process spawn).
 - New or changed core library functions MUST have unit tests.
-- Bug fixes SHOULD include a regression test proving the fix.
+- Bug fixes MUST include a regression test proving the fix.
 - PRs that add features or fix bugs without tests are incomplete.
 - Use the `mock` engine for tests that would otherwise require network access
   or API keys.
@@ -128,6 +128,16 @@ a follow-up task.
   and will always pass regardless of the actual ordering. Instead, compare the
   original order against a separately sorted copy, or assert pairwise ordering
   on the unsorted result.
+- Branching logic (if/else chains, policy tiers, precedence rules) MUST have
+  tests covering every branch and combination. These are the most common
+  source of subtle bugs caught only in review.
+- Interactive prompts that accept multiple inputs with different semantics
+  (e.g., `a` vs `A`) MUST have tests for all valid inputs including case
+  variants.
+- Glob patterns referenced in documentation or config examples MUST be
+  validated in a test against real namespaced identifiers.
+- Run `npm run test:coverage -w packages/daemon` locally before pushing to
+  review uncovered lines in changed files.
 
 ## CLI commands
 

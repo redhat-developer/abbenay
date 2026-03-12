@@ -60,6 +60,43 @@ associated comments in the same commit.
 Expressions like `x ? x : x` or `x && typeof x === 'object' ? x : x` are
 always identity operations. Simplify them.
 
+### Case-sensitivity in branching logic
+
+When matching user input against both case-sensitive and case-insensitive
+patterns, always check the exact-case match FIRST. If you lowercase the input
+and check the lowercase value before the exact value, the lowercase branch
+swallows both cases. Example: checking `lower === 'a'` before `answer === 'A'`
+makes the uppercase branch unreachable.
+
+### Tier/precedence ordering
+
+When implementing multi-tier policy systems (e.g., require > auto > default),
+verify that higher-priority tiers are checked BEFORE lower-priority ones.
+Dropping a tier or reordering checks silently changes the semantics. After any
+refactor that touches tier logic, confirm the full precedence chain is preserved.
+
+### Glob patterns and namespaced identifiers
+
+Tool names are namespaced (`prefix:sourceId/toolName`). The glob `*` matches
+`[^/]*` (single segment), so bare `*` won't match names containing `/`. Use
+`*:*/*` to match all namespaced tools. Always test glob patterns against
+real namespaced names before documenting them.
+
+### LLM-facing names vs registry names
+
+The model sees aliased tool names; the registry uses namespaced names
+(`mcp:server/tool`). Any feature that persists a tool name (config, policy,
+approval) MUST use the namespaced name, not the LLM alias. Verify by tracing
+the value from its source (SSE event, callback parameter) to its destination
+(config file, pattern matcher).
+
+### Config key preservation
+
+When updating a nested config object (e.g., `tool_policy`), merge into the
+existing object rather than replacing it. Replacing drops keys the UI doesn't
+manage (e.g., `max_tool_iterations`, `aliases`). Read-modify-write, not
+read-replace-write.
+
 ## Workflow
 
 1. After pushing a PR, wait for both CI and Copilot review.
