@@ -17,7 +17,8 @@ packages/daemon/
 │   │   ├── config.test.ts            <- Unit test (co-located)
 │   │   ├── tool-registry.test.ts     <- Unit test (glob matching, registry)
 │   │   ├── tool-approval.test.ts     <- Unit test (3-tier approval logic)
-│   │   └── session-store.test.ts     <- Unit test (session CRUD, index)
+│   │   ├── session-store.test.ts     <- Unit test (session CRUD, index)
+│   │   └── session-summarizer.test.ts <- Unit test (periodic summary logic)
 │   ├── daemon/
 │   │   ├── chat-prompt.test.ts       <- Unit test (parseApprovalInput)
 │   │   └── web/
@@ -70,7 +71,8 @@ Pure unit tests with no I/O, no network, no processes.
 | `src/state.test.ts` | DaemonState: provider listing, model listing, chat flow |
 | `src/daemon/chat-prompt.test.ts` | `parseApprovalInput` case-sensitive routing |
 | `src/daemon/web/openai-compat.test.ts` | OpenAI format mapping: models, finish reasons, stream chunks, complete responses |
-| `src/core/session-store.test.ts` | SessionStore: CRUD, appendMessage, updateTitle, index consistency |
+| `src/core/session-store.test.ts` | SessionStore: CRUD, appendMessage, updateTitle, updateSummary, index consistency |
+| `src/core/session-summarizer.test.ts` | generateSessionSummary, maybeSummarize interval logic, error handling |
 
 ### Layer 2: Integration Tests
 

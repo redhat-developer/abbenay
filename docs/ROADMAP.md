@@ -184,7 +184,7 @@ companion `index.json` for fast listing. See DR-021.
 |---|---|
 | `ForkSession` gRPC + web API | medium |
 | `ExportSession` / `ImportSession` | medium |
-| `ReplaySession` / `SummarizeSession` | low |
+| `ReplaySession` / ~~`SummarizeSession`~~ | low (SummarizeSession done) |
 | Web dashboard session sidebar UI | medium |
 | VS Code session picker | low |
 | SQLite storage backend (large session counts) | low |
@@ -198,7 +198,7 @@ companion `index.json` for fast listing. See DR-021.
 - **M2**: Web dashboard session sidebar
 - **M3**: CLI session commands — **done**
 - **M4**: `ForkSession`, `ExportSession`, `ImportSession`
-- **M5**: `ReplaySession`, `SummarizeSession`
+- **M5**: `ReplaySession`, ~~`SummarizeSession`~~ (done)
 
 ---
 
@@ -249,7 +249,7 @@ Several gRPC RPCs in `abbenay-service.ts` are unimplemented stubs.
 | `ListSessions` | done | section 5 |
 | `DeleteSession` | done | section 5 |
 | `ReplaySession` | stub | section 5 |
-| `SummarizeSession` | stub | section 5 |
+| `SummarizeSession` | **done** | section 5 |
 | `ForkSession` | stub | section 5 |
 | `ExportSession` | stub | section 5 |
 | `ImportSession` | stub | section 5 |

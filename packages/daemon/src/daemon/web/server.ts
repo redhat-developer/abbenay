@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
 import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig } from '../../core/policies.js';
+import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
 import { getEngines, getProviderTemplates } from '../../core/engines.js';
@@ -972,6 +973,33 @@ export function createWebApp(state: DaemonState): Express {
     }
   });
 
+  app.get('/api/sessions/:id/summary', async (req, res) => {
+    try {
+      const session = await state.sessionStore.get(req.params.id, true);
+      const userCount = session.messages.filter((m) => m.role === 'user').length;
+
+      if (session.summary && session.summaryMessageCount === userCount) {
+        res.json({ summary: session.summary, from_cache: true });
+        return;
+      }
+
+      const model = req.query.model as string | undefined;
+      const summary = await generateSessionSummary(state, session, model);
+      if (summary) {
+        await state.sessionStore.updateSummary(req.params.id, summary, userCount);
+      }
+      res.json({ summary, from_cache: false });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('not found') || msg.includes('Invalid session ID')) {
+        res.status(404).json({ error: msg });
+      } else {
+        console.error('[Web] GET /api/sessions/:id/summary error:', msg);
+        res.status(500).json({ error: msg });
+      }
+    }
+  });
+
   app.post('/api/sessions/:id/chat', async (req, res) => {
     const sessionId = req.params.id;
     const { message } = req.body;
@@ -1072,6 +1100,8 @@ export function createWebApp(state: DaemonState): Express {
             await state.sessionStore.updateTitle(sessionId, title);
           }
         }
+
+        void maybeSummarize(state, sessionId, state.sessionStore);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[Web] Session chat error:', msg);

@@ -12,6 +12,7 @@ import {
   getWebServerPort,
 } from '../web/server.js';
 import { listAllPolicies, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
+import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -983,6 +984,8 @@ export function createAbbenayService(state: DaemonState) {
               await state.sessionStore.updateTitle(sessionId, title);
             }
           }
+
+          void maybeSummarize(state, sessionId, state.sessionStore);
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
           console.error('[gRPC] SessionChat error:', msg);
@@ -998,8 +1001,35 @@ export function createAbbenayService(state: DaemonState) {
     ReplaySession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
-    SummarizeSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
+    SummarizeSession(call: grpc.ServerUnaryCall<{ session_id?: string; sessionId?: string; summarize_model?: string; summarizeModel?: string }, object>, callback: grpc.sendUnaryData<object>): void {
+      const sessionId = call.request.session_id || call.request.sessionId || '';
+      if (!sessionId) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
+        return;
+      }
+
+      (async () => {
+        try {
+          const session = await state.sessionStore.get(sessionId, true);
+          const userCount = session.messages.filter((m) => m.role === 'user').length;
+
+          if (session.summary && session.summaryMessageCount === userCount) {
+            callback(null, { summary: session.summary, from_cache: true });
+            return;
+          }
+
+          const overrideModel = call.request.summarize_model || call.request.summarizeModel || undefined;
+          const summary = await generateSessionSummary(state, session, overrideModel);
+          if (summary) {
+            await state.sessionStore.updateSummary(sessionId, summary, userCount);
+          }
+          callback(null, { summary, from_cache: false });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error('[gRPC] SummarizeSession error:', msg);
+          callback({ code: grpc.status.INTERNAL, message: msg });
+        }
+      })();
     },
     ForkSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
@@ -1079,6 +1109,7 @@ function sessionToProto(session: import('../../core/session-store.js').Session) 
     updated_at: toTimestamp(session.updatedAt),
     forked_from: session.parentSessionId,
     fork_point: session.forkPoint,
+    cached_summary: session.summary,
   };
 }
 
@@ -1090,6 +1121,7 @@ function summaryToProto(summary: import('../../core/session-store.js').SessionSu
     message_count: summary.messageCount,
     created_at: toTimestamp(summary.createdAt),
     updated_at: toTimestamp(summary.updatedAt),
+    summary: summary.summary,
   };
 }
 
