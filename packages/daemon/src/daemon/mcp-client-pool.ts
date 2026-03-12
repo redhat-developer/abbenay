@@ -245,10 +245,10 @@ export class McpClientPool {
     }
 
     if (!config.url) {
-      throw new Error('http transport requires a url');
+      throw new Error(`${config.transport} transport requires a url`);
     }
     return {
-      type: 'http' as const,
+      type: config.transport === 'sse' ? 'sse' as const : 'http' as const,
       url: config.url,
       headers: config.headers,
     };
