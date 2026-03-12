@@ -21,6 +21,7 @@ import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
 import { getEngines, getProviderTemplates } from '../../core/engines.js';
+import { registerOpenAIRoutes } from './openai-compat.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -890,6 +891,9 @@ export function createWebApp(state: DaemonState): Express {
       res.status(500).json({ error: msg });
     }
   });
+
+  // ── OpenAI-compatible API (/v1/*) ─────────────────────────────────────
+  registerOpenAIRoutes(app, state);
 
   return app;
 }
