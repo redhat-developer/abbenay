@@ -7,6 +7,7 @@
  *   abbenay status        # Check daemon status
  *   abbenay stop          # Stop running daemon
  *   abbenay web           # Start web dashboard
+ *   abbenay serve         # Start OpenAI-compatible API server
  *   abbenay chat          # Interactive chat
  *   abbenay list-engines  # List supported engines
  *   abbenay list-models   # List configured models
@@ -143,6 +144,58 @@ program
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error('Failed to start web server:', msg);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('serve')
+  .description('Start OpenAI-compatible API server (serves /v1/models, /v1/chat/completions)')
+  .option('-p, --port <port>', 'Port to listen on', '8787')
+  .option('--mcp', 'Start MCP server on /mcp endpoint')
+  .action(async (options) => {
+    const port = parseInt(options.port, 10);
+    if (!Number.isFinite(port) || port < 0 || port > 65535) {
+      console.error(`Invalid port: "${options.port}". Must be an integer between 0 and 65535.`);
+      process.exit(1);
+    }
+
+    try {
+      if (isDaemonRunningSync()) {
+        console.log('Daemon is running, requesting web server start via gRPC...');
+        const { sendStartWebServer, sendStopWebServer } = await import('./web/grpc-web-control.js');
+        const result = await sendStartWebServer(port);
+        console.log(`Abbenay API server: ${result.url}`);
+        console.log(`OpenAI-compatible endpoint: ${result.url}/v1/chat/completions`);
+        if (result.already_running) console.log('(server was already running)');
+
+        await new Promise<void>((resolve) => {
+          const shutdown = async () => {
+            console.log('\nStopping server...');
+            try { await sendStopWebServer(); } catch { /* ignore */ }
+            resolve();
+          };
+          process.on('SIGINT', shutdown);
+          process.on('SIGTERM', shutdown);
+        });
+      } else {
+        console.log('No daemon running, starting daemon + API server...');
+        const daemonState = await startDaemon({ keepAlive: false });
+        const { url, app } = await startEmbeddedWebServer(daemonState, port);
+        console.log(`Abbenay API server: ${url}`);
+        console.log(`OpenAI-compatible endpoint: ${url}/v1/chat/completions`);
+
+        if (options.mcp && app) {
+          await daemonState.mcpServer.start(app);
+          console.log(`MCP Server: ${url}/mcp`);
+        }
+
+        console.log('Press Ctrl+C to stop');
+        await new Promise(() => {});
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Failed to start API server:', msg);
       process.exit(1);
     }
   });

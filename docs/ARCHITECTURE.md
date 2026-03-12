@@ -81,6 +81,7 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/index.ts` | CLI entry point (Commander) |
 | `daemon/server/abbenay-service.ts` | gRPC service handlers |
 | `daemon/web/server.ts` | Express web server + REST API |
+| `daemon/web/openai-compat.ts` | OpenAI-compatible `/v1/*` routes (models, chat completions) |
 | `daemon/web/grpc-web-control.ts` | gRPC client for web server control |
 | `daemon/secrets/keychain.ts` | `KeychainSecretStore` (keytar native addon) |
 
@@ -93,6 +94,7 @@ The core TypeScript/Node.js process that runs as a background daemon.
 **Subcommands:**
 - `abbenay daemon` - Start the gRPC server on Unix socket (or named pipe on Windows)
 - `abbenay web` - Start the web dashboard (embedded in daemon or started via gRPC if daemon already running)
+- `abbenay serve` - Start the OpenAI-compatible API server (same as `web` but framed for API use)
 - `abbenay status` - Check if daemon is running
 - `abbenay stop` - Stop the running daemon
 
@@ -108,10 +110,11 @@ The web dashboard runs inside the daemon process via Express:
 - **Static assets**: Served from `packages/daemon/static/`
 - **API routes**: `/api/*` -> Direct calls to `DaemonState` (no gRPC in the loop)
 - **Chat SSE**: `POST /api/chat` -> Streaming responses via Server-Sent Events
+- **OpenAI-compatible API**: `/v1/models`, `/v1/chat/completions` -> Drop-in replacement for any OpenAI-compatible client (see DR-020)
 
 The web server is started either:
-1. In-process when `abbenay web` runs and no daemon is running
-2. Via gRPC `StartWebServer` when a daemon is already running and `abbenay web` is invoked
+1. In-process when `abbenay web` or `abbenay serve` runs and no daemon is running
+2. Via gRPC `StartWebServer` when a daemon is already running and `abbenay web`/`abbenay serve` is invoked
 
 ### VS Code Extension
 
@@ -429,6 +432,8 @@ Session management is **deferred**. Stub RPCs exist in the proto and service han
    - POST /api/config → saveConfig()
    - POST /api/secrets → state.secretStore.set()
    - POST /api/chat → state.chat() (SSE stream)
+   - GET /v1/models → state.listModels() (OpenAI format)
+   - POST /v1/chat/completions → state.chat() (OpenAI format, streaming or JSON)
    ↓
 4. Web server has direct DaemonState access (no gRPC in the loop)
 ```

@@ -234,3 +234,16 @@ must grant trust explicitly. Friction is mitigated by session-scoped "allow
 always" in the CLI (not persisted) and "Allow & Remember" in the web UI
 (persisted to `config.yaml`). Users who want the previous behavior can set
 `tool_policy.auto_approve: ['*:*/*']`.
+
+## DR-020: OpenAI-compatible API on the existing Express server
+
+**Date:** 2026-03-12  
+**Decision:** Mount OpenAI-compatible `/v1/` routes (`GET /v1/models`,
+`POST /v1/chat/completions`) on the existing Express server rather than a
+separate process or server.  
+**Rationale:** Single server, single port, no extra process management. The
+existing Express app already handles CORS, static assets, and SSE. Adding `/v1/`
+routes is purely additive and doesn't affect existing `/api/` behavior. Abbenay
+composite model IDs (e.g., `openai/gpt-4o`) serve as the `model` field in
+OpenAI requests. A new `aby serve` CLI command highlights the OpenAI-compat
+angle while reusing the same `startEmbeddedWebServer()` lifecycle.
