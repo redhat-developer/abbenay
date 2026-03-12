@@ -92,6 +92,7 @@ Full application layer. Extends core with transport, UI, and CLI.
 The core TypeScript/Node.js process that runs as a background daemon.
 
 **Subcommands:**
+- `abbenay start` - Start all services (daemon, web dashboard, OpenAI API, MCP server)
 - `abbenay daemon` - Start the gRPC server on Unix socket (or named pipe on Windows)
 - `abbenay web` - Start the web dashboard (embedded in daemon or started via gRPC if daemon already running)
 - `abbenay serve` - Start the OpenAI-compatible API server (same as `web` but framed for API use)
