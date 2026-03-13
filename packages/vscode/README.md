@@ -51,30 +51,27 @@ code --install-extension abbenay-provider-0.1.0.vsix
 
 ### Prerequisites
 
-The Abbenay daemon must be running:
+The Abbenay daemon must be running. If installed via npm:
 
 ```bash
-# From the repository root
-cd packages/daemon
-npm install
-npm run build
-
-# Start the daemon
-node dist/index.js daemon
+aby daemon        # Start the daemon
+aby start         # Or start everything (daemon + web + API + MCP)
 ```
+
+If using the standalone SEA binary, use `./abbenay-daemon daemon` (or
+rename/symlink to `aby`).
 
 ## Configuration
 
-Configuration is managed through the **web dashboard**, not VS Code settings.
+Provider and model configuration is managed through the **web dashboard**,
+not VS Code settings. The extension contributes only `abbenay.logLevel`
+as a VS Code setting.
 
 ### Start the Web Dashboard
 
 ```bash
-# If daemon is already running:
-node dist/index.js web
-
-# Or start both daemon and web server:
-node dist/index.js web
+aby web           # Start web dashboard
+aby start         # Or start everything at once
 ```
 
 Open http://localhost:8787 to:
@@ -96,14 +93,16 @@ Example config:
 ```yaml
 providers:
   openai:
+    engine: openai
     api_key_keychain_name: "OPENAI_API_KEY"
-    enabled_models:
-      - gpt-4o
-      - gpt-4o-mini
+    models:
+      gpt-4o: {}
+      gpt-4o-mini: {}
   anthropic:
+    engine: anthropic
     api_key_env_var_name: "ANTHROPIC_API_KEY"
-    enabled_models:
-      - claude-3-5-sonnet-20241022
+    models:
+      claude-sonnet-4-20250514: {}
 ```
 
 ## Commands
@@ -122,7 +121,7 @@ providers:
 | Anthropic | ✓ | ✓ | ✓ |
 | Google Gemini | ✓ | ✓ | ✓ |
 | Mistral | ✓ | ✗ | ✓ |
-| Ollama | ✗ | ✗ | ✓ |
+| Ollama | ✓ | ✗ | ✓ |
 | Azure OpenAI | ✓ | ✓ | ✓ |
 | OpenRouter | ✓ | ✓ | ✓ |
 | DeepSeek | ✓ | ✗ | ✓ |
@@ -206,9 +205,8 @@ npm run package
 
 3. Restart daemon:
    ```bash
-   pkill -f "node.*abbenay"
-   rm -f /run/user/$(id -u)/abbenay/daemon.sock
-   cd packages/daemon && node dist/index.js daemon
+   aby stop
+   aby daemon
    ```
 
 4. Check Output panel: View → Output → "Abbenay Provider"

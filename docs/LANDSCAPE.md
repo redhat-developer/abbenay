@@ -89,10 +89,11 @@ built-in cost tracking or billing, earlier in development.
 
 | Capability | LiteLLM | Portkey | LLM Gateway | Abbenay |
 |------------|---------|---------|-------------|---------|
-| **Built-in engines** | 100+ | 250+ | ~15 | 18 + any OpenAI-compatible¹ |
-| **OpenAI-compatible API** | Yes | Yes | Yes | No (gRPC + library)² |
+| **Built-in engines** | 100+ | 250+ | ~15 | 19 + any OpenAI-compatible¹ |
+| **OpenAI-compatible API** | Yes | Yes | Yes | Yes (`/v1/chat/completions`)² |
 | **Embeddable library** | Python SDK | No | No | Yes (`@abbenay/core`) |
 | **Standalone daemon** | Proxy server | Proxy server | Proxy server | Optional daemon |
+| **Session persistence** | No | No | No | Yes (file-based + summaries) |
 | **CLI chat** | No | No | No | Yes |
 | **VS Code integration** | No | No | No | Language Model API |
 | **MCP tool aggregation** | MCP Gateway | MCP Gateway | No | MCP client pool |
@@ -155,16 +156,21 @@ These tools are not mutually exclusive. Example combinations:
 
 ## Footnotes
 
-¹ Abbenay ships 18 pre-configured engines (OpenAI, Anthropic, Gemini,
+¹ Abbenay ships 19 pre-configured engines (OpenAI, Anthropic, Gemini,
 Mistral, xAI, DeepSeek, Groq, Cohere, Amazon Bedrock, Fireworks,
 Together AI, Perplexity, Azure, OpenRouter, Ollama, LM Studio, Cerebras,
-Meta). Any provider that exposes an OpenAI-compatible REST API can be
-used by pointing a configured engine's `base_url` at it — no code
+Meta, Mock). Any provider that exposes an OpenAI-compatible REST API can
+be used by pointing a configured engine's `base_url` at it — no code
 changes required.
 
-² Abbenay *consumes* OpenAI-compatible provider APIs but does not
-*expose* one. Client access is via the `@abbenay/core` library
-(in-process), gRPC (daemon), or the CLI.
+² Abbenay exposes an OpenAI-compatible API at `/v1/models` and
+`/v1/chat/completions` (streaming and non-streaming). Any tool that
+speaks the OpenAI protocol (Cursor, Continue, aider, `openai` SDK
+scripts) can use Abbenay as a drop-in backend via the `serve` command
+(e.g., `aby serve` if installed via npm, or `./abbenay-daemon serve`
+for the standalone binary). Client access is also available via the
+`@abbenay/core` library (in-process), gRPC (daemon), REST API
+(`/api/*`), or the CLI.
 
 ---
 

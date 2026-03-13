@@ -16,12 +16,16 @@ Abbenay produces two packages from a single source tree:
 ## Features
 
 - **19 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
-- **Unified daemon**: TypeScript/Node.js service serves all clients via gRPC
+- **OpenAI-compatible API**: Drop-in `/v1/chat/completions` for Cursor, Continue, aider, etc.
+- **CLI chat**: Interactive terminal chat with tool approval and session persistence
+- **Session management**: Persistent conversations with periodic LLM-generated summaries
+- **Unified daemon**: TypeScript/Node.js service serves all clients via gRPC, REST, and SSE
 - **Web dashboard**: Configure providers, API keys, and models via browser UI
 - **VS Code integration**: Models appear in VS Code's Language Model picker
 - **Reusable core library**: Use `@abbenay/core` in your own apps without the daemon
+- **Tool calling**: Full tool execution loop with MCP support and approval policies
+- **MCP aggregation**: Connect to external MCP servers, expose daemon as MCP server
 - **Dynamic model discovery**: Fetches available models from provider APIs
-- **Tool calling**: Full tool execution loop with approval tiers
 - **Single Executable Application (SEA)**: Self-contained binary, no Node.js install required
 
 ## Why "Abbenay"?
@@ -67,34 +71,68 @@ The name fits this project on three levels: it literally means *mind* (an AI/LLM
 
 ## Quick Start
 
-### Using the daemon
+> **Binary names:** If you installed via npm, use `aby` (or `abbenay`).
+> If you downloaded a release binary, it is named
+> `abbenay-daemon-<platform>-<arch>` — rename or symlink it to `aby` for
+> convenience. All examples below use `aby`.
+
+### Start everything
 
 ```bash
-cd packages/daemon
-npm install
-npm run daemon    # Start daemon (foreground)
-npm run web       # Start web dashboard at http://localhost:8787
+aby start                     # Start daemon + web dashboard + OpenAI API + MCP
 ```
 
-With the compiled binary (or SEA):
+Or start services individually:
 
 ```bash
-abbenay daemon        # Start daemon
-abbenay web           # Start web dashboard
-abbenay status        # Check status
-abbenay list-engines  # Show all supported engines
-abbenay list-models   # Show configured models (from your config)
-abbenay chat -m openai/gpt-4o   # Interactive chat
-aby daemon            # Short alias — aby is equivalent to abbenay
+aby daemon                    # gRPC daemon only
+aby web                       # Web dashboard at http://localhost:8787
+aby serve                     # OpenAI-compatible API at http://localhost:8787
+aby status                    # Check if daemon is running
+aby stop                      # Stop the daemon
 ```
 
-To discover what models an engine offers:
+### Chat
 
 ```bash
-abbenay list-models --discover ollama           # keyless — works immediately
-abbenay list-models --discover openai           # reads OPENAI_API_KEY from env
-abbenay list-models --discover anthropic        # reads ANTHROPIC_API_KEY from env
+aby chat -m openai/gpt-4o                # Interactive chat
+aby chat -m ollama/llama3.2 -s "Be concise"  # With system prompt
+aby chat -m openai/gpt-4o --session new  # Start a persistent session
+aby chat --session <id>                  # Resume a session
 ```
+
+### Sessions
+
+```bash
+aby sessions list                        # List saved sessions
+aby sessions show <id>                   # Show session messages
+aby sessions delete <id>                 # Delete a session
+```
+
+### Model discovery
+
+```bash
+aby list-engines                         # Show all supported engines
+aby list-models                          # Show configured models
+aby list-models --discover ollama        # Discover models from a provider
+aby list-models --discover openai        # Reads OPENAI_API_KEY from env
+```
+
+### OpenAI-compatible API
+
+Any tool that speaks the OpenAI protocol can use Abbenay as a backend:
+
+```bash
+aby serve -p 8787
+
+# Then point your client at it:
+curl http://localhost:8787/v1/models
+curl http://localhost:8787/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+Works with Cursor, Continue, aider, and any `openai` SDK script.
 
 ### Using the core library
 
@@ -103,7 +141,6 @@ import { CoreState, MemorySecretStore } from '@abbenay/core';
 
 const core = new CoreState({ secretStore: new MemorySecretStore() });
 
-// Add a provider on the fly — no config files needed
 await core.addProvider('my-openai', {
   engine: 'openai',
   apiKey: process.env.OPENAI_API_KEY!,
@@ -119,7 +156,7 @@ for await (const chunk of core.chat('my-openai/gpt-4o', [
 
 See [docs/CORE.md](docs/CORE.md) for the full library API reference.
 
-### Building everything
+### Building from source
 
 **Prerequisites:** `curl` and `bash` (that's it).
 
@@ -138,7 +175,7 @@ To build and install the VSIX into VS Code:
 node build.js --code-install
 ```
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for all platforms, CI details, and build options.
+See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for a complete walkthrough, or [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for all platforms, CI details, and build options.
 
 ## Supported Engines
 
@@ -237,12 +274,15 @@ abbenay/
 
 ## Documentation
 
+- [Getting Started](docs/GETTING_STARTED.md)
 - [Core Library (API Reference)](docs/CORE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Testing](docs/TESTING.md)
+- [Roadmap](docs/ROADMAP.md)
 - [Product Overview](docs/PRODUCT_OVERVIEW.md)
+- [Landscape Comparison](docs/LANDSCAPE.md)
 
 ## License
 

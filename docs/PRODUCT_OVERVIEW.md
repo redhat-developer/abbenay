@@ -1,8 +1,8 @@
 # Abbenay - Product Overview
 
 **Status:** MVP Complete  
-**Version:** 0.1.0  
-**Last Updated:** February 2026
+**Version:** 0.0.0-dev  
+**Last Updated:** March 2026
 
 ---
 
@@ -10,7 +10,7 @@
 
 Abbenay is a unified AI daemon that provides consistent access to multiple LLM providers through a single interface. It enables the "Bring Your Own Model" (BYOM) vision by supporting both cloud providers (OpenAI, Anthropic, Google) and local models (Ollama).
 
-The project implements a **TypeScript daemon** with **gRPC API**, a **web dashboard** for configuration, and a **VS Code extension** that registers models with VS Code's Language Model API.
+The project implements a **TypeScript daemon** with **gRPC API**, a **web dashboard** for configuration, an **OpenAI-compatible API** (`/v1/chat/completions`), and a **VS Code extension** that registers models with VS Code's Language Model API.
 
 ---
 
@@ -115,7 +115,11 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 
 ## Components
 
-### 1. TypeScript Daemon (`abbenay daemon`)
+> **Note:** Commands below use `aby`, available when installed via npm.
+> For the standalone SEA binary, use `./abbenay-daemon` (or rename/symlink
+> it to `aby`).
+
+### 1. TypeScript Daemon (`aby daemon`)
 
 The core service that runs as a background process:
 - Listens on Unix socket for gRPC requests
@@ -123,7 +127,7 @@ The core service that runs as a background process:
 - Handles chat streaming and session persistence
 - Stores secrets in system keychain
 
-### 2. Web Dashboard (`abbenay web`)
+### 2. Web Dashboard (`aby web`)
 
 Browser-based configuration UI:
 - Configure API keys (keychain or environment variable)
@@ -131,7 +135,25 @@ Browser-based configuration UI:
 - View connection status
 - Choose user or workspace config level
 
-### 3. VS Code Extension
+### 3. OpenAI-Compatible API (`aby serve`)
+
+Drop-in replacement for any OpenAI-compatible client:
+- `GET /v1/models` — list configured models in OpenAI format
+- `POST /v1/chat/completions` — streaming and non-streaming chat
+- Works with Cursor, Continue, aider, and any `openai` SDK script
+
+### 4. CLI Chat (`aby chat`)
+
+Interactive terminal chat with streaming output:
+- Model selection, system prompts, named policies
+- Tool execution with inline approval prompts
+- Session persistence (`--session <id>` or `--session new`)
+
+### 5. All-in-One (`aby start`)
+
+Single command to start all services (daemon, web dashboard, OpenAI API, MCP server).
+
+### 6. VS Code Extension
 
 Integrates Abbenay with VS Code:
 - Connects to daemon on activation
@@ -205,7 +227,7 @@ providers:
 | 2 | Local Model Support | ✅ Complete | Ollama provider with auto-discovery |
 | 3 | Simplified Integration | ✅ Complete | Standard VS Code LM API |
 | 4 | Provider Switching | ✅ Complete | Enable/disable via web dashboard |
-| 5 | Session Continuity | Deferred | Stub RPCs exist; full implementation in a future release |
+| 5 | Session Continuity | ✅ Complete | File-based persistence, CLI/web/gRPC transports, periodic summaries |
 
 ---
 
@@ -243,7 +265,21 @@ providers:
 
 ## Session Continuity
 
-Session continuity is **deferred** to a future release. Stub RPCs exist in the gRPC proto but return `UNIMPLEMENTED`. The vision is to enable starting a chat in VS Code and continuing from CLI or another tool, with JSON-based session persistence.
+Sessions are persisted as JSON files in a platform-specific data directory
+(`~/.local/share/abbenay/sessions/` on Linux, `~/Library/Application
+Support/abbenay/sessions/` on macOS, `%LOCALAPPDATA%\abbenay\sessions\`
+on Windows) with a companion `index.json` for fast listing (DR-021).
+Features:
+
+- **CRUD**: Create, get, list, delete sessions via gRPC, REST API, and CLI
+- **Session chat**: Continue conversations across sessions (`aby chat --session <id>`)
+- **Tool persistence**: Tool calls and results are stored in session history
+- **Periodic summaries**: Every 10 user messages, a background LLM call generates a 2-3 sentence summary (DR-022)
+- **On-demand summaries**: `SummarizeSession` gRPC RPC and `GET /api/sessions/:id/summary`
+- **CLI commands**: `aby sessions list`, `aby sessions show <id>`, `aby sessions delete <id>`
+
+**Not yet implemented**: `ForkSession`, `ExportSession`, `ImportSession`, web dashboard
+session sidebar, context window compression.
 
 ---
 
