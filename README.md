@@ -71,6 +71,11 @@ The name fits this project on three levels: it literally means *mind* (an AI/LLM
 
 ## Quick Start
 
+> **Binary names:** If you installed via npm, use `aby` (or `abbenay`).
+> If you downloaded a release binary, it is named
+> `abbenay-daemon-<platform>-<arch>` — rename or symlink it to `aby` for
+> convenience. All examples below use `aby`.
+
 ### Start everything
 
 ```bash

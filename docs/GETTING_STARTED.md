@@ -12,13 +12,19 @@ Download the latest release for your platform. The binary is a
 [Node.js Single Executable Application (SEA)](https://nodejs.org/api/single-executables.html) —
 no Node.js installation required.
 
+Release artifacts are named `abbenay-daemon-<platform>-<arch>`. Rename
+or symlink to `aby` for convenience:
+
 ```bash
-# Linux / macOS — move to PATH
-chmod +x abbenay
-sudo mv abbenay /usr/local/bin/
+# Linux / macOS — rename and move to PATH
+chmod +x abbenay-daemon-linux-x64
+sudo mv abbenay-daemon-linux-x64 /usr/local/bin/aby
 ```
 
-The `aby` alias is equivalent to `abbenay` everywhere in these docs.
+If you install via npm (`npm install -g @abbenay/daemon`), both `aby`
+and `abbenay` are available on PATH automatically.
+
+All examples in this guide use `aby`.
 
 ### Option B: Build from source
 
@@ -46,13 +52,21 @@ npx tsx src/daemon/index.ts daemon   # run daemon directly
 
 ## 2. Configure a provider
 
-Abbenay needs at least one LLM provider. Create a config file:
+Abbenay needs at least one LLM provider. Create a config file at the
+platform-appropriate location:
+
+| Platform | Config directory |
+|----------|----------------|
+| Linux | `$XDG_CONFIG_HOME/abbenay/` (default `~/.config/abbenay/`) |
+| macOS | `~/Library/Application Support/abbenay/` |
+| Windows | `%APPDATA%\abbenay\` |
 
 ```bash
+# Linux example
 mkdir -p ~/.config/abbenay
 ```
 
-**`~/.config/abbenay/config.yaml`:**
+**`config.yaml`:**
 
 ```yaml
 providers:
@@ -140,7 +154,7 @@ aby chat -m my-openai/gpt-4o --no-tools                        # disable tools
 aby chat -m my-openai/gpt-4o --json                            # JSON output (for piping)
 ```
 
-Multi-line input: type freely, press Enter to send. Ctrl+D to exit.
+Type your message and press Enter to send. Ctrl+D to exit.
 
 ---
 
@@ -165,9 +179,15 @@ aby sessions show <session-id>
 aby sessions delete <session-id>
 ```
 
-Sessions are stored as JSON in `$XDG_DATA_HOME/abbenay/sessions/`
-(typically `~/.local/share/abbenay/sessions/`). Every 10 user messages,
-a background LLM call generates a short summary.
+Sessions are stored as JSON in a platform-specific data directory:
+
+| Platform | Session directory |
+|----------|------------------|
+| Linux | `$XDG_DATA_HOME/abbenay/sessions/` (default `~/.local/share/abbenay/sessions/`) |
+| macOS | `~/Library/Application Support/abbenay/sessions/` |
+| Windows | `%LOCALAPPDATA%\abbenay\sessions\` |
+
+Every 10 user messages, a background LLM call generates a short summary.
 
 ---
 

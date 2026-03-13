@@ -115,6 +115,10 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 
 ## Components
 
+> **Note:** Commands below use `aby`, available when installed via npm.
+> For the standalone SEA binary, use `./abbenay-daemon` (or rename/symlink
+> it to `aby`).
+
 ### 1. TypeScript Daemon (`aby daemon`)
 
 The core service that runs as a background process:
@@ -261,8 +265,11 @@ providers:
 
 ## Session Continuity
 
-Sessions are persisted as JSON files in `$XDG_DATA_HOME/abbenay/sessions/`
-with a companion `index.json` for fast listing (DR-021). Features:
+Sessions are persisted as JSON files in a platform-specific data directory
+(`~/.local/share/abbenay/sessions/` on Linux, `~/Library/Application
+Support/abbenay/sessions/` on macOS, `%LOCALAPPDATA%\abbenay\sessions\`
+on Windows) with a companion `index.json` for fast listing (DR-021).
+Features:
 
 - **CRUD**: Create, get, list, delete sessions via gRPC, REST API, and CLI
 - **Session chat**: Continue conversations across sessions (`aby chat --session <id>`)

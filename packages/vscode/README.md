@@ -51,17 +51,21 @@ code --install-extension abbenay-provider-0.1.0.vsix
 
 ### Prerequisites
 
-The Abbenay daemon must be running:
+The Abbenay daemon must be running. If installed via npm:
 
 ```bash
 aby daemon        # Start the daemon
-# Or start everything (daemon + web + API + MCP):
-aby start
+aby start         # Or start everything (daemon + web + API + MCP)
 ```
+
+If using the standalone SEA binary, use `./abbenay-daemon daemon` (or
+rename/symlink to `aby`).
 
 ## Configuration
 
-Configuration is managed through the **web dashboard**, not VS Code settings.
+Provider and model configuration is managed through the **web dashboard**,
+not VS Code settings. The extension contributes only `abbenay.logLevel`
+as a VS Code setting.
 
 ### Start the Web Dashboard
 

@@ -166,9 +166,11 @@ changes required.
 ² Abbenay exposes an OpenAI-compatible API at `/v1/models` and
 `/v1/chat/completions` (streaming and non-streaming). Any tool that
 speaks the OpenAI protocol (Cursor, Continue, aider, `openai` SDK
-scripts) can use Abbenay as a drop-in backend via `aby serve`. Client
-access is also available via the `@abbenay/core` library (in-process),
-gRPC (daemon), REST API (`/api/*`), or the CLI.
+scripts) can use Abbenay as a drop-in backend via the `serve` command
+(e.g., `aby serve` if installed via npm, or `./abbenay-daemon serve`
+for the standalone binary). Client access is also available via the
+`@abbenay/core` library (in-process), gRPC (daemon), REST API
+(`/api/*`), or the CLI.
 
 ---
 
