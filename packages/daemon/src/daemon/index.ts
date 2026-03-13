@@ -8,6 +8,7 @@
  *   abbenay web           # Start web dashboard
  *   abbenay serve         # Start OpenAI-compatible API server
  *   abbenay chat          # Interactive chat
+ *   abbenay sessions      # Manage saved sessions
  *   abbenay status        # Check daemon status
  *   abbenay stop          # Stop running daemon
  *   abbenay list-engines  # List supported engines
@@ -253,14 +254,105 @@ program
 program
   .command('chat')
   .description('Interactive chat with an AI model')
-  .requiredOption('-m, --model <id>', 'Model to use (e.g. openai/gpt-4o)')
+  .option('-m, --model <id>', 'Model to use (e.g. openai/gpt-4o)')
+  .option('--session <id>', 'Resume or create a session ("new" to create)')
   .option('-s, --system <prompt>', 'System prompt')
   .option('-p, --policy <name>', 'Apply a named policy')
   .option('--no-tools', 'Disable tool use')
   .option('--json', 'Output raw JSON chunks (for piping)')
   .action(async (options) => {
+    if (!options.model && !options.session) {
+      console.error('Either --model or --session is required');
+      process.exit(1);
+    }
     const { runInteractiveChat } = await import('./chat.js');
     await runInteractiveChat(options);
+  });
+
+// ── Session commands ────────────────────────────────────────────────────
+
+const sessions = program
+  .command('sessions')
+  .description('Manage chat sessions');
+
+sessions
+  .command('list')
+  .description('List saved sessions')
+  .option('--model <model>', 'Filter by model')
+  .option('--limit <n>', 'Max results', '20')
+  .option('--json', 'Output as JSON')
+  .action(async (options) => {
+    const { SessionStore } = await import('../core/session-store.js');
+    const { getSessionsDir } = await import('../core/paths.js');
+    const store = new SessionStore(getSessionsDir());
+    const result = await store.list({
+      model: options.model,
+      limit: Number(options.limit),
+    });
+
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else if (result.sessions.length === 0) {
+      console.log('No sessions found.');
+    } else {
+      const rows = result.sessions.map((s) => [
+        s.id.substring(0, 8),
+        s.title.substring(0, 40),
+        s.model,
+        String(s.messageCount),
+        new Date(s.updatedAt).toLocaleString(),
+      ]);
+      printTable(['ID', 'Title', 'Model', 'Msgs', 'Updated'], rows);
+      console.log(`\n${result.totalCount} session(s) total`);
+    }
+  });
+
+sessions
+  .command('show <id>')
+  .description('Show session messages')
+  .option('--json', 'Output as JSON')
+  .action(async (id: string, options) => {
+    const { SessionStore } = await import('../core/session-store.js');
+    const { getSessionsDir } = await import('../core/paths.js');
+    const store = new SessionStore(getSessionsDir());
+
+    try {
+      const session = await store.get(id);
+      if (options.json) {
+        console.log(JSON.stringify(session, null, 2));
+      } else {
+        console.log(`Session: ${session.id}`);
+        console.log(`Title:   ${session.title}`);
+        console.log(`Model:   ${session.model}`);
+        console.log(`Created: ${session.createdAt}`);
+        console.log(`Updated: ${session.updatedAt}`);
+        console.log(`Messages: ${session.messages.length}\n`);
+        for (const msg of session.messages) {
+          const label = msg.role === 'user' ? 'you' : msg.role;
+          console.log(`[${label}] ${msg.content}\n`);
+        }
+      }
+    } catch {
+      console.error(`Session not found: ${id}`);
+      process.exit(1);
+    }
+  });
+
+sessions
+  .command('delete <id>')
+  .description('Delete a session')
+  .action(async (id: string) => {
+    const { SessionStore } = await import('../core/session-store.js');
+    const { getSessionsDir } = await import('../core/paths.js');
+    const store = new SessionStore(getSessionsDir());
+
+    try {
+      await store.delete(id);
+      console.log(`Deleted session: ${id}`);
+    } catch {
+      console.error(`Session not found: ${id}`);
+      process.exit(1);
+    }
   });
 
 program

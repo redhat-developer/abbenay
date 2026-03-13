@@ -102,6 +102,38 @@ interface StartWebServerRequestProto {
   port?: number;
 }
 
+interface CreateSessionRequestProto {
+  model?: string;
+  topic?: string;
+  metadata?: Record<string, string>;
+}
+
+interface GetSessionRequestProto {
+  session_id?: string;
+  sessionId?: string;
+  include_messages?: boolean;
+  includeMessages?: boolean;
+}
+
+interface ListSessionsRequestProto {
+  limit?: number;
+  offset?: number;
+  model_filter?: string;
+  modelFilter?: string;
+}
+
+interface DeleteSessionRequestProto {
+  session_id?: string;
+  sessionId?: string;
+}
+
+interface SessionChatRequestProto {
+  session_id?: string;
+  sessionId?: string;
+  message?: ProtoMessage;
+  options?: ChatOptionsProto;
+}
+
 interface VSCodeResponseProto {
   register_tools?: { tools: unknown[] };
   registerTools?: { tools: unknown[] };
@@ -798,26 +830,150 @@ export function createAbbenayService(state: DaemonState) {
       }, 100);
     },
     
-    // ─── Stub RPCs (not yet implemented) ──────────────────────────────────
-    
-    /**
-     * Session RPCs (deferred)
-     */
-    SessionChat(call: grpc.ServerWritableStream<object, object>): void {
-      call.write({ error: { code: 'UNIMPLEMENTED', message: 'Session chat not yet implemented' } });
-      call.end();
+    // ─── Session RPCs ──────────────────────────────────────────────────────
+
+    CreateSession(
+      call: grpc.ServerUnaryCall<CreateSessionRequestProto, object>,
+      callback: grpc.sendUnaryData<object>,
+    ): void {
+      const { model, topic, metadata } = call.request;
+      if (!model) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'model is required' });
+        return;
+      }
+      state.sessionStore.create(model, topic || undefined, undefined, metadata).then((session) => {
+        callback(null, sessionToProto(session));
+      }).catch((error: unknown) => {
+        callback({ code: grpc.status.INTERNAL, message: error instanceof Error ? error.message : String(error) });
+      });
     },
-    CreateSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
+
+    GetSession(
+      call: grpc.ServerUnaryCall<GetSessionRequestProto, object>,
+      callback: grpc.sendUnaryData<object>,
+    ): void {
+      const id = call.request.session_id || call.request.sessionId || '';
+      const includeMessages = call.request.include_messages ?? call.request.includeMessages ?? true;
+      if (!id) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
+        return;
+      }
+      state.sessionStore.get(id, includeMessages).then((session) => {
+        callback(null, sessionToProto(session));
+      }).catch((error: unknown) => {
+        callback({ code: grpc.status.NOT_FOUND, message: error instanceof Error ? error.message : String(error) });
+      });
     },
-    GetSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
+
+    ListSessions(
+      call: grpc.ServerUnaryCall<ListSessionsRequestProto, object>,
+      callback: grpc.sendUnaryData<object>,
+    ): void {
+      const model = call.request.model_filter || call.request.modelFilter || undefined;
+      const rawLimit = call.request.limit;
+      const rawOffset = call.request.offset;
+      const limit = rawLimit == null || rawLimit < 0 ? undefined : rawLimit;
+      const offset = rawOffset == null || rawOffset < 0 ? undefined : rawOffset;
+      state.sessionStore.list({ model, limit, offset }).then((result) => {
+        callback(null, {
+          sessions: result.sessions.map(summaryToProto),
+          total_count: result.totalCount,
+        });
+      }).catch((error: unknown) => {
+        callback({ code: grpc.status.INTERNAL, message: error instanceof Error ? error.message : String(error) });
+      });
     },
-    ListSessions(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback(null, { sessions: [], total_count: 0 });
+
+    DeleteSession(
+      call: grpc.ServerUnaryCall<DeleteSessionRequestProto, object>,
+      callback: grpc.sendUnaryData<object>,
+    ): void {
+      const id = call.request.session_id || call.request.sessionId || '';
+      if (!id) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
+        return;
+      }
+      state.sessionStore.delete(id).then(() => {
+        callback(null, {});
+      }).catch((error: unknown) => {
+        callback({ code: grpc.status.NOT_FOUND, message: error instanceof Error ? error.message : String(error) });
+      });
     },
-    DeleteSession(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
+
+    SessionChat(call: grpc.ServerWritableStream<SessionChatRequestProto, object>): void {
+      const sessionId = call.request.session_id || call.request.sessionId || '';
+      const userMsg = call.request.message;
+
+      if (!sessionId) {
+        call.write({ error: { code: 'INVALID_ARGUMENT', message: 'session_id is required' } });
+        call.end();
+        return;
+      }
+      if (!userMsg || !userMsg.content) {
+        call.write({ error: { code: 'INVALID_ARGUMENT', message: 'message with content is required' } });
+        call.end();
+        return;
+      }
+
+      const chatMessage = {
+        role: toRole((userMsg.role ?? 'ROLE_USER') as string | number),
+        content: userMsg.content || '',
+        name: userMsg.name || undefined,
+        tool_call_id: userMsg.tool_call_id || userMsg.toolCallId || undefined,
+        tool_calls: userMsg.tool_calls || userMsg.toolCalls || undefined,
+      };
+
+      const opts = call.request.options || {};
+      const requestParams: RequestParams = {};
+      if (opts.temperature != null) requestParams.temperature = opts.temperature;
+      if (opts.top_p != null) requestParams.top_p = opts.top_p;
+      if (opts.top_k != null) requestParams.top_k = opts.top_k;
+      if (opts.max_tokens != null) requestParams.maxTokens = opts.max_tokens;
+      if (opts.timeout != null) requestParams.timeout = opts.timeout;
+      const hasParams = Object.keys(requestParams).length > 0;
+
+      const toolMode = opts.tool_mode || opts.toolMode || 'none';
+      const maxToolIterations = opts.max_tool_iterations || opts.maxToolIterations || 10;
+
+      (async () => {
+        try {
+          const session = await state.sessionStore.get(sessionId, true);
+          await state.sessionStore.appendMessage(sessionId, chatMessage);
+
+          const allMessages = [...session.messages, chatMessage];
+          const toolOptions: ChatToolOptions = { toolMode, maxToolIterations };
+
+          let fullText = '';
+          for await (const chunk of state.chat(session.model, allMessages, hasParams ? requestParams : undefined, toolOptions)) {
+            if (chunk.type === 'text' && chunk.text) {
+              fullText += chunk.text;
+              call.write({ text: { text: chunk.text } });
+            } else if (chunk.type === 'error') {
+              call.write({ error: { code: 'INTERNAL', message: chunk.error } });
+            } else if (chunk.type === 'done') {
+              call.write({ done: { finish_reason: chunk.finishReason || 'stop' } });
+            }
+          }
+
+          if (fullText) {
+            await state.sessionStore.appendMessage(sessionId, { role: 'assistant', content: fullText });
+          }
+
+          // Auto-title on first turn
+          if (session.messages.length === 0 && session.title === 'New Session') {
+            const title = chatMessage.content.substring(0, 60).replace(/\n/g, ' ').trim();
+            if (title) {
+              await state.sessionStore.updateTitle(sessionId, title);
+            }
+          }
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error('[gRPC] SessionChat error:', msg);
+          call.write({ error: { code: 'INTERNAL', message: msg } });
+        } finally {
+          call.end();
+        }
+      })();
     },
     WatchSessions(call: grpc.ServerWritableStream<object, object>): void {
       call.end();
@@ -878,6 +1034,42 @@ export function createAbbenayService(state: DaemonState) {
     UnregisterMcpServer(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback(null, {});
     },
+  };
+}
+
+function toTimestamp(iso: string): { seconds: string; nanos: number } {
+  const ms = new Date(iso).getTime();
+  return { seconds: String(Math.floor(ms / 1000)), nanos: 0 };
+}
+
+function sessionToProto(session: import('../../core/session-store.js').Session) {
+  return {
+    id: session.id,
+    model: session.model,
+    topic: session.title,
+    messages: session.messages.map((m) => ({
+      role: m.role === 'system' ? 0 : m.role === 'user' ? 1 : m.role === 'assistant' ? 2 : m.role === 'tool' ? 3 : 1,
+      content: m.content,
+      name: m.name,
+      tool_call_id: m.tool_call_id,
+      tool_calls: m.tool_calls,
+    })),
+    metadata: session.metadata,
+    created_at: toTimestamp(session.createdAt),
+    updated_at: toTimestamp(session.updatedAt),
+    forked_from: session.parentSessionId,
+    fork_point: session.forkPoint,
+  };
+}
+
+function summaryToProto(summary: import('../../core/session-store.js').SessionSummary) {
+  return {
+    id: summary.id,
+    model: summary.model,
+    topic: summary.title,
+    message_count: summary.messageCount,
+    created_at: toTimestamp(summary.createdAt),
+    updated_at: toTimestamp(summary.updatedAt),
   };
 }
 

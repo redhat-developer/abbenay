@@ -13,6 +13,8 @@ import { ToolRegistry } from '../core/tool-registry.js';
 import { ToolRouter } from './tool-router.js';
 import { McpClientPool } from './mcp-client-pool.js';
 import { AbbenayMcpServer } from './mcp-server.js';
+import { SessionStore } from '../core/session-store.js';
+import { getSessionsDir } from '../core/paths.js';
 
 // Re-export core types needed by daemon consumers (gRPC service, web server)
 export type { ChatToolOptions, ProviderInfo, ModelInfo } from '../core/state.js';
@@ -25,6 +27,8 @@ export { ToolRouter } from './tool-router.js';
 export { McpClientPool } from './mcp-client-pool.js';
 export type { McpServerStatus } from './mcp-client-pool.js';
 export { AbbenayMcpServer } from './mcp-server.js';
+export { SessionStore } from '../core/session-store.js';
+export type { Session, SessionSummary, SessionListOptions, SessionListResult } from '../core/session-store.js';
 
 // ── Client types ───────────────────────────────────────────────────────
 
@@ -68,6 +72,7 @@ export class DaemonState extends CoreState {
   public readonly toolRouter: ToolRouter;
   public readonly mcpClientPool: McpClientPool;
   public readonly mcpServer: AbbenayMcpServer;
+  public readonly sessionStore: SessionStore;
 
   constructor() {
     super({ secretStore: new KeychainSecretStore() });
@@ -77,6 +82,7 @@ export class DaemonState extends CoreState {
     this.toolRouter = new ToolRouter();
     this.mcpClientPool = new McpClientPool(this.toolRegistry!);
     this.mcpServer = new AbbenayMcpServer(this.toolRegistry!, this.toolRouter);
+    this.sessionStore = new SessionStore(getSessionsDir());
 
     // Wire VS Code tool invoker into the router
     this.toolRouter.setVSCodeInvoker(

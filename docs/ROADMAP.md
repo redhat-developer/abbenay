@@ -160,61 +160,43 @@ output, and reliability fields. Several fields are defined but logged as unenfor
 
 ---
 
-## 5. Session Management — stub
+## 5. Session Management — partial (M1+M3 done)
 
-The proto defines 9 session RPCs. All are stubs returning `UNIMPLEMENTED` in
-`abbenay-service.ts`. No session storage, no session state.
+Sessions are stored as JSON files in `$XDG_DATA_HOME/abbenay/sessions/` with a
+companion `index.json` for fast listing. See DR-021.
 
-### Data model
+### What exists
 
-```
-Session {
-  id: string (uuid)
-  title: string (auto-generated or user-provided)
-  model: string (composite model ID)
-  policy?: string
-  messages: Message[]
-  created_at: timestamp
-  updated_at: timestamp
-  metadata: Record<string, string>
-  parent_session_id?: string (for forks)
-  tags: string[]
-}
-```
+| Layer | Status |
+|---|---|
+| `SessionStore` class (core, file-based CRUD + index) | done |
+| `getDataDir()` / `getSessionsDir()` path utilities | done |
+| `SessionStore` wired into `DaemonState` | done |
+| gRPC: `CreateSession`, `GetSession`, `ListSessions`, `DeleteSession`, `SessionChat` | done |
+| Web API: `POST/GET/DELETE /api/sessions`, `POST /api/sessions/:id/chat` (SSE) | done |
+| CLI: `aby sessions list/show/delete`, `aby chat --session <id>` | done |
+| Unit tests: `session-store.test.ts` (19 tests) | done |
+| Integration tests: `tests/integration/sessions.test.ts` (11 tests) | done |
 
-### Storage
+### What needs to happen
 
-- Default: JSON files in `<dataDir>/sessions/<id>.json`
-- Index file: `<dataDir>/sessions/index.json` (id, title, model, timestamps)
-- Future: SQLite option for large session counts
-
-### RPCs to implement
-
-| RPC | Description | Priority |
-|---|---|---|
-| `CreateSession` | Create empty session with model + optional policy | high |
-| `SessionChat` | Chat within session context (appends messages) | high |
-| `GetSession` | Retrieve session by ID | high |
-| `ListSessions` | List sessions with optional filters | high |
-| `DeleteSession` | Delete session and its file | high |
-| `ForkSession` | Clone session to new ID (branching) | medium |
-| `ExportSession` | Export as JSON or markdown | medium |
-| `ImportSession` | Import from JSON | medium |
-| `ReplaySession` | Re-run session messages against (possibly different) model | low |
-| `SummarizeSession` | Generate summary via LLM | low |
-
-### Web + CLI integration
-
-- Web dashboard: session sidebar listing past conversations, click to resume
-- CLI: `aby chat --session <id>` to resume, `aby sessions list`, `aby sessions export <id>`
-- VS Code: session picker in the language model provider
+| Feature | Priority |
+|---|---|
+| `ForkSession` gRPC + web API | medium |
+| `ExportSession` / `ImportSession` | medium |
+| `ReplaySession` / `SummarizeSession` | low |
+| Web dashboard session sidebar UI | medium |
+| VS Code session picker | low |
+| SQLite storage backend (large session counts) | low |
+| Session TTL / auto-cleanup | low |
+| `WatchSessions` (real-time events) | low |
 
 ### Milestones
 
 - **M1**: `CreateSession`, `SessionChat`, `GetSession`, `ListSessions`, `DeleteSession`
-  — file-based storage, basic CRUD
+  — file-based storage, basic CRUD — **done**
 - **M2**: Web dashboard session sidebar
-- **M3**: CLI session commands
+- **M3**: CLI session commands — **done**
 - **M4**: `ForkSession`, `ExportSession`, `ImportSession`
 - **M5**: `ReplaySession`, `SummarizeSession`
 
@@ -261,11 +243,11 @@ Several gRPC RPCs in `abbenay-service.ts` are unimplemented stubs.
 | `ListTools` | stub | — |
 | `ExecuteTool` | stub | — |
 | `UpdateConfig` | no-op stub | — |
-| `SessionChat` | stub | section 5 |
-| `CreateSession` | stub | section 5 |
-| `GetSession` | stub | section 5 |
-| `ListSessions` | empty list | section 5 |
-| `DeleteSession` | stub | section 5 |
+| `SessionChat` | done | section 5 |
+| `CreateSession` | done | section 5 |
+| `GetSession` | done | section 5 |
+| `ListSessions` | done | section 5 |
+| `DeleteSession` | done | section 5 |
 | `ReplaySession` | stub | section 5 |
 | `SummarizeSession` | stub | section 5 |
 | `ForkSession` | stub | section 5 |
@@ -283,6 +265,6 @@ by wiring to `ToolRegistry`.
 |---|---|---|---|
 | **Phase 1** | 1 (M1–M2, M4) + 2 | Tool approval in web + CLI chat | **done** |
 | **Phase 2** | 3 (M1) | OpenAI-compatible server — unlocks third-party integrations | **done** |
-| **Phase 3** | 5 (M1–M3) | Session CRUD + UI — enables persistent conversations | next |
+| **Phase 3** | 5 (M1+M3) | Session CRUD + CLI — enables persistent conversations | **done** |
 | **Phase 4** | 6 + 5 (M4–M5) | Session sharing, fork, replay | |
 | **Phase 5** | 4 + 7 | Policy Phase 2 (context.*) + remaining gRPC stubs | |

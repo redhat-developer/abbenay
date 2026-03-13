@@ -235,6 +235,19 @@ always" in the CLI (not persisted) and "Allow & Remember" in the web UI
 (persisted to `config.yaml`). Users who want the previous behavior can set
 `tool_policy.auto_approve: ['*:*/*']`.
 
+## DR-021: File-based session storage with JSON index
+
+**Date:** 2026-03-12  
+**Decision:** Store sessions as individual JSON files in `getDataDir()/sessions/`
+(`$XDG_DATA_HOME/abbenay/sessions/` on Linux) with a companion `index.json`
+for fast listing. Each session is `<uuid>.json` containing the full
+conversation history plus metadata.  
+**Rationale:** JSON files are human-readable, easy to debug, and sufficient for
+the expected session count (tens to low hundreds). The index file avoids O(n)
+file reads when listing. SQLite is deferred until scale demands it. Sessions
+live in the *data* dir (not config dir) because they are user data, not
+configuration.
+
 ## DR-020: OpenAI-compatible API on the existing Express server
 
 **Date:** 2026-03-12  
