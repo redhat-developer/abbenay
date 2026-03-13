@@ -349,6 +349,9 @@ Defined in `proto/abbenay/v1/service.proto`. The daemon loads protos dynamically
 | RPC | Description |
 |-----|-------------|
 | `Chat` | Streaming chat with a model |
+| `SessionChat` | Streaming chat within a session |
+| `CreateSession` / `GetSession` / `ListSessions` / `DeleteSession` | Session CRUD |
+| `SummarizeSession` | On-demand or cached session summary |
 | `ListModels` | List available models from providers |
 | `ListProviders` | List configured providers |
 | `GetSecret` / `SetSecret` / `DeleteSecret` / `ListSecrets` | Secret management |
@@ -359,16 +362,18 @@ Defined in `proto/abbenay/v1/service.proto`. The daemon loads protos dynamically
 | `GetProviderStatus` | Provider status |
 | `GetConnectedWorkspaces` | Workspace paths from VS Code |
 | `StartWebServer` / `StopWebServer` | Embedded web dashboard lifecycle |
+| `ListEngines` | List available engine types |
+| `ListPolicies` | List built-in and custom policies |
 | `Shutdown` | Daemon shutdown |
 
 ### Stub RPCs (Deferred)
 
 | RPC | Description |
 |-----|-------------|
-| `WatchSessions` / `ReplaySession` / `SummarizeSession` | Session features |
-| `ForkSession` / `ExportSession` / `ImportSession` | Session branching |
-| `ListTools` / `ExecuteTool` | Tool execution (future MCP) |
-| `RegisterMcpServer` / `UnregisterMcpServer` | MCP server registration |
+| `WatchSessions` / `ReplaySession` | Session replay / real-time events |
+| `ForkSession` / `ExportSession` / `ImportSession` | Session branching and sharing |
+| `ListTools` / `ExecuteTool` | Tool execution via gRPC |
+| `RegisterMcpServer` / `UnregisterMcpServer` | MCP server registration via gRPC |
 
 ### VS Code Backchannel
 
