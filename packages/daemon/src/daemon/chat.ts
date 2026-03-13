@@ -190,10 +190,11 @@ async function runInteractiveMode(
               const toolCallMsg = {
                 role: 'assistant',
                 content: '',
-                tool_calls: [{ id: callId, type: 'function', function: { name: chunk.name, arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}' } }],
+                tool_calls: [{ id: callId, name: chunk.name, arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}' }],
               };
               const toolResultMsg = {
                 role: 'tool',
+                name: chunk.name,
                 content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
                 tool_call_id: callId,
               };

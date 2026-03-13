@@ -370,9 +370,11 @@ describe('Session chat SSE endpoint', () => {
 
     expect(session.messages[1].role).toBe('assistant');
     expect(session.messages[1].tool_calls).toBeDefined();
-    expect(session.messages[1].tool_calls[0].function.name).toBe('readFile');
+    expect(session.messages[1].tool_calls[0].name).toBe('readFile');
+    expect(session.messages[1].tool_calls[0].arguments).toBe('{"path":"/tmp/test.txt"}');
 
     expect(session.messages[2].role).toBe('tool');
+    expect(session.messages[2].name).toBe('readFile');
     expect(session.messages[2].tool_call_id).toBeTruthy();
     expect(session.messages[2].content).toBe('file contents here');
 
