@@ -913,8 +913,25 @@ export function createWebApp(state: DaemonState): Express {
   app.get('/api/sessions', async (req, res) => {
     try {
       const model = req.query.model as string | undefined;
-      const limit = req.query.limit ? Number(req.query.limit) : undefined;
-      const offset = req.query.offset ? Number(req.query.offset) : undefined;
+
+      let limit: number | undefined;
+      if (req.query.limit !== undefined) {
+        limit = Number(req.query.limit);
+        if (!Number.isFinite(limit) || !Number.isInteger(limit) || limit < 0) {
+          res.status(400).json({ error: 'Invalid "limit": must be a non-negative integer' });
+          return;
+        }
+      }
+
+      let offset: number | undefined;
+      if (req.query.offset !== undefined) {
+        offset = Number(req.query.offset);
+        if (!Number.isFinite(offset) || !Number.isInteger(offset) || offset < 0) {
+          res.status(400).json({ error: 'Invalid "offset": must be a non-negative integer' });
+          return;
+        }
+      }
+
       const result = await state.sessionStore.list({ model, limit, offset });
       res.json(result);
     } catch (err: unknown) {
@@ -931,7 +948,12 @@ export function createWebApp(state: DaemonState): Express {
       res.json(session);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      res.status(404).json({ error: msg });
+      if (msg.includes('not found')) {
+        res.status(404).json({ error: msg });
+      } else {
+        console.error('[Web] GET /api/sessions/:id error:', msg);
+        res.status(500).json({ error: msg });
+      }
     }
   });
 
@@ -941,7 +963,12 @@ export function createWebApp(state: DaemonState): Express {
       res.json({ success: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      res.status(404).json({ error: msg });
+      if (msg.includes('not found')) {
+        res.status(404).json({ error: msg });
+      } else {
+        console.error('[Web] DELETE /api/sessions/:id error:', msg);
+        res.status(500).json({ error: msg });
+      }
     }
   });
 
@@ -988,7 +1015,8 @@ export function createWebApp(state: DaemonState): Express {
         const allMessages = [...session.messages, chatMessage];
         let fullText = '';
 
-        for await (const chunk of state.chat(session.model, allMessages)) {
+        const toolOptions: ChatToolOptions = { toolMode: 'none' };
+        for await (const chunk of state.chat(session.model, allMessages, undefined, toolOptions)) {
           if (ended) break;
           if (chunk.type === 'text' && chunk.text) {
             fullText += chunk.text;

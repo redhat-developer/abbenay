@@ -14,7 +14,6 @@ import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { DaemonState } from './state.js';
 import { SessionStore } from '../core/session-store.js';
-import { getSessionsDir } from '../core/paths.js';
 import type { ChatToolOptions } from '../core/state.js';
 
 interface ChatOptions {
@@ -50,7 +49,7 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
   // Resolve session if requested
   let sessionId: string | undefined;
   let model = options.model || '';
-  const store = new SessionStore(getSessionsDir());
+  const store = state.sessionStore;
 
   if (options.session) {
     if (options.session === 'new') {

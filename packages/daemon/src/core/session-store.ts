@@ -53,7 +53,18 @@ interface IndexFile {
 // ── SessionStore ────────────────────────────────────────────────────────
 
 export class SessionStore {
+  private writeLock: Promise<void> = Promise.resolve();
+
   constructor(private readonly sessionsDir: string) {}
+
+  private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const locked = this.writeLock.then(fn, fn);
+    this.writeLock = locked.then(
+      () => undefined,
+      () => undefined,
+    );
+    return locked;
+  }
 
   async create(
     model: string,
@@ -61,33 +72,35 @@ export class SessionStore {
     policy?: string,
     metadata?: Record<string, string>,
   ): Promise<Session> {
-    await this.ensureDir();
+    return this.withWriteLock(async () => {
+      await this.ensureDir();
 
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
 
-    const session: Session = {
-      id,
-      title: title || 'New Session',
-      model,
-      policy,
-      messages: [],
-      createdAt: now,
-      updatedAt: now,
-      metadata: metadata || {},
-    };
+      const session: Session = {
+        id,
+        title: title || 'New Session',
+        model,
+        policy,
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+        metadata: metadata || {},
+      };
 
-    await this.writeSession(session);
-    await this.addToIndex({
-      id,
-      title: session.title,
-      model,
-      messageCount: 0,
-      createdAt: now,
-      updatedAt: now,
+      await this.writeSession(session);
+      await this.addToIndex({
+        id,
+        title: session.title,
+        model,
+        messageCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return session;
     });
-
-    return session;
   }
 
   async get(id: string, includeMessages = true): Promise<Session> {
@@ -118,8 +131,13 @@ export class SessionStore {
     }
 
     const totalCount = sessions.length;
-    const offset = options?.offset || 0;
-    const limit = options?.limit || sessions.length;
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? sessions.length;
+
+    if (!Number.isFinite(offset) || !Number.isInteger(offset) || offset < 0 ||
+        !Number.isFinite(limit) || !Number.isInteger(limit) || limit < 0) {
+      throw new Error('Invalid pagination: offset and limit must be non-negative integers');
+    }
 
     sessions = sessions.slice(offset, offset + limit);
 
@@ -127,38 +145,44 @@ export class SessionStore {
   }
 
   async delete(id: string): Promise<void> {
-    const filePath = this.sessionPath(id);
-    try {
-      await fs.promises.access(filePath);
-    } catch {
-      throw new Error(`Session not found: ${id}`);
-    }
+    return this.withWriteLock(async () => {
+      const filePath = this.sessionPath(id);
+      try {
+        await fs.promises.access(filePath);
+      } catch {
+        throw new Error(`Session not found: ${id}`);
+      }
 
-    await fs.promises.unlink(filePath);
-    await this.removeFromIndex(id);
+      await fs.promises.unlink(filePath);
+      await this.removeFromIndex(id);
+    });
   }
 
   async appendMessage(id: string, message: ChatMessage): Promise<Session> {
-    const session = await this.get(id, true);
-    session.messages.push(message);
-    session.updatedAt = new Date().toISOString();
+    return this.withWriteLock(async () => {
+      const session = await this.get(id, true);
+      session.messages.push(message);
+      session.updatedAt = new Date().toISOString();
 
-    await this.writeSession(session);
-    await this.updateIndex(id, {
-      messageCount: session.messages.length,
-      updatedAt: session.updatedAt,
+      await this.writeSession(session);
+      await this.updateIndex(id, {
+        messageCount: session.messages.length,
+        updatedAt: session.updatedAt,
+      });
+
+      return session;
     });
-
-    return session;
   }
 
   async updateTitle(id: string, title: string): Promise<void> {
-    const session = await this.get(id, true);
-    session.title = title;
-    session.updatedAt = new Date().toISOString();
+    return this.withWriteLock(async () => {
+      const session = await this.get(id, true);
+      session.title = title;
+      session.updatedAt = new Date().toISOString();
 
-    await this.writeSession(session);
-    await this.updateIndex(id, { title, updatedAt: session.updatedAt });
+      await this.writeSession(session);
+      await this.updateIndex(id, { title, updatedAt: session.updatedAt });
+    });
   }
 
   // ── Private helpers ───────────────────────────────────────────────────
@@ -186,8 +210,11 @@ export class SessionStore {
     try {
       const raw = await fs.promises.readFile(this.indexPath(), 'utf-8');
       return JSON.parse(raw) as IndexFile;
-    } catch {
-      return { sessions: [] };
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { sessions: [] };
+      }
+      throw err;
     }
   }
 

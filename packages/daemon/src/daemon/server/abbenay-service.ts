@@ -870,8 +870,10 @@ export function createAbbenayService(state: DaemonState) {
       callback: grpc.sendUnaryData<object>,
     ): void {
       const model = call.request.model_filter || call.request.modelFilter || undefined;
-      const limit = call.request.limit || undefined;
-      const offset = call.request.offset || undefined;
+      const rawLimit = call.request.limit;
+      const rawOffset = call.request.offset;
+      const limit = rawLimit == null || rawLimit < 0 ? undefined : rawLimit;
+      const offset = rawOffset == null || rawOffset < 0 ? undefined : rawOffset;
       state.sessionStore.list({ model, limit, offset }).then((result) => {
         callback(null, {
           sessions: result.sessions.map(summaryToProto),
@@ -930,7 +932,7 @@ export function createAbbenayService(state: DaemonState) {
       if (opts.timeout != null) requestParams.timeout = opts.timeout;
       const hasParams = Object.keys(requestParams).length > 0;
 
-      const toolMode = opts.tool_mode || opts.toolMode || 'auto';
+      const toolMode = opts.tool_mode || opts.toolMode || 'none';
       const maxToolIterations = opts.max_tool_iterations || opts.maxToolIterations || 10;
 
       (async () => {
