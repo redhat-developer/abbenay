@@ -14,6 +14,7 @@ import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { DaemonState } from './state.js';
 import { SessionStore } from '../core/session-store.js';
+import { maybeSummarize } from '../core/session-summarizer.js';
 import type { ChatToolOptions } from '../core/state.js';
 
 interface ChatOptions {
@@ -224,6 +225,7 @@ async function runInteractiveMode(
           }
           isFirstTurn = false;
         }
+        void maybeSummarize(state, sessionId, store);
       }
     }
   }

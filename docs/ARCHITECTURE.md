@@ -65,6 +65,7 @@ Reusable library with zero transport dependencies. Can be used standalone by age
 | `core/policies.ts` | Policy system — built-in + custom policies, resolution, flattening |
 | `core/tool-registry.ts` | Tool collection, namespacing, policy filtering, executor builder |
 | `core/session-store.ts` | File-based session persistence (CRUD, index, messages) |
+| `core/session-summarizer.ts` | Periodic LLM-generated session summaries (DR-022) |
 | `core/index.ts` | Public API surface |
 
 ### @abbenay/daemon (`src/daemon/`)
@@ -392,12 +393,18 @@ The `SessionStore` class (core layer) handles CRUD operations and maintains an
 `index.json` for fast listing without reading every session file.
 
 **Available transports:**
-- gRPC: `CreateSession`, `GetSession`, `ListSessions`, `DeleteSession`, `SessionChat`
-- Web API: `POST/GET/DELETE /api/sessions`, `POST /api/sessions/:id/chat` (SSE)
+- gRPC: `CreateSession`, `GetSession`, `ListSessions`, `DeleteSession`, `SessionChat`, `SummarizeSession`
+- Web API: `POST/GET/DELETE /api/sessions`, `POST /api/sessions/:id/chat` (SSE), `GET /api/sessions/:id/summary`
 - CLI: `aby sessions list/show/delete`, `aby chat --session <id|new>`
 
+**Periodic summaries:** Every 10 user messages, a background LLM call generates
+a 2-3 sentence summary stored on the session (see DR-022). Summaries are also
+available on demand via `SummarizeSession` (gRPC) or `GET /api/sessions/:id/summary`.
+
 **Not yet implemented:** `ForkSession`, `ExportSession`, `ImportSession`,
-`ReplaySession`, `SummarizeSession`, web dashboard session sidebar.
+`ReplaySession`, web dashboard session sidebar, context window compression
+using summaries (`context.context_threshold` / `compression_strategy`),
+internal MCP tool for cross-session retrieval.
 
 ## Data Flow
 

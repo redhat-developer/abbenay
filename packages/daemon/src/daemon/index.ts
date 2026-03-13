@@ -301,8 +301,9 @@ sessions
         s.model,
         String(s.messageCount),
         new Date(s.updatedAt).toLocaleString(),
+        (s.summary || '').substring(0, 50),
       ]);
-      printTable(['ID', 'Title', 'Model', 'Msgs', 'Updated'], rows);
+      printTable(['ID', 'Title', 'Model', 'Msgs', 'Updated', 'Summary'], rows);
       console.log(`\n${result.totalCount} session(s) total`);
     }
   });
@@ -321,12 +322,16 @@ sessions
       if (options.json) {
         console.log(JSON.stringify(session, null, 2));
       } else {
-        console.log(`Session: ${session.id}`);
-        console.log(`Title:   ${session.title}`);
-        console.log(`Model:   ${session.model}`);
-        console.log(`Created: ${session.createdAt}`);
-        console.log(`Updated: ${session.updatedAt}`);
-        console.log(`Messages: ${session.messages.length}\n`);
+        console.log(`Session:  ${session.id}`);
+        console.log(`Title:    ${session.title}`);
+        console.log(`Model:    ${session.model}`);
+        console.log(`Created:  ${session.createdAt}`);
+        console.log(`Updated:  ${session.updatedAt}`);
+        console.log(`Messages: ${session.messages.length}`);
+        if (session.summary) {
+          console.log(`Summary:  ${session.summary}`);
+        }
+        console.log();
         for (const msg of session.messages) {
           const label = msg.role === 'user' ? 'you' : msg.role;
           console.log(`[${label}] ${msg.content}\n`);

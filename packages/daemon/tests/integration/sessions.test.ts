@@ -30,6 +30,8 @@ let mockChatResponse: MockChunk[] = [
   { type: 'done', finishReason: 'stop' },
 ];
 
+let mockSummaryResponse = 'Mock summary of the conversation.';
+
 const mockSecretStore: SecretStore = {
   async get() { return null; },
   async set() {},
@@ -59,6 +61,12 @@ function createMockState(): DaemonState {
     },
 
     async* chat(_model: string, _messages: Array<{ role: string; content: string }>) {
+      const isSummaryCall = _messages.some((m) => m.role === 'system' && m.content.includes('concise summarizer'));
+      if (isSummaryCall) {
+        yield { type: 'text' as const, text: mockSummaryResponse };
+        yield { type: 'done' as const, finishReason: 'stop' };
+        return;
+      }
       for (const chunk of mockChatResponse) {
         yield chunk;
       }
@@ -101,6 +109,7 @@ afterEach(() => {
     { type: 'text', text: ' world' },
     { type: 'done', finishReason: 'stop' },
   ];
+  mockSummaryResponse = 'Mock summary of the conversation.';
 });
 
 // ─── HTTP Helpers ───────────────────────────────────────────────────────
@@ -392,5 +401,82 @@ describe('Session chat SSE endpoint', () => {
 
     const { body: session } = await httpRequest('GET', `${baseUrl}/api/sessions/${id}`);
     expect(session.title).toBe('What is the meaning of life?');
+  });
+
+  it('POST /api/sessions/:id/chat triggers summary after 10 user turns', async () => {
+    const created = await httpRequest('POST', `${baseUrl}/api/sessions`, { model: 'test/model' });
+    const id = created.body.id;
+
+    mockSummaryResponse = 'Ten-turn summary.';
+
+    for (let i = 0; i < 10; i++) {
+      await postSSE(`${baseUrl}/api/sessions/${id}/chat`, {
+        message: { role: 'user', content: `Turn ${i + 1}` },
+      });
+    }
+
+    // maybeSummarize is fire-and-forget; give it a moment to complete
+    await new Promise((r) => setTimeout(r, 500));
+
+    const { body: session } = await httpRequest('GET', `${baseUrl}/api/sessions/${id}`);
+    expect(session.summary).toBe('Ten-turn summary.');
+  });
+});
+
+describe('Session summary endpoint', () => {
+  it('GET /api/sessions/:id/summary generates and caches summary', async () => {
+    const created = await httpRequest('POST', `${baseUrl}/api/sessions`, { model: 'test/model' });
+    const id = created.body.id;
+
+    await postSSE(`${baseUrl}/api/sessions/${id}/chat`, {
+      message: { role: 'user', content: 'Hello' },
+    });
+
+    mockSummaryResponse = 'On-demand summary.';
+
+    const { statusCode, body } = await httpRequest('GET', `${baseUrl}/api/sessions/${id}/summary`);
+    expect(statusCode).toBe(200);
+    expect(body.summary).toBe('On-demand summary.');
+    expect(body.from_cache).toBe(false);
+
+    // Second call should return cached
+    const { body: cached } = await httpRequest('GET', `${baseUrl}/api/sessions/${id}/summary`);
+    expect(cached.summary).toBe('On-demand summary.');
+    expect(cached.from_cache).toBe(true);
+  });
+
+  it('GET /api/sessions/:id/summary returns 404 for unknown session', async () => {
+    const { statusCode } = await httpRequest('GET', `${baseUrl}/api/sessions/nonexistent/summary`);
+    expect(statusCode).toBe(404);
+  });
+
+  it('summary field appears in GET /api/sessions/:id response', async () => {
+    const created = await httpRequest('POST', `${baseUrl}/api/sessions`, { model: 'test/model' });
+    const id = created.body.id;
+
+    await postSSE(`${baseUrl}/api/sessions/${id}/chat`, {
+      message: { role: 'user', content: 'test' },
+    });
+
+    // Generate summary on demand
+    await httpRequest('GET', `${baseUrl}/api/sessions/${id}/summary`);
+
+    const { body: session } = await httpRequest('GET', `${baseUrl}/api/sessions/${id}`);
+    expect(session.summary).toBeTruthy();
+  });
+
+  it('summary field appears in GET /api/sessions list response', async () => {
+    const created = await httpRequest('POST', `${baseUrl}/api/sessions`, { model: 'test/model' });
+    const id = created.body.id;
+
+    await postSSE(`${baseUrl}/api/sessions/${id}/chat`, {
+      message: { role: 'user', content: 'test' },
+    });
+
+    await httpRequest('GET', `${baseUrl}/api/sessions/${id}/summary`);
+
+    const { body: list } = await httpRequest('GET', `${baseUrl}/api/sessions`);
+    const entry = list.sessions.find((s: any) => s.id === id);
+    expect(entry.summary).toBeTruthy();
   });
 });

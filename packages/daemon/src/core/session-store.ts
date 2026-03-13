@@ -24,6 +24,9 @@ export interface Session {
   metadata: Record<string, string>;
   parentSessionId?: string;
   forkPoint?: number;
+  summary?: string;
+  /** User-message count at which the summary was last generated. */
+  summaryMessageCount?: number;
 }
 
 export interface SessionSummary {
@@ -33,6 +36,7 @@ export interface SessionSummary {
   messageCount: number;
   createdAt: string;
   updatedAt: string;
+  summary?: string;
 }
 
 export interface SessionListOptions {
@@ -183,6 +187,16 @@ export class SessionStore {
       await this.writeSession(session);
       await this.updateIndex(id, { title, updatedAt: session.updatedAt });
     });
+  }
+
+  async updateSummary(id: string, summary: string, messageCount: number): Promise<void> {
+    const session = await this.get(id, true);
+    session.summary = summary;
+    session.summaryMessageCount = messageCount;
+    session.updatedAt = new Date().toISOString();
+
+    await this.writeSession(session);
+    await this.updateIndex(id, { summary, updatedAt: session.updatedAt });
   }
 
   // ── Private helpers ───────────────────────────────────────────────────

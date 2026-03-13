@@ -260,3 +260,26 @@ routes is purely additive and doesn't affect existing `/api/` behavior. Abbenay
 composite model IDs (e.g., `openai/gpt-4o`) serve as the `model` field in
 OpenAI requests. A new `aby serve` CLI command highlights the OpenAI-compat
 angle while reusing the same `startEmbeddedWebServer()` lifecycle.
+
+## DR-022: Periodic session summarization every 10 user turns
+
+**Date:** 2026-03-12  
+**Decision:** Generate an LLM session summary every 10 user messages via a
+fire-and-forget background call, stored on the session as `summary` and
+`summaryMessageCount`.  
+**Rationale:** Sessions have no explicit close event (CLI gets EOF, web SSE
+drops, gRPC streams end — none reliably signal "done"). Periodic summarization
+ensures summaries stay reasonably current without requiring user action. The
+10-message interval balances freshness against token cost. The `maybeSummarize`
+helper is shared across all three transports and catches errors silently to
+avoid disrupting the user's chat flow. On-demand summarization is also available
+via the `SummarizeSession` gRPC RPC and `GET /api/sessions/:id/summary`.  
+**Future work:**
+- **Context window management:** The current summary is informational only.
+  It is not yet used to compress conversation history when approaching the
+  model's context window limit (see `context.context_threshold` /
+  `context.compression_strategy` in the roadmap policy table).
+- **Session retrieval tool:** No internal MCP/tool is registered that would
+  let the LLM query or search past sessions. Adding a `session_lookup` tool
+  would allow cross-session knowledge reuse (e.g., "what did we decide last
+  time about X?").
