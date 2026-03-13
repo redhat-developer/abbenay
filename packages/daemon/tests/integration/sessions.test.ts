@@ -19,7 +19,16 @@ import { SessionStore } from '../../src/core/session-store.js';
 
 // ─── Mock DaemonState ───────────────────────────────────────────────────
 
-let mockChatChunks: string[] = ['Hello', ' world'];
+type MockChunk =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; name: string; state: string; call?: { params: unknown; result: unknown }; done: boolean }
+  | { type: 'done'; finishReason: string };
+
+let mockChatResponse: MockChunk[] = [
+  { type: 'text', text: 'Hello' },
+  { type: 'text', text: ' world' },
+  { type: 'done', finishReason: 'stop' },
+];
 
 const mockSecretStore: SecretStore = {
   async get() { return null; },
@@ -50,10 +59,9 @@ function createMockState(): DaemonState {
     },
 
     async* chat(_model: string, _messages: Array<{ role: string; content: string }>) {
-      for (const text of mockChatChunks) {
-        yield { type: 'text' as const, text };
+      for (const chunk of mockChatResponse) {
+        yield chunk;
       }
-      yield { type: 'done' as const, finishReason: 'stop' };
     },
   } as any as DaemonState;
 }
@@ -88,7 +96,11 @@ afterAll(async () => {
 });
 
 afterEach(() => {
-  mockChatChunks = ['Hello', ' world'];
+  mockChatResponse = [
+    { type: 'text', text: 'Hello' },
+    { type: 'text', text: ' world' },
+    { type: 'done', finishReason: 'stop' },
+  ];
 });
 
 // ─── HTTP Helpers ───────────────────────────────────────────────────────
@@ -288,7 +300,11 @@ describe('Session chat SSE endpoint', () => {
     const created = await httpRequest('POST', `${baseUrl}/api/sessions`, { model: 'test/model' });
     const id = created.body.id;
 
-    mockChatChunks = ['Session', ' response'];
+    mockChatResponse = [
+      { type: 'text', text: 'Session' },
+      { type: 'text', text: ' response' },
+      { type: 'done', finishReason: 'stop' },
+    ];
 
     const { events, statusCode } = await postSSE(`${baseUrl}/api/sessions/${id}/chat`, {
       message: { role: 'user', content: 'Hello session' },
@@ -320,6 +336,50 @@ describe('Session chat SSE endpoint', () => {
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/sessions/${id}/chat`, {});
     expect(statusCode).toBe(400);
     expect(body.error).toContain('message');
+  });
+
+  it('POST /api/sessions/:id/chat persists tool calls and results', async () => {
+    const created = await httpRequest('POST', `${baseUrl}/api/sessions`, { model: 'test/model' });
+    const id = created.body.id;
+
+    mockChatResponse = [
+      { type: 'tool', name: 'readFile', state: 'running', done: false },
+      { type: 'tool', name: 'readFile', state: 'completed', call: { params: { path: '/tmp/test.txt' }, result: 'file contents here' }, done: true },
+      { type: 'text', text: 'I read the file for you.' },
+      { type: 'done', finishReason: 'stop' },
+    ];
+
+    const { events, statusCode } = await postSSE(`${baseUrl}/api/sessions/${id}/chat`, {
+      message: { role: 'user', content: 'Read /tmp/test.txt' },
+    });
+
+    expect(statusCode).toBe(200);
+
+    // Should have tool events in the SSE stream
+    const toolEvents = events.filter((e) => e.type === 'tool');
+    expect(toolEvents.length).toBeGreaterThanOrEqual(1);
+
+    // Verify persisted messages include tool call data
+    const { body: session } = await httpRequest('GET', `${baseUrl}/api/sessions/${id}`);
+
+    // Expected: user msg, assistant tool_calls msg, tool result msg, assistant text msg
+    expect(session.messages).toHaveLength(4);
+
+    expect(session.messages[0].role).toBe('user');
+    expect(session.messages[0].content).toBe('Read /tmp/test.txt');
+
+    expect(session.messages[1].role).toBe('assistant');
+    expect(session.messages[1].tool_calls).toBeDefined();
+    expect(session.messages[1].tool_calls[0].name).toBe('readFile');
+    expect(session.messages[1].tool_calls[0].arguments).toBe('{"path":"/tmp/test.txt"}');
+
+    expect(session.messages[2].role).toBe('tool');
+    expect(session.messages[2].name).toBe('readFile');
+    expect(session.messages[2].tool_call_id).toBeTruthy();
+    expect(session.messages[2].content).toBe('file contents here');
+
+    expect(session.messages[3].role).toBe('assistant');
+    expect(session.messages[3].content).toBe('I read the file for you.');
   });
 
   it('POST /api/sessions/:id/chat auto-titles on first turn', async () => {

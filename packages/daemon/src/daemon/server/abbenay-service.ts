@@ -200,16 +200,16 @@ function toClientType(protoType: string | number): ClientType {
 function toRole(protoRole: string | number): string {
   switch (protoRole) {
     case 'ROLE_SYSTEM':
-    case 0:
+    case 1:
       return 'system';
     case 'ROLE_USER':
-    case 1:
+    case 2:
       return 'user';
     case 'ROLE_ASSISTANT':
-    case 2:
+    case 3:
       return 'assistant';
     case 'ROLE_TOOL':
-    case 3:
+    case 4:
       return 'tool';
     default:
       return 'user';
@@ -944,10 +944,27 @@ export function createAbbenayService(state: DaemonState) {
           const toolOptions: ChatToolOptions = { toolMode, maxToolIterations };
 
           let fullText = '';
+
           for await (const chunk of state.chat(session.model, allMessages, hasParams ? requestParams : undefined, toolOptions)) {
             if (chunk.type === 'text' && chunk.text) {
               fullText += chunk.text;
               call.write({ text: { text: chunk.text } });
+            } else if (chunk.type === 'tool') {
+              if (chunk.done && chunk.call) {
+                const callId = `call_${chunk.name}_${Date.now()}`;
+
+                await state.sessionStore.appendMessage(sessionId, {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [{ id: callId, name: chunk.name, arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}' }],
+                });
+                await state.sessionStore.appendMessage(sessionId, {
+                  role: 'tool',
+                  name: chunk.name,
+                  content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
+                  tool_call_id: callId,
+                });
+              }
             } else if (chunk.type === 'error') {
               call.write({ error: { code: 'INTERNAL', message: chunk.error } });
             } else if (chunk.type === 'done') {
@@ -1048,11 +1065,14 @@ function sessionToProto(session: import('../../core/session-store.js').Session) 
     model: session.model,
     topic: session.title,
     messages: session.messages.map((m) => ({
-      role: m.role === 'system' ? 0 : m.role === 'user' ? 1 : m.role === 'assistant' ? 2 : m.role === 'tool' ? 3 : 1,
+      role: m.role === 'system' ? 1 : m.role === 'user' ? 2 : m.role === 'assistant' ? 3 : m.role === 'tool' ? 4 : 2,
       content: m.content,
       name: m.name,
       tool_call_id: m.tool_call_id,
-      tool_calls: m.tool_calls,
+      tool_calls: m.tool_calls?.map((tc: unknown) => {
+        const item = tc as Record<string, unknown>;
+        return { id: item.id, name: item.name, arguments: item.arguments };
+      }),
     })),
     metadata: session.metadata,
     created_at: toTimestamp(session.createdAt),

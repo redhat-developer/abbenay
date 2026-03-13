@@ -558,7 +558,7 @@ message ListSessionsRequest {
   int32 limit = 1;                      // Max sessions to return
   int32 offset = 2;                     // For pagination
   optional string source_filter = 3;   // Filter by client type
-  optional string model_filter = 4;    // Filter by model prefix
+  optional string model_filter = 4;    // Filter by exact model name
 }
 
 message ListSessionsResponse {

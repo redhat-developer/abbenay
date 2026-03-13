@@ -948,7 +948,7 @@ export function createWebApp(state: DaemonState): Express {
       res.json(session);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('not found')) {
+      if (msg.includes('not found') || msg.includes('Invalid session ID')) {
         res.status(404).json({ error: msg });
       } else {
         console.error('[Web] GET /api/sessions/:id error:', msg);
@@ -963,7 +963,7 @@ export function createWebApp(state: DaemonState): Express {
       res.json({ success: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('not found')) {
+      if (msg.includes('not found') || msg.includes('Invalid session ID')) {
         res.status(404).json({ error: msg });
       } else {
         console.error('[Web] DELETE /api/sessions/:id error:', msg);
@@ -985,6 +985,20 @@ export function createWebApp(state: DaemonState): Express {
       role: (message.role as string) || 'user',
       content: message.content as string,
     };
+
+    let session;
+    try {
+      session = await state.sessionStore.get(sessionId, true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('not found') || msg.includes('Invalid session ID')) {
+        res.status(404).json({ error: msg });
+      } else {
+        console.error('[Web] POST /api/sessions/:id/chat error:', msg);
+        res.status(500).json({ error: msg });
+      }
+      return;
+    }
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -1009,7 +1023,6 @@ export function createWebApp(state: DaemonState): Express {
 
     (async () => {
       try {
-        const session = await state.sessionStore.get(sessionId, true);
         await state.sessionStore.appendMessage(sessionId, chatMessage);
 
         const allMessages = [...session.messages, chatMessage];
@@ -1021,6 +1034,27 @@ export function createWebApp(state: DaemonState): Express {
           if (chunk.type === 'text' && chunk.text) {
             fullText += chunk.text;
             safeWrite(`data: ${JSON.stringify({ type: 'text', content: chunk.text })}\n\n`);
+          } else if (chunk.type === 'tool') {
+            const toolData: Record<string, unknown> = { type: 'tool', name: chunk.name, state: chunk.state, done: chunk.done };
+            if (chunk.call) {
+              toolData.call = { params: chunk.call.params, result: chunk.call.result };
+            }
+            safeWrite(`data: ${JSON.stringify(toolData)}\n\n`);
+
+            if (chunk.done && chunk.call) {
+              const callId = `call_${chunk.name}_${Date.now()}`;
+              await state.sessionStore.appendMessage(sessionId, {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ id: callId, name: chunk.name, arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}' }],
+              });
+              await state.sessionStore.appendMessage(sessionId, {
+                role: 'tool',
+                name: chunk.name,
+                content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
+                tool_call_id: callId,
+              });
+            }
           } else if (chunk.type === 'error') {
             safeWrite(`data: ${JSON.stringify({ type: 'error', error: chunk.error })}\n\n`);
           } else if (chunk.type === 'done') {

@@ -187,7 +187,16 @@ export class SessionStore {
 
   // ── Private helpers ───────────────────────────────────────────────────
 
+  private static readonly VALID_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  private validateId(id: string): void {
+    if (!SessionStore.VALID_ID.test(id)) {
+      throw new Error(`Invalid session ID: ${id}`);
+    }
+  }
+
   private sessionPath(id: string): string {
+    this.validateId(id);
     return path.join(this.sessionsDir, `${id}.json`);
   }
 
@@ -196,13 +205,13 @@ export class SessionStore {
   }
 
   private async ensureDir(): Promise<void> {
-    await fs.promises.mkdir(this.sessionsDir, { recursive: true });
+    await fs.promises.mkdir(this.sessionsDir, { recursive: true, mode: 0o700 });
   }
 
   private async writeSession(session: Session): Promise<void> {
     const filePath = this.sessionPath(session.id);
     const tmpPath = `${filePath}.tmp`;
-    await fs.promises.writeFile(tmpPath, JSON.stringify(session, null, 2));
+    await fs.promises.writeFile(tmpPath, JSON.stringify(session, null, 2), { mode: 0o600 });
     await fs.promises.rename(tmpPath, filePath);
   }
 
@@ -221,7 +230,7 @@ export class SessionStore {
   private async writeIndex(index: IndexFile): Promise<void> {
     await this.ensureDir();
     const tmpPath = `${this.indexPath()}.tmp`;
-    await fs.promises.writeFile(tmpPath, JSON.stringify(index, null, 2));
+    await fs.promises.writeFile(tmpPath, JSON.stringify(index, null, 2), { mode: 0o600 });
     await fs.promises.rename(tmpPath, this.indexPath());
   }
 

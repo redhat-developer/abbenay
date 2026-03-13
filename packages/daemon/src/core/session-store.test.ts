@@ -87,8 +87,12 @@ describe('SessionStore.get', () => {
     expect(session.messages).toEqual([]);
   });
 
-  it('throws for unknown ID', async () => {
-    await expect(store.get('nonexistent-id')).rejects.toThrow('Session not found');
+  it('throws for invalid ID', async () => {
+    await expect(store.get('nonexistent-id')).rejects.toThrow('Invalid session ID');
+  });
+
+  it('throws for unknown UUID', async () => {
+    await expect(store.get('00000000-0000-0000-0000-000000000000')).rejects.toThrow('Session not found');
   });
 });
 
@@ -151,8 +155,12 @@ describe('SessionStore.delete', () => {
     expect(result.sessions).toHaveLength(0);
   });
 
-  it('throws for unknown ID', async () => {
-    await expect(store.delete('nonexistent-id')).rejects.toThrow('Session not found');
+  it('throws for invalid ID', async () => {
+    await expect(store.delete('nonexistent-id')).rejects.toThrow('Invalid session ID');
+  });
+
+  it('throws for unknown UUID', async () => {
+    await expect(store.delete('00000000-0000-0000-0000-000000000000')).rejects.toThrow('Session not found');
   });
 });
 
