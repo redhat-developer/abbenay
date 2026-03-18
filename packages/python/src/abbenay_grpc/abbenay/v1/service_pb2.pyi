@@ -371,26 +371,30 @@ class PromptMessage(_message.Message):
     def __init__(self, role: _Optional[str] = ..., content: _Optional[str] = ...) -> None: ...
 
 class ChatRequest(_message.Message):
-    __slots__ = ("model", "messages", "options", "tools")
+    __slots__ = ("model", "messages", "options", "tools", "policy")
     MODEL_FIELD_NUMBER: _ClassVar[int]
     MESSAGES_FIELD_NUMBER: _ClassVar[int]
     OPTIONS_FIELD_NUMBER: _ClassVar[int]
     TOOLS_FIELD_NUMBER: _ClassVar[int]
+    POLICY_FIELD_NUMBER: _ClassVar[int]
     model: str
     messages: _containers.RepeatedCompositeFieldContainer[Message]
     options: ChatOptions
     tools: _containers.RepeatedCompositeFieldContainer[Tool]
-    def __init__(self, model: _Optional[str] = ..., messages: _Optional[_Iterable[_Union[Message, _Mapping]]] = ..., options: _Optional[_Union[ChatOptions, _Mapping]] = ..., tools: _Optional[_Iterable[_Union[Tool, _Mapping]]] = ...) -> None: ...
+    policy: PolicyConfig
+    def __init__(self, model: _Optional[str] = ..., messages: _Optional[_Iterable[_Union[Message, _Mapping]]] = ..., options: _Optional[_Union[ChatOptions, _Mapping]] = ..., tools: _Optional[_Iterable[_Union[Tool, _Mapping]]] = ..., policy: _Optional[_Union[PolicyConfig, _Mapping]] = ...) -> None: ...
 
 class SessionChatRequest(_message.Message):
-    __slots__ = ("session_id", "message", "options")
+    __slots__ = ("session_id", "message", "options", "policy")
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
     OPTIONS_FIELD_NUMBER: _ClassVar[int]
+    POLICY_FIELD_NUMBER: _ClassVar[int]
     session_id: str
     message: Message
     options: ChatOptions
-    def __init__(self, session_id: _Optional[str] = ..., message: _Optional[_Union[Message, _Mapping]] = ..., options: _Optional[_Union[ChatOptions, _Mapping]] = ...) -> None: ...
+    policy: PolicyConfig
+    def __init__(self, session_id: _Optional[str] = ..., message: _Optional[_Union[Message, _Mapping]] = ..., options: _Optional[_Union[ChatOptions, _Mapping]] = ..., policy: _Optional[_Union[PolicyConfig, _Mapping]] = ...) -> None: ...
 
 class ChatOptions(_message.Message):
     __slots__ = ("temperature", "max_tokens", "top_p", "stop", "enable_tools", "max_tool_iterations", "tool_filter", "top_k", "timeout", "tool_mode")

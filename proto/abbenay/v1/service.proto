@@ -405,12 +405,14 @@ message ChatRequest {
   repeated Message messages = 2;
   ChatOptions options = 3;
   repeated Tool tools = 4;             // Client-provided tool definitions (overrides registry)
+  optional PolicyConfig policy = 5;    // Inline policy override (replaces named policy entirely)
 }
 
 message SessionChatRequest {
   string session_id = 1;
   Message message = 2;                  // Single message to add to session
   ChatOptions options = 3;              // Options override session defaults
+  optional PolicyConfig policy = 4;    // Inline policy override (replaces named policy entirely)
 }
 
 message ChatOptions {

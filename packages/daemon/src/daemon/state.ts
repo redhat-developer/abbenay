@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { CoreState, type ChatToolOptions } from '../core/state.js';
 import type { ChatChunk, ChatParams, ToolExecutor } from '../core/engines.js';
+import type { PolicyConfig } from '../core/policies.js';
 import { KeychainSecretStore } from './secrets/keychain.js';
 import { ToolRegistry } from '../core/tool-registry.js';
 import { ToolRouter } from './tool-router.js';
@@ -127,14 +128,16 @@ export class DaemonState extends CoreState {
     messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }>,
     requestParams?: ChatParams,
     toolOptions?: ChatToolOptions,
+    toolExecutor?: ToolExecutor,
+    inlinePolicy?: PolicyConfig,
   ): AsyncGenerator<ChatChunk> {
+    let resolvedExecutor: ToolExecutor | undefined = toolExecutor;
     const toolMode = toolOptions?.toolMode || 'auto';
-    let toolExecutor: ToolExecutor | undefined;
 
-    if (toolMode === 'auto') {
+    if (!resolvedExecutor && toolMode === 'auto') {
       if (toolOptions?.tools && toolOptions.tools.length > 0) {
         // Client-provided tools with VS Code backchannel executor (Phase 1 path)
-        toolExecutor = async (toolName: string, args: Record<string, unknown>) => {
+        resolvedExecutor = async (toolName: string, args: Record<string, unknown>) => {
           console.log(`[DaemonState] Tool execution: ${toolName}`, JSON.stringify(args).substring(0, 200));
           try {
             const result = await this.invokeVSCodeTool(toolName, args);
@@ -151,11 +154,11 @@ export class DaemonState extends CoreState {
         };
       } else if (this.toolRegistry && this.toolRegistry.size > 0) {
         // Registry path: use router's fallback executor for vscode/mcp tools
-        toolExecutor = this.toolRegistry.buildExecutor(this.toolRouter.buildFallbackExecutor());
+        resolvedExecutor = this.toolRegistry.buildExecutor(this.toolRouter.buildFallbackExecutor());
       }
     }
 
-    yield* super.chat(compositeModelId, messages, requestParams, toolOptions, toolExecutor);
+    yield* super.chat(compositeModelId, messages, requestParams, toolOptions, resolvedExecutor, inlinePolicy);
   }
 
   // ─── Clients ─────────────────────────────────────────────────────────

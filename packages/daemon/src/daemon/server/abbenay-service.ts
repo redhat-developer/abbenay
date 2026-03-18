@@ -13,6 +13,7 @@ import {
 } from '../web/server.js';
 import { listAllPolicies, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
+import { loadConfig, type ConfigFile } from '../../core/config.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -75,11 +76,26 @@ interface ProtoTool {
   inputSchema?: string;
 }
 
+interface PolicyConfigProto {
+  sampling?: { temperature?: number; top_p?: number; top_k?: number };
+  output?: {
+    max_tokens?: number;
+    reserved_output_tokens?: number;
+    format?: string;
+    system_prompt_snippet?: string;
+    system_prompt_mode?: string;
+  };
+  context?: { context_threshold?: number; compression_strategy?: string };
+  tool?: { max_tool_iterations?: number; tool_mode?: string };
+  reliability?: { retry_on_invalid_json?: boolean; timeout?: number };
+}
+
 interface ChatRequestProto {
   model?: string;
   messages?: ProtoMessage[];
   options?: ChatOptionsProto;
   tools?: ProtoTool[];
+  policy?: PolicyConfigProto;
 }
 
 interface GetSecretRequestProto {
@@ -133,6 +149,7 @@ interface SessionChatRequestProto {
   sessionId?: string;
   message?: ProtoMessage;
   options?: ChatOptionsProto;
+  policy?: PolicyConfigProto;
 }
 
 interface VSCodeResponseProto {
@@ -417,10 +434,34 @@ export function createAbbenayService(state: DaemonState) {
         maxToolIterations,
       };
       
+      // ── Extract inline policy from request ──
+      let inlinePolicy: PolicyCfg | undefined;
+      if (request.policy) {
+        try {
+          inlinePolicy = protoToPolicyConfig(request.policy);
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          call.write({ error: { code: 'INVALID_ARGUMENT', message: `Invalid inline policy: ${msg}` } });
+          call.end();
+          return;
+        }
+
+        // Consumer authorization gate (DR-024)
+        const auth = authorizeInlinePolicy(call, loadConfig());
+        if (!auth.allowed) {
+          call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
+          call.end();
+          return;
+        }
+        if (auth.consumer) {
+          console.log(`[Service] Inline policy authorized for consumer "${auth.consumer}"`);
+        }
+      }
+      
       // Stream the response
       (async () => {
         try {
-          for await (const chunk of state.chat(model, messages, hasParams ? requestParams : undefined, toolOptions)) {
+          for await (const chunk of state.chat(model, messages, hasParams ? requestParams : undefined, toolOptions, undefined, inlinePolicy)) {
             if (chunk.type === 'text' && chunk.text) {
               call.write({ text: { text: chunk.text } });
             } else if (chunk.type === 'tool') {
@@ -936,6 +977,30 @@ export function createAbbenayService(state: DaemonState) {
       const toolMode = opts.tool_mode || opts.toolMode || 'none';
       const maxToolIterations = opts.max_tool_iterations || opts.maxToolIterations || 10;
 
+      // ── Extract inline policy from session chat request ──
+      let inlinePolicy: PolicyCfg | undefined;
+      if (call.request.policy) {
+        try {
+          inlinePolicy = protoToPolicyConfig(call.request.policy);
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          call.write({ error: { code: 'INVALID_ARGUMENT', message: `Invalid inline policy: ${msg}` } });
+          call.end();
+          return;
+        }
+
+        // Consumer authorization gate (DR-024)
+        const auth = authorizeInlinePolicy(call, loadConfig());
+        if (!auth.allowed) {
+          call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
+          call.end();
+          return;
+        }
+        if (auth.consumer) {
+          console.log(`[Service] SessionChat inline policy authorized for consumer "${auth.consumer}"`);
+        }
+      }
+
       (async () => {
         try {
           const session = await state.sessionStore.get(sessionId, true);
@@ -946,7 +1011,7 @@ export function createAbbenayService(state: DaemonState) {
 
           let fullText = '';
 
-          for await (const chunk of state.chat(session.model, allMessages, hasParams ? requestParams : undefined, toolOptions)) {
+          for await (const chunk of state.chat(session.model, allMessages, hasParams ? requestParams : undefined, toolOptions, undefined, inlinePolicy)) {
             if (chunk.type === 'text' && chunk.text) {
               fullText += chunk.text;
               call.write({ text: { text: chunk.text } });
@@ -1151,5 +1216,103 @@ function policyToProto(cfg: PolicyCfg): PolicyProtoOutput {
       retry_on_invalid_json: cfg.reliability.retry_on_invalid_json,
       timeout: cfg.reliability.timeout,
     } : undefined,
+  };
+}
+
+// ── Inline policy: proto → internal conversion with validation ─────────
+
+const VALID_FORMATS = new Set(['text', 'json_only', 'markdown']);
+const VALID_PROMPT_MODES = new Set(['prepend', 'append', 'replace']);
+const VALID_TOOL_MODES = new Set(['auto', 'ask', 'none']);
+const VALID_COMPRESSION = new Set(['none', 'truncate', 'rolling_summary']);
+
+function validateEnum(
+  value: string | undefined,
+  allowed: Set<string>,
+  fieldName: string,
+): string | undefined {
+  if (value == null) { return undefined; }
+  if (!allowed.has(value)) {
+    throw new Error(`Invalid ${fieldName}: "${value}". Must be one of: ${[...allowed].join(', ')}`);
+  }
+  return value;
+}
+
+/** @internal Exported for testing. */
+export function protoToPolicyConfig(proto: PolicyConfigProto): PolicyCfg {
+  return {
+    sampling: proto.sampling ? {
+      temperature: proto.sampling.temperature,
+      top_p: proto.sampling.top_p,
+      top_k: proto.sampling.top_k,
+    } : undefined,
+    output: proto.output ? {
+      max_tokens: proto.output.max_tokens,
+      reserved_output_tokens: proto.output.reserved_output_tokens,
+      format: validateEnum(proto.output.format, VALID_FORMATS, 'output.format') as PolicyCfg['output'] extends { format?: infer F } ? F : never,
+      system_prompt_snippet: proto.output.system_prompt_snippet,
+      system_prompt_mode: validateEnum(proto.output.system_prompt_mode, VALID_PROMPT_MODES, 'output.system_prompt_mode') as PolicyCfg['output'] extends { system_prompt_mode?: infer M } ? M : never,
+    } : undefined,
+    context: proto.context ? {
+      context_threshold: proto.context.context_threshold,
+      compression_strategy: validateEnum(proto.context.compression_strategy, VALID_COMPRESSION, 'context.compression_strategy') as PolicyCfg['context'] extends { compression_strategy?: infer C } ? C : never,
+    } : undefined,
+    tool: proto.tool ? {
+      max_tool_iterations: proto.tool.max_tool_iterations,
+      tool_mode: validateEnum(proto.tool.tool_mode, VALID_TOOL_MODES, 'tool.tool_mode') as PolicyCfg['tool'] extends { tool_mode?: infer T } ? T : never,
+    } : undefined,
+    reliability: proto.reliability ? {
+      retry_on_invalid_json: proto.reliability.retry_on_invalid_json,
+      timeout: proto.reliability.timeout,
+    } : undefined,
+  };
+}
+
+// ── Consumer authorization for inline policy (DR-024) ──────────────────
+
+/** @internal Exported for testing. */
+export interface AuthResult {
+  allowed: boolean;
+  consumer?: string;
+  reason?: string;
+}
+
+/** @internal Exported for testing. */
+export function authorizeInlinePolicy(
+  call: grpc.ServerWritableStream<unknown, unknown>,
+  config: ConfigFile,
+): AuthResult {
+  const consumers = config.consumers;
+
+  // Default-open: no consumers section means all callers are allowed
+  if (!consumers || Object.keys(consumers).length === 0) {
+    return { allowed: true };
+  }
+
+  const metadata = call.metadata.get('x-abbenay-token');
+  const token = metadata.length > 0 ? String(metadata[0]) : undefined;
+
+  if (!token) {
+    return {
+      allowed: false,
+      reason: 'Inline policy requires consumer authentication. Set the x-abbenay-token gRPC metadata header.',
+    };
+  }
+
+  for (const [name, consumer] of Object.entries(consumers)) {
+    const expectedToken = consumer.token_env
+      ? process.env[consumer.token_env]
+      : undefined;
+
+    if (!expectedToken) { continue; }
+
+    if (token === expectedToken && consumer.capabilities?.inline_policy) {
+      return { allowed: true, consumer: name };
+    }
+  }
+
+  return {
+    allowed: false,
+    reason: 'Consumer token not recognized or lacks inline_policy capability.',
   };
 }

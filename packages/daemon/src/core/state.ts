@@ -20,7 +20,7 @@ import {
   type ProviderConfig,
   type ModelConfig,
 } from './config.js';
-import { resolvePolicy, flattenPolicy, type FlattenedPolicy } from './policies.js';
+import { resolvePolicy, flattenPolicy, type FlattenedPolicy, type PolicyConfig } from './policies.js';
 import {
   getEngines,
   getEngine,
@@ -510,6 +510,7 @@ export class CoreState {
     requestParams?: ChatParams,
     toolOptions?: ChatToolOptions,
     toolExecutor?: ToolExecutor,
+    inlinePolicy?: PolicyConfig,
   ): AsyncGenerator<ChatChunk> {
     const toolMode = toolOptions?.toolMode || 'auto';
     debug(`[State] Chat request: compositeModelId="${compositeModelId}", messages=${messages.length}, toolMode="${toolMode}", tools=${toolOptions?.tools?.length || 0}`);
@@ -569,7 +570,13 @@ export class CoreState {
       : modelName;
 
     // ── Resolve policy (runtime-only, never persisted) ──
-    const flatPolicy = modelCfg?.policy ? resolveFlatPolicy(modelCfg.policy) : undefined;
+    // Inline policy fully replaces the named policy (see DR-023).
+    let flatPolicy: FlattenedPolicy | undefined;
+    if (inlinePolicy) {
+      flatPolicy = flattenPolicy(inlinePolicy);
+    } else if (modelCfg?.policy) {
+      flatPolicy = resolveFlatPolicy(modelCfg.policy);
+    }
 
     // Policy can override tool mode (caller's explicit value takes priority)
     const effectiveToolMode = toolOptions?.toolMode || flatPolicy?.toolMode || 'auto';
