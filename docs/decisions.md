@@ -235,19 +235,6 @@ always" in the CLI (not persisted) and "Allow & Remember" in the web UI
 (persisted to `config.yaml`). Users who want the previous behavior can set
 `tool_policy.auto_approve: ['*:*/*']`.
 
-## DR-021: File-based session storage with JSON index
-
-**Date:** 2026-03-12  
-**Decision:** Store sessions as individual JSON files in `getDataDir()/sessions/`
-(`$XDG_DATA_HOME/abbenay/sessions/` on Linux) with a companion `index.json`
-for fast listing. Each session is `<uuid>.json` containing the full
-conversation history plus metadata.  
-**Rationale:** JSON files are human-readable, easy to debug, and sufficient for
-the expected session count (tens to low hundreds). The index file avoids O(n)
-file reads when listing. SQLite is deferred until scale demands it. Sessions
-live in the *data* dir (not config dir) because they are user data, not
-configuration.
-
 ## DR-020: OpenAI-compatible API on the existing Express server
 
 **Date:** 2026-03-12  
@@ -260,6 +247,19 @@ routes is purely additive and doesn't affect existing `/api/` behavior. Abbenay
 composite model IDs (e.g., `openai/gpt-4o`) serve as the `model` field in
 OpenAI requests. A new `aby serve` CLI command highlights the OpenAI-compat
 angle while reusing the same `startEmbeddedWebServer()` lifecycle.
+
+## DR-021: File-based session storage with JSON index
+
+**Date:** 2026-03-12  
+**Decision:** Store sessions as individual JSON files in `getDataDir()/sessions/`
+(`$XDG_DATA_HOME/abbenay/sessions/` on Linux) with a companion `index.json`
+for fast listing. Each session is `<uuid>.json` containing the full
+conversation history plus metadata.  
+**Rationale:** JSON files are human-readable, easy to debug, and sufficient for
+the expected session count (tens to low hundreds). The index file avoids O(n)
+file reads when listing. SQLite is deferred until scale demands it. Sessions
+live in the *data* dir (not config dir) because they are user data, not
+configuration.
 
 ## DR-022: Periodic session summarization every 10 user turns
 
@@ -283,3 +283,41 @@ via the `SummarizeSession` gRPC RPC and `GET /api/sessions/:id/summary`.
   let the LLM query or search past sessions. Adding a `session_lookup` tool
   would allow cross-session knowledge reuse (e.g., "what did we decide last
   time about X?").
+
+---
+
+## DR-023: Inline policy uses full replacement, not merge
+
+**Date:** 2026-03-18  
+**Decision:** When a `ChatRequest` carries an inline `PolicyConfig`, it
+completely replaces the named policy from model config. There is no field-level
+merge between the inline and named policies -- if a caller sends only
+`{ sampling: { temperature: 0.0 } }`, they do not inherit the named policy's
+`output`, `reliability`, or other fields.  
+**Rationale:** Merge semantics create a hidden coupling: the caller's behavior
+would depend on whichever named policy the admin configured on the model, which
+the caller may not know about or control. A service like APME should not break
+because someone changed a named policy in `config.yaml`. Full replacement makes
+inline policy hermetic -- behavior is fully determined by what the caller sends.
+If merge-on-top-of-named is ever needed, the design doc identifies an explicit
+path: add both `policy_name` and inline `PolicyConfig` to the request, with
+clear precedence rules and a named base the caller opted into.
+
+---
+
+## DR-024: Privileged consumer model for inline policy authorization
+
+**Date:** 2026-03-18  
+**Decision:** Add a `consumers` section to `config.yaml` that maps named
+consumer applications to tokens and capability flags. When the section is
+present, only consumers with a valid token (passed via `x-abbenay-token` gRPC
+metadata) and the `inline_policy` capability can send inline policy on
+`ChatRequest`. When the section is absent, inline policy is allowed for all
+callers (default-open).  
+**Rationale:** Inline policy includes `system_prompt_snippet` with a `replace`
+mode that can override the admin's intended system prompt -- a prompt injection
+vector if the gRPC endpoint is reachable by untrusted clients. The consumer
+model lets the admin explicitly opt in trusted apps (e.g., APME) while keeping
+the default frictionless for single-user local deployments. Token-based auth
+was chosen over client-type gating because it provides per-app granularity --
+the admin can trust APME without trusting all Python clients.

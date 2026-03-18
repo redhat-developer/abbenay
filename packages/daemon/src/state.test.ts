@@ -87,6 +87,8 @@ vi.mock('./daemon/secrets/keychain.js', () => ({
 // ── Import DaemonState (after mocks) ─────────────────────────────────────────
 
 import { DaemonState, ClientType } from './daemon/state.js';
+import { protoToPolicyConfig, authorizeInlinePolicy } from './daemon/server/abbenay-service.js';
+import * as grpc from '@grpc/grpc-js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -474,6 +476,134 @@ describe('DaemonState.chat', () => {
   });
 });
 
+// ── Inline policy resolution ─────────────────────────────────────────────────
+
+describe('DaemonState.chat inline policy', () => {
+  // Use 'precise' policy (no json retry) to avoid mock complexity
+  const configWithPolicy: ConfigFile = {
+    providers: {
+      'my-mock': {
+        engine: 'mock',
+        models: {
+          'echo': { policy: 'precise' },
+        },
+      },
+    },
+  };
+
+  async function* fakeStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+    yield { type: 'text', text: 'hello' };
+    yield { type: 'done', finishReason: 'stop' };
+  }
+
+  beforeEach(() => {
+    mockLoadConfig.mockReturnValue(configWithPolicy);
+    mockMergeConfigs.mockReturnValue(configWithPolicy);
+  });
+
+  it('should use named policy when no inline policy is provided', async () => {
+    mockStreamChat.mockReturnValue(fakeStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat('my-mock/echo', [{ role: 'user', content: 'hi' }])) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some(c => c.type === 'text')).toBe(true);
+    const callArgs = mockStreamChat.mock.calls[0];
+    // streamChat params arg is index 5; 'precise' policy has temperature 0.15
+    const params = callArgs[5];
+    expect(params?.temperature).toBe(0.15);
+  });
+
+  it('should replace named policy with inline policy', async () => {
+    mockStreamChat.mockReturnValue(fakeStream());
+
+    const inlinePolicy = {
+      sampling: { temperature: 0.0 },
+      output: { max_tokens: 4096 },
+    };
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/echo',
+      [{ role: 'user', content: 'hi' }],
+      undefined,
+      undefined,
+      undefined,
+      inlinePolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some(c => c.type === 'text')).toBe(true);
+    const callArgs = mockStreamChat.mock.calls[0];
+    const params = callArgs[5];
+    // Inline policy's temperature, not the named policy's 0.15
+    expect(params?.temperature).toBe(0.0);
+    expect(params?.maxTokens).toBe(4096);
+  });
+
+  it('should let ChatOptions override inline policy fields', async () => {
+    mockStreamChat.mockReturnValue(fakeStream());
+
+    const inlinePolicy = {
+      sampling: { temperature: 0.0 },
+      output: { max_tokens: 4096 },
+    };
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/echo',
+      [{ role: 'user', content: 'hi' }],
+      { temperature: 0.8 },
+      undefined,
+      undefined,
+      inlinePolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some(c => c.type === 'text')).toBe(true);
+    const callArgs = mockStreamChat.mock.calls[0];
+    const params = callArgs[5];
+    // ChatOptions temperature (0.8) overrides inline policy (0.0)
+    expect(params?.temperature).toBe(0.8);
+    // Inline policy's max_tokens still applies (no ChatOptions override)
+    expect(params?.maxTokens).toBe(4096);
+  });
+
+  it('should not inherit named policy fields when inline policy is partial', async () => {
+    mockStreamChat.mockReturnValue(fakeStream());
+
+    // Inline policy only sets sampling — should NOT inherit precise's
+    // output max_tokens or system_prompt_snippet
+    const inlinePolicy = {
+      sampling: { temperature: 0.5 },
+    };
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/echo',
+      [{ role: 'user', content: 'hi' }],
+      undefined,
+      undefined,
+      undefined,
+      inlinePolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some(c => c.type === 'text')).toBe(true);
+    const callArgs = mockStreamChat.mock.calls[0];
+    const params = callArgs[5];
+    expect(params?.temperature).toBe(0.5);
+    // Named policy 'precise' has max_tokens: 2048, but inline policy doesn't
+    // set it — full replacement means no inheritance
+    expect(params?.maxTokens).toBeUndefined();
+  });
+});
+
 // ── runHealthChecks ──────────────────────────────────────────────────────────
 
 describe('DaemonState.runHealthChecks', () => {
@@ -527,5 +657,153 @@ describe('DaemonState client management', () => {
 
     expect(clients[0].workspacePath).toBe('/tmp/workspace');
     expect(clients[0].workspacePaths).toEqual(['/tmp/workspace']);
+  });
+});
+
+// ── protoToPolicyConfig validation ───────────────────────────────────────────
+
+describe('protoToPolicyConfig', () => {
+  it('should convert a valid proto to PolicyConfig', () => {
+    const result = protoToPolicyConfig({
+      sampling: { temperature: 0.5, top_p: 0.9 },
+      output: { format: 'json_only', max_tokens: 2048 },
+      reliability: { retry_on_invalid_json: true, timeout: 30000 },
+    });
+
+    expect(result.sampling?.temperature).toBe(0.5);
+    expect(result.sampling?.top_p).toBe(0.9);
+    expect(result.output?.format).toBe('json_only');
+    expect(result.output?.max_tokens).toBe(2048);
+    expect(result.reliability?.retry_on_invalid_json).toBe(true);
+    expect(result.reliability?.timeout).toBe(30000);
+  });
+
+  it('should reject invalid output.format', () => {
+    expect(() => protoToPolicyConfig({
+      output: { format: 'xml' },
+    })).toThrow('Invalid output.format');
+  });
+
+  it('should reject invalid output.system_prompt_mode', () => {
+    expect(() => protoToPolicyConfig({
+      output: { system_prompt_mode: 'overwrite' },
+    })).toThrow('Invalid output.system_prompt_mode');
+  });
+
+  it('should reject invalid tool.tool_mode', () => {
+    expect(() => protoToPolicyConfig({
+      tool: { tool_mode: 'force' },
+    })).toThrow('Invalid tool.tool_mode');
+  });
+
+  it('should reject invalid context.compression_strategy', () => {
+    expect(() => protoToPolicyConfig({
+      context: { compression_strategy: 'aggressive' },
+    })).toThrow('Invalid context.compression_strategy');
+  });
+
+  it('should pass through absent optional fields', () => {
+    const result = protoToPolicyConfig({
+      sampling: { temperature: 0.7 },
+    });
+
+    expect(result.sampling?.temperature).toBe(0.7);
+    expect(result.output).toBeUndefined();
+    expect(result.context).toBeUndefined();
+    expect(result.tool).toBeUndefined();
+    expect(result.reliability).toBeUndefined();
+  });
+});
+
+// ── authorizeInlinePolicy ────────────────────────────────────────────────────
+
+function mockCall(token?: string): grpc.ServerWritableStream<unknown, unknown> {
+  const metadata = new grpc.Metadata();
+  if (token) {
+    metadata.add('x-abbenay-token', token);
+  }
+  return { metadata } as unknown as grpc.ServerWritableStream<unknown, unknown>;
+}
+
+describe('authorizeInlinePolicy', () => {
+  it('should allow when no consumers section (default-open)', () => {
+    const result = authorizeInlinePolicy(mockCall(), { providers: {} });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('should allow when consumers section is empty', () => {
+    const result = authorizeInlinePolicy(mockCall(), { providers: {}, consumers: {} });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('should reject when consumers configured but no token provided', () => {
+    const prev = process.env.TEST_TOKEN;
+    process.env.TEST_TOKEN = 'secret123';
+    try {
+      const result = authorizeInlinePolicy(mockCall(), {
+        providers: {},
+        consumers: {
+          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
+        },
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('x-abbenay-token');
+    } finally {
+      if (prev === undefined) delete process.env.TEST_TOKEN;
+      else process.env.TEST_TOKEN = prev;
+    }
+  });
+
+  it('should reject when token does not match any consumer', () => {
+    const prev = process.env.TEST_TOKEN;
+    process.env.TEST_TOKEN = 'secret123';
+    try {
+      const result = authorizeInlinePolicy(mockCall('wrong-token'), {
+        providers: {},
+        consumers: {
+          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
+        },
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('not recognized');
+    } finally {
+      if (prev === undefined) delete process.env.TEST_TOKEN;
+      else process.env.TEST_TOKEN = prev;
+    }
+  });
+
+  it('should allow when token matches consumer with inline_policy capability', () => {
+    const prev = process.env.TEST_TOKEN;
+    process.env.TEST_TOKEN = 'secret123';
+    try {
+      const result = authorizeInlinePolicy(mockCall('secret123'), {
+        providers: {},
+        consumers: {
+          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
+        },
+      });
+      expect(result.allowed).toBe(true);
+      expect(result.consumer).toBe('apme');
+    } finally {
+      if (prev === undefined) delete process.env.TEST_TOKEN;
+      else process.env.TEST_TOKEN = prev;
+    }
+  });
+
+  it('should reject when token matches but consumer lacks inline_policy capability', () => {
+    const prev = process.env.TEST_TOKEN;
+    process.env.TEST_TOKEN = 'secret123';
+    try {
+      const result = authorizeInlinePolicy(mockCall('secret123'), {
+        providers: {},
+        consumers: {
+          limited: { token_env: 'TEST_TOKEN', capabilities: {} },
+        },
+      });
+      expect(result.allowed).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.TEST_TOKEN;
+      else process.env.TEST_TOKEN = prev;
+    }
   });
 });

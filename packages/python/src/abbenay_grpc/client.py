@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import asyncio
 from pathlib import Path
-from typing import AsyncIterator, Optional, List, Dict, Any
+from typing import AsyncIterator, Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 
 import grpc
@@ -18,6 +18,18 @@ try:
 except ImportError:
     proto = None
     grpc_service = None
+
+
+def _to_policy_proto(policy: Union["proto.PolicyConfig", Dict[str, Any]]) -> "proto.PolicyConfig":
+    """Convert a dict or PolicyConfig proto to a PolicyConfig proto message."""
+    if isinstance(policy, dict):
+        from google.protobuf.json_format import ParseDict
+        return ParseDict(policy, proto.PolicyConfig())
+    if proto is not None and isinstance(policy, proto.PolicyConfig):
+        return policy
+    raise TypeError(
+        f"policy must be a dict or PolicyConfig proto, got {type(policy).__name__}"
+    )
 
 
 class AbbenayError(Exception):
@@ -218,6 +230,8 @@ class AbbenayClient:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         enable_tools: bool = False,
+        policy: Optional[Union["proto.PolicyConfig", Dict[str, Any]]] = None,
+        token: Optional[str] = None,
     ) -> AsyncIterator[ChatChunk]:
         """Chat with a model.
         
@@ -228,9 +242,23 @@ class AbbenayClient:
             temperature: Optional temperature (0-2)
             max_tokens: Optional max tokens
             enable_tools: Enable tool calling
+            policy: Optional inline policy override. Accepts either a
+                PolicyConfig proto message or a plain dict matching the
+                proto structure (e.g., {"sampling": {"temperature": 0.0}}).
+                When set, fully replaces any named policy on the model.
+            token: Optional consumer auth token for inline policy
+                authorization (sent as x-abbenay-token gRPC metadata).
+                Required when the server has a ``consumers`` section in
+                config and the consumer needs the ``inline_policy``
+                capability.
             
         Yields:
             ChatChunk objects containing response data
+            
+        Raises:
+            AbbenayError: If the server streams an error chunk (e.g.,
+                INVALID_ARGUMENT for a malformed inline policy, or
+                PERMISSION_DENIED when consumer auth fails).
         """
         self._ensure_connected()
         
@@ -259,7 +287,14 @@ class AbbenayClient:
             options=options,
         )
         
-        async for chunk in self._stub.Chat(request):
+        if policy is not None:
+            request.policy.CopyFrom(_to_policy_proto(policy))
+        
+        metadata = []
+        if token is not None:
+            metadata.append(("x-abbenay-token", token))
+        
+        async for chunk in self._stub.Chat(request, metadata=metadata or None):
             yield self._parse_chunk(chunk)
     
     async def create_session(
@@ -486,6 +521,10 @@ class AbbenayClient:
                 tool_name=chunk.tool_result.name,
                 tool_result=chunk.tool_result.content,
             )
+        elif which == "error":
+            code = chunk.error.code
+            message = chunk.error.message
+            raise AbbenayError(f"Server error [{code}]: {message}")
         elif which == "done":
             return ChatChunk(
                 type="done",

@@ -109,6 +109,30 @@ export interface McpServerConfig {
   max_response_size?: number;
 }
 
+// ── Consumer authorization ─────────────────────────────────────────────
+
+/**
+ * Capabilities a consumer can be granted.
+ * Extensible: add new boolean flags as new gated features are introduced.
+ */
+export interface ConsumerCapabilities {
+  /** Allow sending inline PolicyConfig on ChatRequest */
+  inline_policy?: boolean;
+}
+
+/**
+ * A named consumer application (e.g., "apme") that authenticates via token
+ * and is granted specific capabilities.
+ */
+export interface ConsumerConfig {
+  /** Environment variable name holding the consumer's token */
+  token_env?: string;
+  /** Keychain key name for the consumer's token (future) */
+  token_keychain?: string;
+  /** Capabilities granted to this consumer */
+  capabilities: ConsumerCapabilities;
+}
+
 /**
  * Full configuration file structure.
  * Keys in `providers` are virtual provider names (user-defined IDs).
@@ -119,6 +143,8 @@ export interface ConfigFile {
   mcp_servers?: Record<string, McpServerConfig>;
   /** Tool execution policy (approval tiers, disabled tools, aliases) */
   tool_policy?: import('./tool-registry.js').ToolPolicyConfig;
+  /** Consumer applications with token-based auth and capability gating */
+  consumers?: Record<string, ConsumerConfig>;
 }
 
 // ── Path helpers ───────────────────────────────────────────────────────
