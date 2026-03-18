@@ -834,9 +834,10 @@ function mergeParams(
 }
 
 /**
- * Strip markdown code fences and leading prose from an LLM response
- * so that the inner JSON can be parsed. Returns the original string
- * unchanged if no fences are detected.
+ * Strip markdown code fences from an LLM response so that the inner
+ * JSON can be parsed.  Trims whitespace and removes a leading
+ * ` ```json ` / ` ``` ` fence pair.  Returns the original string
+ * (trimmed) when no fences are detected.
  *
  * @internal Exported for testing.
  */
@@ -888,15 +889,18 @@ async function* streamChatWithJsonRetry(
     JSON.parse(cleaned);
 
     if (cleaned !== fullText) {
-      // Fences were stripped — re-emit as a single cleaned text chunk
-      // plus any non-text chunks (tool_call, done, etc.)
-      console.log(`[State] json_strict: stripped markdown fences from response (${fullText.length} → ${cleaned.length} chars)`);
+      debug(`[State] json_strict: stripped markdown fences from response (${fullText.length} → ${cleaned.length} chars)`);
+      let emittedText = false;
       for (const chunk of buffered) {
-        if (chunk.type !== 'text') {
+        if (chunk.type === 'text') {
+          if (!emittedText) {
+            yield { type: 'text', text: cleaned };
+            emittedText = true;
+          }
+        } else {
           yield chunk;
         }
       }
-      yield { type: 'text', text: cleaned };
     } else {
       for (const chunk of buffered) {
         yield chunk;

@@ -86,7 +86,8 @@ vi.mock('./daemon/secrets/keychain.js', () => ({
 
 // ── Import DaemonState (after mocks) ─────────────────────────────────────────
 
-import { DaemonState, ClientType, stripJsonFences } from './daemon/state.js';
+import { DaemonState, ClientType } from './daemon/state.js';
+import { stripJsonFences } from './core/state.js';
 import { protoToPolicyConfig, authorizeInlinePolicy, authorizeMcpRegister } from './daemon/server/abbenay-service.js';
 import * as grpc from '@grpc/grpc-js';
 
