@@ -14,6 +14,13 @@ import type { McpServerConfig } from '../core/config.js';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
+export type McpServerSource = 'config' | 'dynamic';
+
+export interface DynamicScope {
+  sessionId?: string;
+  clientId?: string;
+}
+
 export interface McpServerStatus {
   id: string;
   config: McpServerConfig;
@@ -21,6 +28,8 @@ export interface McpServerStatus {
   toolCount: number;
   error?: string;
   connectedAt?: Date;
+  source: McpServerSource;
+  scope?: DynamicScope;
 }
 
 // ── McpClientPool ──────────────────────────────────────────────────────
@@ -28,11 +37,15 @@ export interface McpServerStatus {
 export class McpClientPool {
   private clients = new Map<string, MCPClient>();
   private statuses = new Map<string, McpServerStatus>();
+  private healthCheckTimer?: ReturnType<typeof setInterval>;
+
+  /** Max dynamic MCP servers allowed (configurable via config.yaml) */
+  private maxDynamicServers = 10;
 
   constructor(private registry: ToolRegistry) {}
 
   /**
-   * Connect to a single MCP server and register its tools.
+   * Connect to a single config-based MCP server and register its tools.
    */
   async connect(serverId: string, config: McpServerConfig): Promise<void> {
     if (!config.enabled) {
@@ -55,6 +68,7 @@ export class McpClientPool {
       config,
       connected: false,
       toolCount: 0,
+      source: 'config',
     };
     this.statuses.set(serverId, status);
 
@@ -84,6 +98,122 @@ export class McpClientPool {
       console.error(`[McpClientPool] Failed to connect to ${serverId}: ${msg}`);
       throw error;
     }
+  }
+
+  /**
+   * Dynamically register an MCP server at runtime.
+   * Returns the list of discovered tool names (namespaced).
+   */
+  async connectDynamic(
+    serverId: string,
+    config: McpServerConfig,
+    scope?: DynamicScope,
+    toolFilter?: string[],
+  ): Promise<string[]> {
+    if (this.hasConfigServer(serverId)) {
+      throw new Error(`MCP server '${serverId}' is already defined in config`);
+    }
+    if (this.clients.has(serverId)) {
+      throw new Error(`MCP server '${serverId}' is already registered`);
+    }
+
+    const dynamicCount = Array.from(this.statuses.values())
+      .filter(s => s.source === 'dynamic').length;
+    if (dynamicCount >= this.maxDynamicServers) {
+      throw new Error(
+        `Dynamic MCP server limit reached (${this.maxDynamicServers}). ` +
+        `Unregister existing servers first.`,
+      );
+    }
+
+    const status: McpServerStatus = {
+      id: serverId,
+      config: { ...config, enabled: true },
+      connected: false,
+      toolCount: 0,
+      source: 'dynamic',
+      scope,
+    };
+    this.statuses.set(serverId, status);
+
+    try {
+      const transport = this.buildTransport(config);
+      const client = await createMCPClient({
+        transport,
+        name: `abbenay-dynamic-${serverId}`,
+        onUncaughtError: (error) => {
+          console.error(`[McpClientPool] Uncaught error from dynamic ${serverId}:`, error);
+          status.connected = false;
+          status.error = String(error);
+        },
+      });
+
+      this.clients.set(serverId, client);
+      status.connected = true;
+      status.connectedAt = new Date();
+
+      // Discover tools, optionally filtering
+      await this.refreshTools(serverId, client, toolFilter);
+      console.log(`[McpClientPool] Dynamic server '${serverId}' connected (${status.toolCount} tools, scope=${JSON.stringify(scope || 'global')})`);
+
+      // Start health check timer if not running
+      this.ensureHealthCheck();
+
+      return this.registry.getBySource(`mcp:${serverId}`)
+        .map(t => t.namespacedName);
+
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      status.error = msg;
+      this.statuses.delete(serverId);
+      console.error(`[McpClientPool] Failed to connect dynamic server '${serverId}': ${msg}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if a server_id belongs to a config-based (non-dynamic) server.
+   */
+  hasConfigServer(serverId: string): boolean {
+    const status = this.statuses.get(serverId);
+    return status !== undefined && status.source === 'config';
+  }
+
+  /**
+   * Disconnect all dynamic MCP servers scoped to a session.
+   */
+  async disconnectByScope(sessionId: string): Promise<void> {
+    const toRemove = Array.from(this.statuses.entries())
+      .filter(([, s]) => s.source === 'dynamic' && s.scope?.sessionId === sessionId)
+      .map(([id]) => id);
+
+    for (const id of toRemove) {
+      console.log(`[McpClientPool] Session '${sessionId}' ended — removing dynamic server '${id}'`);
+      await this.disconnect(id);
+      this.statuses.delete(id);
+    }
+  }
+
+  /**
+   * Disconnect all dynamic MCP servers registered by a client.
+   */
+  async disconnectByClient(clientId: string): Promise<void> {
+    const toRemove = Array.from(this.statuses.entries())
+      .filter(([, s]) => s.source === 'dynamic' && s.scope?.clientId === clientId)
+      .map(([id]) => id);
+
+    for (const id of toRemove) {
+      console.log(`[McpClientPool] Client '${clientId}' disconnected — removing dynamic server '${id}'`);
+      await this.disconnect(id);
+      this.statuses.delete(id);
+    }
+  }
+
+  /**
+   * Set the max number of dynamic MCP servers (from config).
+   */
+  setMaxDynamicServers(max: number): void {
+    this.maxDynamicServers = max;
   }
 
   /**
@@ -180,22 +310,26 @@ export class McpClientPool {
   /**
    * Sync the pool with a new set of configs.
    * Connects new servers, disconnects removed servers, reconnects changed servers.
+   * Dynamic registrations are left untouched.
    */
   async syncWithConfig(configs: Record<string, McpServerConfig>): Promise<void> {
     const newIds = new Set(Object.keys(configs));
     const currentIds = new Set(this.clients.keys());
 
-    // Disconnect removed servers
+    // Disconnect removed config-based servers (skip dynamic)
     for (const id of currentIds) {
+      const status = this.statuses.get(id);
+      if (status?.source === 'dynamic') continue;
       if (!newIds.has(id)) {
         await this.disconnect(id);
         this.statuses.delete(id);
       }
     }
 
-    // Connect or reconnect
+    // Connect or reconnect config-based servers
     for (const [id, config] of Object.entries(configs)) {
       const existing = this.statuses.get(id);
+      if (existing?.source === 'dynamic') continue;
       if (!existing || this.configChanged(existing.config, config)) {
         try {
           await this.connect(id, config);
@@ -256,18 +390,25 @@ export class McpClientPool {
 
   /**
    * Discover tools from an MCP server and register them in the registry.
+   * When toolFilter is provided, only matching tools are registered.
    */
-  private async refreshTools(serverId: string, client: MCPClient): Promise<void> {
+  private async refreshTools(serverId: string, client: MCPClient, toolFilter?: string[]): Promise<void> {
     const toolList = await client.listTools();
-    const tools = (toolList.tools || []).map((t: { name: string; description?: string; inputSchema?: unknown }) => ({
+    let tools = (toolList.tools || []).map((t: { name: string; description?: string; inputSchema?: unknown }) => ({
       name: t.name,
       description: t.description || '',
       inputSchema: JSON.stringify(t.inputSchema || {}),
     }));
 
-    this.registry.register(serverId, 'mcp', tools);
+    if (toolFilter && toolFilter.length > 0) {
+      const filterSet = new Set(toolFilter);
+      tools = tools.filter(t => filterSet.has(t.name));
+    }
 
     const status = this.statuses.get(serverId);
+    const scope = status?.source === 'dynamic' ? status.scope : undefined;
+    this.registry.register(serverId, 'mcp', tools, scope?.sessionId);
+
     if (status) {
       status.toolCount = tools.length;
     }
@@ -301,5 +442,57 @@ export class McpClientPool {
       JSON.stringify(a.headers) !== JSON.stringify(b.headers) ||
       JSON.stringify(a.env) !== JSON.stringify(b.env)
     );
+  }
+
+  /**
+   * Start periodic health check for dynamic MCP servers (every 60s).
+   * Detects dead endpoints from crashed callers and removes them.
+   */
+  private ensureHealthCheck(): void {
+    if (this.healthCheckTimer) return;
+    this.healthCheckTimer = setInterval(() => {
+      void this.runHealthCheck();
+    }, 60_000);
+  }
+
+  /**
+   * Probe all dynamic MCP servers and remove unreachable ones.
+   * Uses listTools() as a lightweight connectivity check since MCPClient
+   * does not expose a dedicated ping method.
+   */
+  async runHealthCheck(): Promise<void> {
+    const dynamicEntries = Array.from(this.statuses.entries())
+      .filter(([, s]) => s.source === 'dynamic' && s.connected);
+
+    if (dynamicEntries.length === 0) {
+      if (this.healthCheckTimer) {
+        clearInterval(this.healthCheckTimer);
+        this.healthCheckTimer = undefined;
+      }
+      return;
+    }
+
+    for (const [serverId] of dynamicEntries) {
+      const client = this.clients.get(serverId);
+      if (!client) continue;
+
+      try {
+        await client.listTools();
+      } catch {
+        console.warn(`[McpClientPool] Dynamic server '${serverId}' unreachable, removing`);
+        await this.disconnect(serverId);
+        this.statuses.delete(serverId);
+      }
+    }
+  }
+
+  /**
+   * Stop the health check timer (for shutdown).
+   */
+  stopHealthCheck(): void {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
   }
 }

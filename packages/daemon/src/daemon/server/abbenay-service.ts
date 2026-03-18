@@ -13,7 +13,7 @@ import {
 } from '../web/server.js';
 import { listAllPolicies, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
-import { loadConfig, type ConfigFile } from '../../core/config.js';
+import { loadConfig, type ConfigFile, type McpServerConfig } from '../../core/config.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -67,6 +67,8 @@ interface ChatOptionsProto {
   toolMode?: string;
   max_tool_iterations?: number;
   maxToolIterations?: number;
+  tool_filter?: string[];
+  toolFilter?: string[];
 }
 
 interface ProtoTool {
@@ -150,6 +152,32 @@ interface SessionChatRequestProto {
   message?: ProtoMessage;
   options?: ChatOptionsProto;
   policy?: PolicyConfigProto;
+}
+
+interface McpTransportProto {
+  type?: string;
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  env?: Record<string, string>;
+}
+
+interface RegisterMcpServerRequestProto {
+  server_id?: string;
+  serverId?: string;
+  transport?: McpTransportProto;
+  session_id?: string;
+  sessionId?: string;
+  tool_filter?: string[];
+  toolFilter?: string[];
+  max_response_size?: number;
+  maxResponseSize?: number;
+}
+
+interface UnregisterMcpServerRequestProto {
+  server_id?: string;
+  serverId?: string;
 }
 
 interface VSCodeResponseProto {
@@ -427,11 +455,13 @@ export function createAbbenayService(state: DaemonState) {
       // ── Extract tool mode from options ──
       const toolMode = opts.tool_mode || opts.toolMode || 'auto';
       const maxToolIterations = opts.max_tool_iterations || opts.maxToolIterations || 10;
+      const chatToolFilter = opts.tool_filter || opts.toolFilter || [];
       
       const toolOptions: ChatToolOptions = {
         toolMode,
         tools: tools.length > 0 ? tools : undefined,
         maxToolIterations,
+        toolFilter: chatToolFilter.length > 0 ? chatToolFilter : undefined,
       };
       
       // ── Extract inline policy from request ──
@@ -935,7 +965,10 @@ export function createAbbenayService(state: DaemonState) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
         return;
       }
-      state.sessionStore.delete(id).then(() => {
+      state.sessionStore.delete(id).then(async () => {
+        // Clean up session-scoped dynamic MCP servers
+        await state.mcpClientPool.disconnectByScope(id);
+        state.toolRegistry?.clearSessionScope(id);
         callback(null, {});
       }).catch((error: unknown) => {
         callback({ code: grpc.status.NOT_FOUND, message: error instanceof Error ? error.message : String(error) });
@@ -976,6 +1009,7 @@ export function createAbbenayService(state: DaemonState) {
 
       const toolMode = opts.tool_mode || opts.toolMode || 'none';
       const maxToolIterations = opts.max_tool_iterations || opts.maxToolIterations || 10;
+      const sessionToolFilter = opts.tool_filter || opts.toolFilter || [];
 
       // ── Extract inline policy from session chat request ──
       let inlinePolicy: PolicyCfg | undefined;
@@ -1007,7 +1041,12 @@ export function createAbbenayService(state: DaemonState) {
           await state.sessionStore.appendMessage(sessionId, chatMessage);
 
           const allMessages = [...session.messages, chatMessage];
-          const toolOptions: ChatToolOptions = { toolMode, maxToolIterations };
+          const toolOptions: ChatToolOptions = {
+            toolMode,
+            maxToolIterations,
+            sessionId,
+            toolFilter: sessionToolFilter.length > 0 ? sessionToolFilter : undefined,
+          };
 
           let fullText = '';
 
@@ -1128,23 +1167,113 @@ export function createAbbenayService(state: DaemonState) {
     },
 
     /**
-     * Tool RPCs (stub - future MCP integration)
+     * List available tools from the registry
      */
     ListTools(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback(null, { tools: [] });
+      const tools = state.toolRegistry?.getAll() || [];
+      callback(null, {
+        tools: tools.map(t => ({
+          name: t.namespacedName,
+          description: t.description,
+          input_schema: t.inputSchema,
+          server: t.source,
+        })),
+      });
     },
     ExecuteTool(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Tool execution not yet implemented' });
     },
     
     /**
-     * MCP Server Registration (stub)
+     * Register a dynamic MCP server at runtime (DR-025)
      */
-    RegisterMcpServer(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback(null, {});
+    RegisterMcpServer(call: grpc.ServerUnaryCall<RegisterMcpServerRequestProto, object>, callback: grpc.sendUnaryData<object>): void {
+      const serverId = call.request.server_id || call.request.serverId || '';
+      const transport = call.request.transport;
+      const sessionId = call.request.session_id || call.request.sessionId || undefined;
+      const toolFilter = call.request.tool_filter || call.request.toolFilter || [];
+
+      if (!serverId) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'server_id is required' });
+        return;
+      }
+      if (!transport || !transport.type) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'transport with type is required' });
+        return;
+      }
+
+      // Consumer auth: require mcp_register capability
+      const authResult = authorizeMcpRegister(call, loadConfig());
+      if (!authResult.allowed) {
+        callback({ code: grpc.status.PERMISSION_DENIED, message: authResult.reason! });
+        return;
+      }
+      if (authResult.consumer) {
+        console.log(`[Service] RegisterMcpServer authorized for consumer "${authResult.consumer}"`);
+      }
+
+      // Resolve registering client ID from gRPC metadata
+      const clientIdMeta = call.metadata.get('x-abbenay-client-id');
+      const clientId = clientIdMeta.length > 0 ? String(clientIdMeta[0]) : undefined;
+
+      const config = transportProtoToConfig(transport);
+
+      (async () => {
+        try {
+          const tools = await state.mcpClientPool.connectDynamic(
+            serverId,
+            config,
+            { sessionId, clientId },
+            toolFilter.length > 0 ? toolFilter : undefined,
+          );
+
+          callback(null, {
+            success: true,
+            error: '',
+            discovered_tools: tools,
+          });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg.includes('already')) {
+            callback({ code: grpc.status.ALREADY_EXISTS, message: msg });
+          } else if (msg.includes('limit')) {
+            callback({ code: grpc.status.RESOURCE_EXHAUSTED, message: msg });
+          } else {
+            callback({ code: grpc.status.FAILED_PRECONDITION, message: `Failed to connect to MCP server '${serverId}': ${msg}` });
+          }
+        }
+      })();
     },
-    UnregisterMcpServer(call: grpc.ServerUnaryCall<object, object>, callback: grpc.sendUnaryData<object>): void {
-      callback(null, {});
+
+    /**
+     * Unregister a dynamically registered MCP server
+     */
+    UnregisterMcpServer(call: grpc.ServerUnaryCall<UnregisterMcpServerRequestProto, object>, callback: grpc.sendUnaryData<object>): void {
+      const serverId = call.request.server_id || call.request.serverId || '';
+      if (!serverId) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'server_id is required' });
+        return;
+      }
+
+      const status = state.mcpClientPool.getStatus(serverId);
+      if (!status) {
+        callback({ code: grpc.status.NOT_FOUND, message: `MCP server '${serverId}' not found` });
+        return;
+      }
+      if (status.source === 'config') {
+        callback({ code: grpc.status.FAILED_PRECONDITION, message: `MCP server '${serverId}' is config-based and cannot be unregistered via RPC` });
+        return;
+      }
+
+      (async () => {
+        try {
+          await state.mcpClientPool.disconnect(serverId);
+          callback(null, { success: true });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          callback({ code: grpc.status.INTERNAL, message: msg });
+        }
+      })();
     },
   };
 }
@@ -1265,6 +1394,80 @@ export function protoToPolicyConfig(proto: PolicyConfigProto): PolicyCfg {
       retry_on_invalid_json: proto.reliability.retry_on_invalid_json,
       timeout: proto.reliability.timeout,
     } : undefined,
+  };
+}
+
+// ── Transport proto → McpServerConfig conversion ──────────────────────
+
+function transportProtoToConfig(transport: McpTransportProto): McpServerConfig {
+  const type = transport.type || 'http';
+
+  if (type === 'stdio') {
+    if (!transport.command) {
+      throw new Error('stdio transport requires a command');
+    }
+    return {
+      transport: 'stdio',
+      command: transport.command,
+      args: transport.args || [],
+      env: transport.env,
+      enabled: true,
+    };
+  }
+
+  if (type === 'http' || type === 'sse') {
+    if (!transport.url) {
+      throw new Error(`${type} transport requires a url`);
+    }
+    return {
+      transport: type as 'http' | 'sse',
+      url: transport.url,
+      headers: transport.headers,
+      enabled: true,
+    };
+  }
+
+  throw new Error(`Unknown transport type: "${type}". Must be "stdio", "http", or "sse".`);
+}
+
+// ── Consumer authorization for MCP registration (DR-025) ──────────────
+
+/** @internal Exported for testing. */
+export function authorizeMcpRegister(
+  call: grpc.ServerUnaryCall<unknown, unknown>,
+  config: ConfigFile,
+): AuthResult {
+  const consumers = config.consumers;
+
+  if (!consumers || Object.keys(consumers).length === 0) {
+    return { allowed: true };
+  }
+
+  const metadata = call.metadata.get('x-abbenay-token');
+  const token = metadata.length > 0 ? String(metadata[0]) : undefined;
+
+  if (!token) {
+    return {
+      allowed: false,
+      reason: 'MCP registration requires consumer authentication. Set the x-abbenay-token gRPC metadata header.',
+    };
+  }
+
+  for (const [name, consumer] of Object.entries(consumers)) {
+    const expectedToken = consumer.token_env
+      ? process.env[consumer.token_env]
+      : undefined;
+
+    if (!expectedToken) continue;
+
+    if (token === expectedToken && consumer.capabilities?.mcp_register) {
+      return { allowed: true, consumer: name };
+    }
+  }
+
+  return {
+    allowed: false,
+    reason: 'Consumer token not recognized or lacks mcp_register capability.',
   };
 }
 

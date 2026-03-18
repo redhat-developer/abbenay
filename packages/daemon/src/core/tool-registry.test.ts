@@ -180,4 +180,63 @@ describe('ToolRegistry', () => {
       expect(reg.resolve('read')).not.toBeNull();
     });
   });
+
+  describe('session-scoped tools', () => {
+    it('session-scoped tools are hidden from calls without matching sessionId', () => {
+      const reg = new ToolRegistry();
+      reg.register('github', 'mcp', [makeTool('search')]);
+      reg.register('ansible-doc', 'mcp', [makeTool('get_doc')], 'session-1');
+
+      const allTools = reg.listForChat();
+      expect(allTools).toHaveLength(1);
+      expect(allTools[0].name).toBe('search');
+    });
+
+    it('session-scoped tools are visible when sessionId matches', () => {
+      const reg = new ToolRegistry();
+      reg.register('github', 'mcp', [makeTool('search')]);
+      reg.register('ansible-doc', 'mcp', [makeTool('get_doc')], 'session-1');
+
+      const tools = reg.listForChat(undefined, 'session-1');
+      expect(tools).toHaveLength(2);
+      const names = tools.map(t => t.name).sort();
+      expect(names).toEqual(['get_doc', 'search']);
+    });
+
+    it('session-scoped tools from one session are hidden from another session', () => {
+      const reg = new ToolRegistry();
+      reg.register('ansible-doc', 'mcp', [makeTool('get_doc')], 'session-1');
+      reg.register('test-tool', 'mcp', [makeTool('run_test')], 'session-2');
+
+      const s1Tools = reg.listForChat(undefined, 'session-1');
+      expect(s1Tools).toHaveLength(1);
+      expect(s1Tools[0].name).toBe('get_doc');
+
+      const s2Tools = reg.listForChat(undefined, 'session-2');
+      expect(s2Tools).toHaveLength(1);
+      expect(s2Tools[0].name).toBe('run_test');
+    });
+
+    it('clearSessionScope removes session tracking but tools remain until source unregistered', () => {
+      const reg = new ToolRegistry();
+      reg.register('ansible-doc', 'mcp', [makeTool('get_doc')], 'session-1');
+
+      reg.clearSessionScope('session-1');
+
+      // Tool still exists but is no longer session-scoped, so visible to all
+      const tools = reg.listForChat();
+      expect(tools).toHaveLength(1);
+    });
+
+    it('unregisterSource cleans up session scope references', () => {
+      const reg = new ToolRegistry();
+      reg.register('ansible-doc', 'mcp', [makeTool('get_doc')], 'session-1');
+
+      reg.unregisterSource('mcp:ansible-doc');
+
+      expect(reg.size).toBe(0);
+      const tools = reg.listForChat(undefined, 'session-1');
+      expect(tools).toHaveLength(0);
+    });
+  });
 });

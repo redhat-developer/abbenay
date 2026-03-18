@@ -378,11 +378,11 @@ service Abbenay {
   // MCP Server Registration (for external MCP servers)
   //
   
-  // Register an MCP server
-  rpc RegisterMcpServer(RegisterMcpServerRequest) returns (Empty);
+  // Register an MCP server dynamically at runtime
+  rpc RegisterMcpServer(RegisterMcpServerRequest) returns (RegisterMcpServerResponse);
   
-  // Unregister an MCP server
-  rpc UnregisterMcpServer(UnregisterMcpServerRequest) returns (Empty);
+  // Unregister a dynamically registered MCP server
+  rpc UnregisterMcpServer(UnregisterMcpServerRequest) returns (UnregisterMcpServerResponse);
   
   //
   // VS Code Backchannel (Bidirectional Streaming)
@@ -1139,15 +1139,36 @@ message PolicyReliability {
 }
 
 //
-// MCP Server Registration (keeping for external MCP servers)
+// Dynamic MCP Server Registration (DR-025)
 //
 
 message RegisterMcpServerRequest {
-  string server_id = 1;                 // e.g., "filesystem"
-  string transport = 2;                 // "stdio" or socket path
-  repeated string capabilities = 3;     // What it provides
+  string server_id = 1;                  // e.g., "apme-ansible-doc"
+  McpTransport transport = 2;            // connection details
+  optional string session_id = 3;        // scope to session (auto-cleanup)
+  repeated string tool_filter = 4;       // only expose these tools (empty = all)
+  optional int32 max_response_size = 5;  // per-tool-call limit in bytes (default 100KB)
+}
+
+message McpTransport {
+  string type = 1;                       // "stdio" | "http" | "sse"
+  optional string command = 2;           // stdio: command to run
+  repeated string args = 3;             // stdio: command arguments
+  optional string url = 4;              // http/sse: endpoint URL
+  map<string, string> headers = 5;      // http/sse: auth headers
+  map<string, string> env = 6;          // stdio: environment variables
+}
+
+message RegisterMcpServerResponse {
+  bool success = 1;
+  string error = 2;                      // empty on success
+  repeated string discovered_tools = 3;  // tools found after connection
 }
 
 message UnregisterMcpServerRequest {
   string server_id = 1;
+}
+
+message UnregisterMcpServerResponse {
+  bool success = 1;
 }

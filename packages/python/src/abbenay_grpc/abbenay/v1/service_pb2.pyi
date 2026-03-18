@@ -1401,17 +1401,67 @@ class PolicyReliability(_message.Message):
     def __init__(self, retry_on_invalid_json: bool = ..., timeout: _Optional[int] = ...) -> None: ...
 
 class RegisterMcpServerRequest(_message.Message):
-    __slots__ = ("server_id", "transport", "capabilities")
+    __slots__ = ("server_id", "transport", "session_id", "tool_filter", "max_response_size")
     SERVER_ID_FIELD_NUMBER: _ClassVar[int]
     TRANSPORT_FIELD_NUMBER: _ClassVar[int]
-    CAPABILITIES_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    TOOL_FILTER_FIELD_NUMBER: _ClassVar[int]
+    MAX_RESPONSE_SIZE_FIELD_NUMBER: _ClassVar[int]
     server_id: str
-    transport: str
-    capabilities: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, server_id: _Optional[str] = ..., transport: _Optional[str] = ..., capabilities: _Optional[_Iterable[str]] = ...) -> None: ...
+    transport: McpTransport
+    session_id: str
+    tool_filter: _containers.RepeatedScalarFieldContainer[str]
+    max_response_size: int
+    def __init__(self, server_id: _Optional[str] = ..., transport: _Optional[_Union[McpTransport, _Mapping]] = ..., session_id: _Optional[str] = ..., tool_filter: _Optional[_Iterable[str]] = ..., max_response_size: _Optional[int] = ...) -> None: ...
+
+class McpTransport(_message.Message):
+    __slots__ = ("type", "command", "args", "url", "headers", "env")
+    class HeadersEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    class EnvEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    COMMAND_FIELD_NUMBER: _ClassVar[int]
+    ARGS_FIELD_NUMBER: _ClassVar[int]
+    URL_FIELD_NUMBER: _ClassVar[int]
+    HEADERS_FIELD_NUMBER: _ClassVar[int]
+    ENV_FIELD_NUMBER: _ClassVar[int]
+    type: str
+    command: str
+    args: _containers.RepeatedScalarFieldContainer[str]
+    url: str
+    headers: _containers.ScalarMap[str, str]
+    env: _containers.ScalarMap[str, str]
+    def __init__(self, type: _Optional[str] = ..., command: _Optional[str] = ..., args: _Optional[_Iterable[str]] = ..., url: _Optional[str] = ..., headers: _Optional[_Mapping[str, str]] = ..., env: _Optional[_Mapping[str, str]] = ...) -> None: ...
+
+class RegisterMcpServerResponse(_message.Message):
+    __slots__ = ("success", "error", "discovered_tools")
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    DISCOVERED_TOOLS_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    error: str
+    discovered_tools: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, success: bool = ..., error: _Optional[str] = ..., discovered_tools: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class UnregisterMcpServerRequest(_message.Message):
     __slots__ = ("server_id",)
     SERVER_ID_FIELD_NUMBER: _ClassVar[int]
     server_id: str
     def __init__(self, server_id: _Optional[str] = ...) -> None: ...
+
+class UnregisterMcpServerResponse(_message.Message):
+    __slots__ = ("success",)
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    def __init__(self, success: bool = ...) -> None: ...

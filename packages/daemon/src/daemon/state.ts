@@ -186,6 +186,8 @@ export class DaemonState extends CoreState {
     const removed = this.clients.delete(clientId);
     if (removed) {
       console.log(`[State] Client unregistered: ${clientId}`);
+      // Clean up dynamic MCP servers registered by this client
+      void this.mcpClientPool.disconnectByClient(clientId);
     }
     return removed;
   }

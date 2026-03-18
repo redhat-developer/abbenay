@@ -448,6 +448,172 @@ class AbbenayClient:
         )
         return self._parse_session(response)
     
+    async def session_chat(
+        self,
+        session_id: str,
+        message: str,
+        *,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        enable_tools: bool = False,
+        tool_filter: Optional[List[str]] = None,
+        policy: Optional[Union["proto.PolicyConfig", Dict[str, Any]]] = None,
+        token: Optional[str] = None,
+    ) -> AsyncIterator[ChatChunk]:
+        """Chat within an existing session.
+
+        Args:
+            session_id: Session ID to chat within
+            message: User message
+            temperature: Optional temperature (0-2)
+            max_tokens: Optional max tokens
+            enable_tools: Enable tool calling
+            tool_filter: Only expose these tools to the LLM (empty = all)
+            policy: Optional inline policy override
+            token: Optional consumer auth token
+
+        Yields:
+            ChatChunk objects containing response data
+
+        Raises:
+            AbbenayError: On server error chunks
+        """
+        self._ensure_connected()
+
+        options = proto.ChatOptions(
+            enable_tools=enable_tools,
+            tool_mode="auto" if enable_tools else "none",
+        )
+        if temperature is not None:
+            options.temperature = temperature
+        if max_tokens is not None:
+            options.max_tokens = max_tokens
+        if tool_filter:
+            options.tool_filter.extend(tool_filter)
+
+        request = proto.SessionChatRequest(
+            session_id=session_id,
+            message=proto.Message(
+                role=proto.ROLE_USER,
+                content=message,
+            ),
+            options=options,
+        )
+
+        if policy is not None:
+            request.policy.CopyFrom(_to_policy_proto(policy))
+
+        metadata = []
+        if token is not None:
+            metadata.append(("x-abbenay-token", token))
+
+        async for chunk in self._stub.SessionChat(request, metadata=metadata or None):
+            yield self._parse_chunk(chunk)
+
+    async def register_mcp_server(
+        self,
+        server_id: str,
+        transport: Dict[str, Any],
+        *,
+        session_id: Optional[str] = None,
+        tool_filter: Optional[List[str]] = None,
+        token: Optional[str] = None,
+    ) -> List[str]:
+        """Register a dynamic MCP server.
+
+        The caller is responsible for starting and owning the MCP server
+        lifecycle. Abbenay connects as an MCP client to the provided
+        endpoint.
+
+        Args:
+            server_id: Unique server identifier (e.g., "apme-ansible-doc")
+            transport: Transport config dict with keys:
+                type: "http" | "sse" | "stdio"
+                url: endpoint URL (http/sse)
+                command: command to run (stdio)
+                args: command arguments (stdio)
+            session_id: Scope to a session (auto-cleanup on delete)
+            tool_filter: Only register these tools from the server
+            token: Consumer auth token for mcp_register capability
+
+        Returns:
+            List of discovered tool names (namespaced)
+
+        Raises:
+            AbbenayError: On registration failure
+        """
+        self._ensure_connected()
+
+        mcp_transport = proto.McpTransport(
+            type=transport.get("type", "http"),
+        )
+        if "url" in transport:
+            mcp_transport.url = transport["url"]
+        if "command" in transport:
+            mcp_transport.command = transport["command"]
+        if "args" in transport:
+            mcp_transport.args.extend(transport["args"])
+        if "headers" in transport:
+            for k, v in transport["headers"].items():
+                mcp_transport.headers[k] = v
+
+        request = proto.RegisterMcpServerRequest(
+            server_id=server_id,
+            transport=mcp_transport,
+        )
+        if session_id is not None:
+            request.session_id = session_id
+        if tool_filter:
+            request.tool_filter.extend(tool_filter)
+
+        metadata = []
+        if token is not None:
+            metadata.append(("x-abbenay-token", token))
+        if self._client_id is not None:
+            metadata.append(("x-abbenay-client-id", self._client_id))
+
+        try:
+            response = await self._stub.RegisterMcpServer(
+                request, metadata=metadata or None,
+            )
+            return list(response.discovered_tools)
+        except grpc.aio.AioRpcError as e:
+            raise AbbenayError(
+                f"Failed to register MCP server '{server_id}': {e.details()}"
+            ) from e
+
+    async def unregister_mcp_server(
+        self,
+        server_id: str,
+        *,
+        token: Optional[str] = None,
+    ) -> bool:
+        """Unregister a dynamically registered MCP server.
+
+        Args:
+            server_id: Server ID to unregister
+            token: Consumer auth token
+
+        Returns:
+            True if successfully unregistered
+        """
+        self._ensure_connected()
+
+        metadata = []
+        if token is not None:
+            metadata.append(("x-abbenay-token", token))
+
+        try:
+            response = await self._stub.UnregisterMcpServer(
+                proto.UnregisterMcpServerRequest(server_id=server_id),
+                metadata=metadata or None,
+            )
+            return response.success
+        except grpc.aio.AioRpcError as e:
+            raise AbbenayError(
+                f"Failed to unregister MCP server '{server_id}': {e.details()}"
+            ) from e
+
     async def list_models(self) -> List[Model]:
         """List available models.
         
