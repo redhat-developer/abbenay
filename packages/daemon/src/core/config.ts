@@ -118,6 +118,8 @@ export interface McpServerConfig {
 export interface ConsumerCapabilities {
   /** Allow sending inline PolicyConfig on ChatRequest */
   inline_policy?: boolean;
+  /** Allow dynamic MCP server registration via RegisterMcpServer RPC */
+  mcp_register?: boolean;
 }
 
 /**

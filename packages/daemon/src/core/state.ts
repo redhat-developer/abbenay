@@ -101,6 +101,10 @@ export interface ChatToolOptions {
   tools?: ToolDefinition[];
   /** Max tool execution rounds (0 = unlimited, default 10) */
   maxToolIterations?: number;
+  /** Only expose these tools to the LLM (empty = all). Matches namespaced names. */
+  toolFilter?: string[];
+  /** Session ID for session-scoped tool visibility */
+  sessionId?: string;
   /**
    * Called when a tool matches `require_approval` patterns and needs user confirmation.
    * The implementation is transport-specific: the web server writes an SSE event and
@@ -615,7 +619,14 @@ export class CoreState {
       } else if (this.toolRegistry && this.toolRegistry.size > 0) {
         const config = this.configLoader ? this.configLoader() : loadConfig();
         toolPolicy = config.tool_policy;
-        tools = this.toolRegistry.listForChat(toolPolicy);
+        tools = this.toolRegistry.listForChat(toolPolicy, toolOptions?.sessionId);
+
+        // Apply per-request tool_filter: restrict to only the listed tools
+        if (toolOptions?.toolFilter && toolOptions.toolFilter.length > 0) {
+          const filterSet = new Set(toolOptions.toolFilter);
+          tools = tools.filter(t => filterSet.has(t.name));
+        }
+
         resolvedExecutor = this.toolRegistry.buildExecutor(
           toolExecutor ? (tool, args) => toolExecutor!(tool.originalName, args) : undefined,
         );

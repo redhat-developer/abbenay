@@ -87,7 +87,7 @@ vi.mock('./daemon/secrets/keychain.js', () => ({
 // ── Import DaemonState (after mocks) ─────────────────────────────────────────
 
 import { DaemonState, ClientType } from './daemon/state.js';
-import { protoToPolicyConfig, authorizeInlinePolicy } from './daemon/server/abbenay-service.js';
+import { protoToPolicyConfig, authorizeInlinePolicy, authorizeMcpRegister } from './daemon/server/abbenay-service.js';
 import * as grpc from '@grpc/grpc-js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -801,6 +801,87 @@ describe('authorizeInlinePolicy', () => {
         },
       });
       expect(result.allowed).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.TEST_TOKEN;
+      else process.env.TEST_TOKEN = prev;
+    }
+  });
+});
+
+// ── authorizeMcpRegister (DR-025) ────────────────────────────────────────────
+
+function mockUnaryCall(token?: string): grpc.ServerUnaryCall<unknown, unknown> {
+  const metadata = new grpc.Metadata();
+  if (token) {
+    metadata.add('x-abbenay-token', token);
+  }
+  return { metadata } as unknown as grpc.ServerUnaryCall<unknown, unknown>;
+}
+
+describe('authorizeMcpRegister', () => {
+  it('should allow when no consumers section (default-open)', () => {
+    const result = authorizeMcpRegister(mockUnaryCall(), { providers: {} });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('should reject when consumers exist but no token provided', () => {
+    const result = authorizeMcpRegister(mockUnaryCall(), {
+      providers: {},
+      consumers: {
+        apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
+      },
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('consumer authentication');
+  });
+
+  it('should allow when token matches consumer with mcp_register capability', () => {
+    const prev = process.env.TEST_TOKEN;
+    process.env.TEST_TOKEN = 'mcp-secret';
+    try {
+      const result = authorizeMcpRegister(mockUnaryCall('mcp-secret'), {
+        providers: {},
+        consumers: {
+          apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
+        },
+      });
+      expect(result.allowed).toBe(true);
+      expect(result.consumer).toBe('apme');
+    } finally {
+      if (prev === undefined) delete process.env.TEST_TOKEN;
+      else process.env.TEST_TOKEN = prev;
+    }
+  });
+
+  it('should reject when token matches but consumer lacks mcp_register capability', () => {
+    const prev = process.env.TEST_TOKEN;
+    process.env.TEST_TOKEN = 'mcp-secret';
+    try {
+      const result = authorizeMcpRegister(mockUnaryCall('mcp-secret'), {
+        providers: {},
+        consumers: {
+          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
+        },
+      });
+      expect(result.allowed).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.TEST_TOKEN;
+      else process.env.TEST_TOKEN = prev;
+    }
+  });
+
+  it('should reject when token does not match any consumer', () => {
+    const prev = process.env.TEST_TOKEN;
+    process.env.TEST_TOKEN = 'mcp-secret';
+    try {
+      const result = authorizeMcpRegister(mockUnaryCall('wrong-token'), {
+        providers: {},
+        consumers: {
+          apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
+        },
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('not recognized');
     } finally {
       if (prev === undefined) delete process.env.TEST_TOKEN;
       else process.env.TEST_TOKEN = prev;

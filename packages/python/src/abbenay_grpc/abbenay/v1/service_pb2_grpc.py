@@ -627,12 +627,12 @@ class AbbenayStub(object):
         self.RegisterMcpServer = channel.unary_unary(
                 '/abbenay.v1.Abbenay/RegisterMcpServer',
                 request_serializer=abbenay_dot_v1_dot_service__pb2.RegisterMcpServerRequest.SerializeToString,
-                response_deserializer=abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.RegisterMcpServerResponse.FromString,
                 _registered_method=True)
         self.UnregisterMcpServer = channel.unary_unary(
                 '/abbenay.v1.Abbenay/UnregisterMcpServer',
                 request_serializer=abbenay_dot_v1_dot_service__pb2.UnregisterMcpServerRequest.SerializeToString,
-                response_deserializer=abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.UnregisterMcpServerResponse.FromString,
                 _registered_method=True)
         self.VSCodeStream = channel.stream_stream(
                 '/abbenay.v1.Abbenay/VSCodeStream',
@@ -926,14 +926,14 @@ class AbbenayServicer(object):
         MCP Server Registration (for external MCP servers)
 
 
-        Register an MCP server
+        Register an MCP server dynamically at runtime
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def UnregisterMcpServer(self, request, context):
-        """Unregister an MCP server
+        """Unregister a dynamically registered MCP server
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -1130,12 +1130,12 @@ def add_AbbenayServicer_to_server(servicer, server):
             'RegisterMcpServer': grpc.unary_unary_rpc_method_handler(
                     servicer.RegisterMcpServer,
                     request_deserializer=abbenay_dot_v1_dot_service__pb2.RegisterMcpServerRequest.FromString,
-                    response_serializer=abbenay_dot_v1_dot_service__pb2.Empty.SerializeToString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.RegisterMcpServerResponse.SerializeToString,
             ),
             'UnregisterMcpServer': grpc.unary_unary_rpc_method_handler(
                     servicer.UnregisterMcpServer,
                     request_deserializer=abbenay_dot_v1_dot_service__pb2.UnregisterMcpServerRequest.FromString,
-                    response_serializer=abbenay_dot_v1_dot_service__pb2.Empty.SerializeToString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.UnregisterMcpServerResponse.SerializeToString,
             ),
             'VSCodeStream': grpc.stream_stream_rpc_method_handler(
                     servicer.VSCodeStream,
@@ -2094,7 +2094,7 @@ class Abbenay(object):
             target,
             '/abbenay.v1.Abbenay/RegisterMcpServer',
             abbenay_dot_v1_dot_service__pb2.RegisterMcpServerRequest.SerializeToString,
-            abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+            abbenay_dot_v1_dot_service__pb2.RegisterMcpServerResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -2121,7 +2121,7 @@ class Abbenay(object):
             target,
             '/abbenay.v1.Abbenay/UnregisterMcpServer',
             abbenay_dot_v1_dot_service__pb2.UnregisterMcpServerRequest.SerializeToString,
-            abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+            abbenay_dot_v1_dot_service__pb2.UnregisterMcpServerResponse.FromString,
             options,
             channel_credentials,
             insecure,

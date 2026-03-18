@@ -118,12 +118,16 @@ export class ToolRegistry {
   /** Aliases: canonical LLM-facing name → namespaced tool name */
   private aliases = new Map<string, string>();
 
+  /** Session-scoped tools: sessionId → set of namespaced tool names */
+  private sessionScopes = new Map<string, Set<string>>();
+
   /**
    * Register tools from a source.
    *
    * @param sourceId - Identifier for the source (e.g., "myproject", "github", "myAgent")
    * @param sourceType - Source type: 'vscode', 'mcp', or 'local'
    * @param tools - Array of tool definitions to register
+   * @param sessionId - If set, tools are scoped to this session only
    *
    * @example
    * ```typescript
@@ -136,7 +140,7 @@ export class ToolRegistry {
    * registry.register('myproject', 'vscode', vsCodeTools);
    * ```
    */
-  register(sourceId: string, sourceType: ToolSourceType, tools: ToolRegistrationInput[]): void {
+  register(sourceId: string, sourceType: ToolSourceType, tools: ToolRegistrationInput[], sessionId?: string): void {
     for (const t of tools) {
       const namespacedName = namespaceTool(sourceType, sourceId, t.name);
       this.tools.set(namespacedName, {
@@ -148,6 +152,15 @@ export class ToolRegistry {
         inputSchema: t.inputSchema,
         executor: t.executor,
       });
+
+      if (sessionId) {
+        let scoped = this.sessionScopes.get(sessionId);
+        if (!scoped) {
+          scoped = new Set();
+          this.sessionScopes.set(sessionId, scoped);
+        }
+        scoped.add(namespacedName);
+      }
     }
   }
 
@@ -159,8 +172,20 @@ export class ToolRegistry {
     for (const [key, tool] of this.tools) {
       if (tool.source === source) {
         this.tools.delete(key);
+        // Clean up session scope references
+        for (const scoped of this.sessionScopes.values()) {
+          scoped.delete(key);
+        }
       }
     }
+  }
+
+  /**
+   * Remove all session scope entries for a given session.
+   * The tools themselves are removed via unregisterSource when the MCP server disconnects.
+   */
+  clearSessionScope(sessionId: string): void {
+    this.sessionScopes.delete(sessionId);
   }
 
   /**
@@ -178,16 +203,36 @@ export class ToolRegistry {
    * List tools for the LLM as ToolDefinition[], applying policy filters.
    *
    * - Disabled tools are excluded
+   * - Session-scoped tools are only included when the matching sessionId is provided
    * - Tool names sent to LLM are bare originalName (no namespace prefix)
    * - If two tools have the same originalName, aliases break the tie
    *
    * Compatible with CoreState.chat()'s ChatToolOptions.tools.
    */
-  listForChat(policy?: ToolPolicyConfig): ToolDefinition[] {
+  listForChat(policy?: ToolPolicyConfig, sessionId?: string): ToolDefinition[] {
     const result: ToolDefinition[] = [];
     const seenNames = new Set<string>();
 
+    // Collect all session-scoped tool names across all sessions
+    const allSessionScopedTools = new Set<string>();
+    for (const scoped of this.sessionScopes.values()) {
+      for (const name of scoped) {
+        allSessionScopedTools.add(name);
+      }
+    }
+
+    // Tools scoped to *this* session (if any)
+    const thisSessionTools = sessionId ? this.sessionScopes.get(sessionId) : undefined;
+
     for (const tool of this.tools.values()) {
+      // Session-scoped tool visibility: if a tool is session-scoped,
+      // only include it when the session matches
+      if (allSessionScopedTools.has(tool.namespacedName)) {
+        if (!thisSessionTools?.has(tool.namespacedName)) {
+          continue;
+        }
+      }
+
       // Skip disabled tools
       if (matchesAnyPattern(policy?.disabled_tools, tool.namespacedName)) {
         continue;
@@ -314,5 +359,6 @@ export class ToolRegistry {
   clear(): void {
     this.tools.clear();
     this.aliases.clear();
+    this.sessionScopes.clear();
   }
 }

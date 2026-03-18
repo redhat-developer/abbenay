@@ -321,3 +321,27 @@ model lets the admin explicitly opt in trusted apps (e.g., APME) while keeping
 the default frictionless for single-user local deployments. Token-based auth
 was chosen over client-type gating because it provides per-app granularity --
 the admin can trust APME without trusting all Python clients.
+
+---
+
+## DR-025: Dynamic MCP server registration via gRPC
+
+**Date:** 2026-03-18  
+**Decision:** Implement the existing `RegisterMcpServer` and `UnregisterMcpServer`
+gRPC RPCs to allow runtime MCP server registration. The recommended flow is
+**caller-spawned**: the caller starts its own MCP server and provides connection
+details (URL or socket path) — Abbenay connects as an MCP client but does not
+spawn processes on behalf of callers. Registrations are ephemeral (not persisted)
+and optionally session-scoped (auto-cleaned on session delete or client disconnect).  
+**Rationale:** Config-time MCP server registration creates friction for consumer
+apps like APME that need session-specific tools (e.g., `ansible-doc` inside a
+venv). Dynamic registration lets consumers self-serve without touching the
+admin's `config.yaml`. The caller-spawned model keeps Abbenay's security surface
+small — it connects to endpoints rather than executing commands on behalf of
+callers. Orphaned registrations are handled by four layers: explicit unregister,
+client disconnect cleanup, periodic MCP health checks (ping every 60s), and
+session deletion hooks. The `mcp_register` consumer capability gates access when
+the `consumers` section is present in config (same pattern as DR-024).
+`ChatOptions.tool_filter` (proto field 7, previously unimplemented) is also
+implemented as a complementary feature, giving callers per-request control over
+which tools the LLM sees.
