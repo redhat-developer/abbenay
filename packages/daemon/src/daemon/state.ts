@@ -17,8 +17,9 @@ import { AbbenayMcpServer } from './mcp-server.js';
 import { SessionStore } from '../core/session-store.js';
 import { getSessionsDir } from '../core/paths.js';
 
-// Re-export core types needed by daemon consumers (gRPC service, web server)
+// Re-export core types and utilities needed by daemon consumers (gRPC service, web server)
 export type { ChatToolOptions, ProviderInfo, ModelInfo } from '../core/state.js';
+export { stripJsonFences } from '../core/state.js';
 export type { ChatChunk, ChatParams, ToolDefinition, ToolExecutor, EngineInfo, DiscoveredModel } from '../core/engines.js';
 export type { ConfigFile, ProviderConfig, ModelConfig } from '../core/config.js';
 export type { SecretStore } from '../core/secrets.js';

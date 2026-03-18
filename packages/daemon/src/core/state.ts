@@ -834,8 +834,31 @@ function mergeParams(
 }
 
 /**
+ * Strip markdown code fences and leading prose from an LLM response
+ * so that the inner JSON can be parsed. Returns the original string
+ * unchanged if no fences are detected.
+ *
+ * @internal Exported for testing.
+ */
+export function stripJsonFences(raw: string): string {
+  let cleaned = raw.trim();
+
+  if (cleaned.startsWith('```')) {
+    const lines = cleaned.split('\n');
+    lines.shift();
+    if (lines.length && lines[lines.length - 1].trim() === '```') {
+      lines.pop();
+    }
+    cleaned = lines.join('\n').trim();
+  }
+
+  return cleaned;
+}
+
+/**
  * Stream chat with JSON validation and retry.
- * Buffers the full response, attempts JSON.parse(), and retries once on failure.
+ * Buffers the full response, strips markdown fences, then attempts
+ * JSON.parse().  Only retries if the cleaned content is still invalid.
  */
 async function* streamChatWithJsonRetry(
   engine: string,
@@ -859,14 +882,29 @@ async function* streamChatWithJsonRetry(
     }
   }
 
+  const cleaned = stripJsonFences(fullText);
+
   try {
-    JSON.parse(fullText.trim());
-    for (const chunk of buffered) {
-      yield chunk;
+    JSON.parse(cleaned);
+
+    if (cleaned !== fullText) {
+      // Fences were stripped — re-emit as a single cleaned text chunk
+      // plus any non-text chunks (tool_call, done, etc.)
+      console.log(`[State] json_strict: stripped markdown fences from response (${fullText.length} → ${cleaned.length} chars)`);
+      for (const chunk of buffered) {
+        if (chunk.type !== 'text') {
+          yield chunk;
+        }
+      }
+      yield { type: 'text', text: cleaned };
+    } else {
+      for (const chunk of buffered) {
+        yield chunk;
+      }
     }
     return;
   } catch {
-    console.warn(`[State] json_strict: response is not valid JSON (${fullText.length} chars). Retrying once.`);
+    console.warn(`[State] json_strict: response is not valid JSON (${cleaned.length} chars). Retrying once.`);
   }
 
   const retryMessages = [
