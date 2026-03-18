@@ -15,8 +15,23 @@
  * - Client disconnect stops streaming
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import * as http from 'node:http';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+// Mock config paths so POST /api/config writes to a temp dir, not the real user config
+const tmpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-web-test-'));
+vi.mock('../../src/core/paths.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/core/paths.js')>();
+  return {
+    ...actual,
+    getUserConfigPath: () => path.join(tmpConfigDir, 'config.yaml'),
+    getWorkspaceConfigPath: (wsPath: string) => path.join(wsPath, '.config', 'abbenay', 'config.yaml'),
+  };
+});
+
 import { createWebApp } from '../../src/daemon/web/server.js';
 import type { DaemonState } from '../../src/daemon/state.js';
 import type { ProviderInfo, ModelInfo } from '../../src/core/state.js';
@@ -142,6 +157,7 @@ afterAll(async () => {
   if (httpServer) {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   }
+  fs.rmSync(tmpConfigDir, { recursive: true, force: true });
 });
 
 // ─── HTTP Helpers ───────────────────────────────────────────────────────

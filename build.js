@@ -117,6 +117,20 @@ function generatePython() {
     fs.writeFileSync(path.join(pyOut, 'abbenay', '__init__.py'), '');
     fs.writeFileSync(path.join(pyOut, 'abbenay', 'v1', '__init__.py'), '');
 
+    // Fix imports: protoc generates "from abbenay.v1 import ..." which only
+    // resolves if abbenay_grpc/ is on sys.path. Rewrite to package-relative
+    // "from abbenay_grpc.abbenay.v1 import ..." so it works when pip-installed.
+    const grpcStub = path.join(pyOut, 'abbenay', 'v1', 'service_pb2_grpc.py');
+    if (fs.existsSync(grpcStub)) {
+        let content = fs.readFileSync(grpcStub, 'utf8');
+        content = content.replace(
+            /from abbenay\./g,
+            'from abbenay_grpc.abbenay.',
+        );
+        fs.writeFileSync(grpcStub, content);
+        console.log('  Fixed proto imports in service_pb2_grpc.py');
+    }
+
     console.log(`  Python client generated at ${pyOut}`);
 }
 
