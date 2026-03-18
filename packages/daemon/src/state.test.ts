@@ -87,6 +87,7 @@ vi.mock('./daemon/secrets/keychain.js', () => ({
 // ── Import DaemonState (after mocks) ─────────────────────────────────────────
 
 import { DaemonState, ClientType } from './daemon/state.js';
+import { stripJsonFences } from './core/state.js';
 import { protoToPolicyConfig, authorizeInlinePolicy, authorizeMcpRegister } from './daemon/server/abbenay-service.js';
 import * as grpc from '@grpc/grpc-js';
 
@@ -604,6 +605,138 @@ describe('DaemonState.chat inline policy', () => {
   });
 });
 
+// ── json_strict fence stripping (streamChatWithJsonRetry) ────────────────────
+
+describe('DaemonState.chat json_strict fence stripping', () => {
+  const jsonPayload = '{"patches": [1, 2, 3]}';
+
+  function makeJsonStrictConfig(): ConfigFile {
+    return {
+      providers: {
+        'my-mock': {
+          engine: 'mock',
+          models: { 'json-model': {} },
+        },
+      },
+    };
+  }
+
+  const jsonStrictPolicy = {
+    output: { format: 'json_only' as const },
+    reliability: { retry_on_invalid_json: true },
+  };
+
+  beforeEach(() => {
+    const cfg = makeJsonStrictConfig();
+    mockLoadConfig.mockReturnValue(cfg);
+    mockMergeConfigs.mockReturnValue(cfg);
+  });
+
+  it('should accept fenced JSON without retrying', async () => {
+    async function* fencedStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      yield { type: 'text', text: `\`\`\`json\n${jsonPayload}\n\`\`\`` };
+      yield { type: 'done', finishReason: 'stop' };
+    }
+    mockStreamChat.mockReturnValue(fencedStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonStrictPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    const textChunks = chunks.filter(c => c.type === 'text');
+    const fullText = textChunks.map(c => c.text).join('');
+    expect(() => JSON.parse(fullText)).not.toThrow();
+    expect(JSON.parse(fullText)).toEqual(JSON.parse(jsonPayload));
+  });
+
+  it('should pass clean JSON through without modification', async () => {
+    async function* cleanStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      yield { type: 'text', text: jsonPayload };
+      yield { type: 'done', finishReason: 'stop' };
+    }
+    mockStreamChat.mockReturnValue(cleanStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonStrictPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    const textChunks = chunks.filter(c => c.type === 'text');
+    const fullText = textChunks.map(c => c.text).join('');
+    expect(fullText).toBe(jsonPayload);
+  });
+
+  it('should still retry when response is genuinely invalid JSON', async () => {
+    let callCount = 0;
+    async function* invalidStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      callCount++;
+      if (callCount === 1) {
+        yield { type: 'text', text: 'Sure! Here is the data {broken' };
+      } else {
+        yield { type: 'text', text: jsonPayload };
+      }
+      yield { type: 'done', finishReason: 'stop' };
+    }
+    mockStreamChat.mockImplementation(() => invalidStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonStrictPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('should accept bare-fenced (no language tag) JSON without retrying', async () => {
+    async function* bareFencedStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      yield { type: 'text', text: `\`\`\`\n${jsonPayload}\n\`\`\`` };
+      yield { type: 'done', finishReason: 'stop' };
+    }
+    mockStreamChat.mockReturnValue(bareFencedStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonStrictPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    const textChunks = chunks.filter(c => c.type === 'text');
+    const fullText = textChunks.map(c => c.text).join('');
+    expect(JSON.parse(fullText)).toEqual(JSON.parse(jsonPayload));
+  });
+});
+
 // ── runHealthChecks ──────────────────────────────────────────────────────────
 
 describe('DaemonState.runHealthChecks', () => {
@@ -886,5 +1019,58 @@ describe('authorizeMcpRegister', () => {
       if (prev === undefined) delete process.env.TEST_TOKEN;
       else process.env.TEST_TOKEN = prev;
     }
+  });
+});
+
+// ── stripJsonFences ──────────────────────────────────────────────────────────
+
+describe('stripJsonFences', () => {
+  it('should pass through valid JSON unchanged', () => {
+    const json = '{"patches": [1, 2, 3]}';
+    expect(stripJsonFences(json)).toBe(json);
+  });
+
+  it('should strip ```json ... ``` fences', () => {
+    const fenced = '```json\n{"patches": [1, 2, 3]}\n```';
+    expect(stripJsonFences(fenced)).toBe('{"patches": [1, 2, 3]}');
+  });
+
+  it('should strip bare ``` ... ``` fences (no language tag)', () => {
+    const fenced = '```\n{"key": "value"}\n```';
+    expect(stripJsonFences(fenced)).toBe('{"key": "value"}');
+  });
+
+  it('should handle leading/trailing whitespace around fences', () => {
+    const fenced = '  \n```json\n[1, 2, 3]\n```\n  ';
+    expect(stripJsonFences(fenced)).toBe('[1, 2, 3]');
+  });
+
+  it('should handle multiline JSON inside fences', () => {
+    const inner = '{\n  "a": 1,\n  "b": [2, 3]\n}';
+    const fenced = `\`\`\`json\n${inner}\n\`\`\``;
+    expect(stripJsonFences(fenced)).toBe(inner);
+  });
+
+  it('should handle fences with only an opening (no closing) gracefully', () => {
+    const partial = '```json\n{"key": "value"}';
+    const result = stripJsonFences(partial);
+    expect(result).toBe('{"key": "value"}');
+    expect(() => JSON.parse(result)).not.toThrow();
+  });
+
+  it('should trim whitespace from non-fenced input', () => {
+    const padded = '  \n{"key": "value"}\n  ';
+    expect(stripJsonFences(padded)).toBe('{"key": "value"}');
+  });
+
+  it('should return empty string for empty input', () => {
+    expect(stripJsonFences('')).toBe('');
+    expect(stripJsonFences('   ')).toBe('');
+  });
+
+  it('should not strip fences that appear mid-content', () => {
+    const prose = 'Here is the JSON:\n```json\n{"a":1}\n```\nDone.';
+    // Leading text means this doesn't start with ```, so no stripping
+    expect(stripJsonFences(prose)).toBe(prose.trim());
   });
 });
