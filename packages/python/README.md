@@ -8,6 +8,13 @@ A Python gRPC client for the Abbenay daemon.
 pip install abbenay-client
 ```
 
+> **Note:** The pip package is `abbenay-client` but the Python import is
+> `abbenay_grpc`:
+>
+> ```python
+> from abbenay_grpc import AbbenayClient
+> ```
+
 ## Quick Start
 
 ```python
@@ -16,31 +23,40 @@ from abbenay_grpc import AbbenayClient
 
 async def main():
     async with AbbenayClient() as client:
-        # Chat with a model
         async for chunk in client.chat("openai/gpt-4o", "Hello!"):
             if chunk.type == "text":
                 print(chunk.text, end="")
         print()
-        
-        # List available models
-        models = await client.list_models()
-        for model in models:
-            print(f"- {model.id} ({model.provider})")
-        
-        # Health check
-        healthy = await client.health_check()
-        print(f"Daemon healthy: {healthy}")
 
 asyncio.run(main())
+```
+
+## Event Loop Lifecycle
+
+`grpc.aio` channels are bound to the event loop that was active at
+`connect()` time.  If you call `asyncio.run()` more than once (which
+creates and destroys loops), call `reconnect()` in the new loop:
+
+```python
+async def preflight():
+    async with AbbenayClient() as client:
+        await client.health_check()
+
+asyncio.run(preflight())  # loop created and closed
+
+async def main():
+    client = AbbenayClient()
+    await client.connect()  # auto-detects dead channel, reconnects
+    # ... or explicitly: await client.reconnect()
 ```
 
 ## Features
 
 - **Chat**: Streaming chat with any configured model
+- **Sessions**: Create, list, fork, and manage chat sessions
 - **Models**: List available models from all providers
-- **Providers**: List and check provider status
-- **Tools**: Execute MCP tools via high-performance gRPC
-- **Secrets**: Manage API keys
+- **Tools**: Dynamic MCP server registration and tool filtering
+- **Secrets**: Manage API keys via keychain
 - **Configuration**: Get/update daemon config
 
 ## Requirements

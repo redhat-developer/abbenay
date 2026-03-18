@@ -241,7 +241,7 @@ export class BackchannelHandler {
                 if (this.onModelsChanged) {
                     this.onModelsChanged();
                 }
-                return { requestId: request.requestId };
+                return { requestId: request.requestId, response: undefined };
             }
             default: {
                 const exhaustive: never = oneof;
