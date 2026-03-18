@@ -17,7 +17,8 @@ except ImportError as _import_err:
     import warnings as _warnings
     _warnings.warn(
         f"Failed to import gRPC stubs: {_import_err}. "
-        f"Regenerate with: npm run build -- --proto-only"
+        f"If installed via pip, try reinstalling: pip install --force-reinstall abbenay-client. "
+        f"If developing from source, regenerate: npm run build -- --proto-only"
     )
     proto = None  # type: ignore[assignment]
     grpc_service = None
@@ -194,17 +195,28 @@ class AbbenayClient:
         if grpc_service is None:
             raise AbbenayError(
                 "gRPC stubs failed to import (check warnings at startup). "
-                "Regenerate with: npm run build -- --proto-only"
+                "If installed via pip, try: pip install --force-reinstall abbenay-client. "
+                "If developing from source: npm run build -- --proto-only"
             )
 
         if self._channel is not None:
+            usable = False
             try:
                 state = self._channel.get_state(try_to_connect=False)
-                if state != grpc.ChannelConnectivity.SHUTDOWN:
-                    return
+                usable = state in (
+                    grpc.ChannelConnectivity.IDLE,
+                    grpc.ChannelConnectivity.READY,
+                    grpc.ChannelConnectivity.CONNECTING,
+                )
             except Exception:
                 pass
-            # Channel is dead — tear it down before reconnecting
+            if usable and self._stub is not None and self._client_id is not None:
+                return
+            # Channel is dead or half-initialized — close and recreate
+            try:
+                await self._channel.close()
+            except Exception:
+                pass
             self._channel = None
             self._stub = None
             self._client_id = None
@@ -224,6 +236,9 @@ class AbbenayClient:
             self._client_id = response.client_id
             
         except grpc.aio.AioRpcError as e:
+            self._channel = None
+            self._stub = None
+            self._client_id = None
             raise ConnectionError(f"Failed to connect to daemon: {e}") from e
 
     async def reconnect(self) -> None:
