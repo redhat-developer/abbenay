@@ -1,0 +1,63 @@
+# Abbenay — Container Configuration Example
+#
+# This config is designed for container deployments where the system
+# keychain is unavailable.  All API keys are read from environment
+# variables (api_key_env_var_name) instead of keytar (api_key_keychain_name).
+#
+# Mount this file into the container at:
+#   /home/abbenay/.config/abbenay/config.yaml
+#
+# Pass the referenced env vars when starting the container:
+#   podman run -d \
+#     -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
+#     -e OPENROUTER_API_KEY=sk-or-... \
+#     -p 8787:8787 \
+#     abbenay:latest
+#
+# See docs/CONTAINER.md for full documentation.
+
+providers:
+  # ── OpenRouter (access to many providers via a single key) ───────────
+  openrouter:
+    engine: openrouter
+    api_key_env_var_name: "OPENROUTER_API_KEY"
+    models:
+      anthropic/claude-sonnet-4: {}
+      anthropic/claude-haiku-3.5: {}
+      google/gemini-2.5-pro-preview: {}
+
+  # ── Direct provider access ──────────────────────────────────────────
+  # Uncomment and configure as needed.
+
+  # anthropic:
+  #   engine: anthropic
+  #   api_key_env_var_name: "ANTHROPIC_API_KEY"
+  #   models:
+  #     claude-sonnet-4-20250514: {}
+
+  # openai:
+  #   engine: openai
+  #   api_key_env_var_name: "OPENAI_API_KEY"
+  #   models:
+  #     gpt-4o: {}
+  #     gpt-4o-mini: {}
+
+  # ── Local models (no API key required) ──────────────────────────────
+  # To reach Ollama from inside the container, use the host network
+  # address or run with --network=host.
+
+  # ollama:
+  #   engine: ollama
+  #   base_url: "http://host.containers.internal:11434"
+  #   models:
+  #     llama3.2: {}
+
+# ── Consumer authentication (optional) ────────────────────────────────
+# Uncomment to require tokens for programmatic clients.
+
+# consumers:
+#   apme:
+#     token_env: "APME_TOKEN"
+#     capabilities:
+#       inline_policy: true
+#       mcp_register: true
