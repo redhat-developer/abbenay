@@ -342,15 +342,17 @@ describe('runHealthCheck', () => {
   });
 
   it('should stop health check timer when no dynamic servers remain', async () => {
-    await pool.connectDynamic('tmp', { transport: 'stdio', command: 'x', enabled: true });
-    await pool.disconnect('tmp');
-    pool.getStatuses().forEach(() => {}); // ensure status is cleaned
+    vi.useFakeTimers();
+    try {
+      await pool.connectDynamic('tmp', { transport: 'stdio', command: 'x', enabled: true });
+      await pool.disconnect('tmp');
 
-    // Remove the status entry (simulating what disconnectByScope does)
-    await pool.disconnectByScope('nonexistent');
+      await pool.runHealthCheck();
 
-    await pool.runHealthCheck();
-    // Should not throw; timer is cleared internally
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

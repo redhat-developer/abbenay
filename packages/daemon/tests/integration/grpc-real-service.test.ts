@@ -69,6 +69,10 @@ vi.mock('../../src/daemon/secrets/keychain.js', () => ({
   },
 }));
 
+afterEach(() => {
+  mockSecretStoreData.clear();
+});
+
 let mockSessionsDir: string;
 vi.mock('../../src/core/paths.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/core/paths.js')>();
