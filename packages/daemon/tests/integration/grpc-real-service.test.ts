@@ -6,7 +6,7 @@
  * proto-loader gRPC client together, exercising the actual RPC handlers.
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import * as path from 'node:path';
