@@ -5,6 +5,28 @@ the provided `Containerfile`.
 
 ---
 
+## Pre-built images from GHCR
+
+Multi-arch images (linux/amd64 and linux/arm64) are published
+automatically to the GitHub Container Registry on every merge to `main`
+and on every release tag.
+
+```bash
+# Latest stable release
+podman pull ghcr.io/redhat-developer/abbenay:latest
+
+# Latest from main (development builds)
+podman pull ghcr.io/redhat-developer/abbenay:main
+
+# Specific release
+podman pull ghcr.io/redhat-developer/abbenay:v1.0.0
+```
+
+Then run it the same way as a locally built image (see [Running](#running)
+below).
+
+---
+
 ## Overview
 
 The container packages the Abbenay SEA binary into a minimal UBI 9 image.
@@ -29,7 +51,9 @@ The `start` command runs all services:
 
 ---
 
-## Building the image
+## Building the image locally
+
+If you prefer to build from source instead of pulling from GHCR:
 
 ```bash
 podman build -f Containerfile -t abbenay:latest .
