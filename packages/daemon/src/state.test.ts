@@ -88,7 +88,7 @@ vi.mock('./daemon/secrets/keychain.js', () => ({
 
 import { DaemonState, ClientType } from './daemon/state.js';
 import { stripJsonFences } from './core/state.js';
-import { protoToPolicyConfig, authorizeInlinePolicy, authorizeMcpRegister } from './daemon/server/abbenay-service.js';
+import { protoToPolicyConfig, authorizeConsumer } from './daemon/server/abbenay-service.js';
 import * as grpc from '@grpc/grpc-js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -848,24 +848,24 @@ describe('protoToPolicyConfig', () => {
   });
 });
 
-// ── authorizeInlinePolicy ────────────────────────────────────────────────────
+// ── authorizeConsumer ─────────────────────────────────────────────────────────
 
-function mockCall(token?: string): grpc.ServerWritableStream<unknown, unknown> {
+function mockGrpcCall(token?: string): { metadata: grpc.Metadata } {
   const metadata = new grpc.Metadata();
   if (token) {
     metadata.add('x-abbenay-token', token);
   }
-  return { metadata } as unknown as grpc.ServerWritableStream<unknown, unknown>;
+  return { metadata };
 }
 
-describe('authorizeInlinePolicy', () => {
+describe('authorizeConsumer', () => {
   it('should allow when no consumers section (default-open)', () => {
-    const result = authorizeInlinePolicy(mockCall(), { providers: {} });
+    const result = authorizeConsumer(mockGrpcCall(), { providers: {} }, 'inline_policy');
     expect(result.allowed).toBe(true);
   });
 
   it('should allow when consumers section is empty', () => {
-    const result = authorizeInlinePolicy(mockCall(), { providers: {}, consumers: {} });
+    const result = authorizeConsumer(mockGrpcCall(), { providers: {}, consumers: {} }, 'inline_policy');
     expect(result.allowed).toBe(true);
   });
 
@@ -873,12 +873,12 @@ describe('authorizeInlinePolicy', () => {
     const prev = process.env.TEST_TOKEN;
     process.env.TEST_TOKEN = 'secret123';
     try {
-      const result = authorizeInlinePolicy(mockCall(), {
+      const result = authorizeConsumer(mockGrpcCall(), {
         providers: {},
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
         },
-      });
+      }, 'inline_policy');
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain('x-abbenay-token');
     } finally {
@@ -887,16 +887,16 @@ describe('authorizeInlinePolicy', () => {
     }
   });
 
-  it('should reject when token does not match any consumer', () => {
+  it('should reject when token does not match any consumer (inline_policy)', () => {
     const prev = process.env.TEST_TOKEN;
     process.env.TEST_TOKEN = 'secret123';
     try {
-      const result = authorizeInlinePolicy(mockCall('wrong-token'), {
+      const result = authorizeConsumer(mockGrpcCall('wrong-token'), {
         providers: {},
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
         },
-      });
+      }, 'inline_policy');
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain('not recognized');
     } finally {
@@ -909,12 +909,12 @@ describe('authorizeInlinePolicy', () => {
     const prev = process.env.TEST_TOKEN;
     process.env.TEST_TOKEN = 'secret123';
     try {
-      const result = authorizeInlinePolicy(mockCall('secret123'), {
+      const result = authorizeConsumer(mockGrpcCall('secret123'), {
         providers: {},
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
         },
-      });
+      }, 'inline_policy');
       expect(result.allowed).toBe(true);
       expect(result.consumer).toBe('apme');
     } finally {
@@ -923,61 +923,33 @@ describe('authorizeInlinePolicy', () => {
     }
   });
 
-  it('should reject when token matches but consumer lacks inline_policy capability', () => {
+  it('should reject when token matches but consumer lacks requested capability', () => {
     const prev = process.env.TEST_TOKEN;
     process.env.TEST_TOKEN = 'secret123';
     try {
-      const result = authorizeInlinePolicy(mockCall('secret123'), {
+      const result = authorizeConsumer(mockGrpcCall('secret123'), {
         providers: {},
         consumers: {
           limited: { token_env: 'TEST_TOKEN', capabilities: {} },
         },
-      });
+      }, 'inline_policy');
       expect(result.allowed).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.TEST_TOKEN;
       else process.env.TEST_TOKEN = prev;
     }
   });
-});
 
-// ── authorizeMcpRegister (DR-025) ────────────────────────────────────────────
-
-function mockUnaryCall(token?: string): grpc.ServerUnaryCall<unknown, unknown> {
-  const metadata = new grpc.Metadata();
-  if (token) {
-    metadata.add('x-abbenay-token', token);
-  }
-  return { metadata } as unknown as grpc.ServerUnaryCall<unknown, unknown>;
-}
-
-describe('authorizeMcpRegister', () => {
-  it('should allow when no consumers section (default-open)', () => {
-    const result = authorizeMcpRegister(mockUnaryCall(), { providers: {} });
-    expect(result.allowed).toBe(true);
-  });
-
-  it('should reject when consumers exist but no token provided', () => {
-    const result = authorizeMcpRegister(mockUnaryCall(), {
-      providers: {},
-      consumers: {
-        apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
-      },
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('consumer authentication');
-  });
-
-  it('should allow when token matches consumer with mcp_register capability', () => {
+  it('should allow mcp_register when token matches with that capability', () => {
     const prev = process.env.TEST_TOKEN;
     process.env.TEST_TOKEN = 'mcp-secret';
     try {
-      const result = authorizeMcpRegister(mockUnaryCall('mcp-secret'), {
+      const result = authorizeConsumer(mockGrpcCall('mcp-secret'), {
         providers: {},
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
         },
-      });
+      }, 'mcp_register');
       expect(result.allowed).toBe(true);
       expect(result.consumer).toBe('apme');
     } finally {
@@ -986,16 +958,16 @@ describe('authorizeMcpRegister', () => {
     }
   });
 
-  it('should reject when token matches but consumer lacks mcp_register capability', () => {
+  it('should reject mcp_register when consumer only has inline_policy', () => {
     const prev = process.env.TEST_TOKEN;
     process.env.TEST_TOKEN = 'mcp-secret';
     try {
-      const result = authorizeMcpRegister(mockUnaryCall('mcp-secret'), {
+      const result = authorizeConsumer(mockGrpcCall('mcp-secret'), {
         providers: {},
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
         },
-      });
+      }, 'mcp_register');
       expect(result.allowed).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.TEST_TOKEN;
@@ -1003,16 +975,27 @@ describe('authorizeMcpRegister', () => {
     }
   });
 
-  it('should reject when token does not match any consumer', () => {
+  it('should reject mcp_register when no token provided', () => {
+    const result = authorizeConsumer(mockGrpcCall(), {
+      providers: {},
+      consumers: {
+        apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
+      },
+    }, 'mcp_register');
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('consumer authentication');
+  });
+
+  it('should reject mcp_register when token does not match', () => {
     const prev = process.env.TEST_TOKEN;
     process.env.TEST_TOKEN = 'mcp-secret';
     try {
-      const result = authorizeMcpRegister(mockUnaryCall('wrong-token'), {
+      const result = authorizeConsumer(mockGrpcCall('wrong-token'), {
         providers: {},
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
         },
-      });
+      }, 'mcp_register');
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain('not recognized');
     } finally {

@@ -14,6 +14,7 @@ import {
 import { listAllPolicies, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 import { loadConfig, type ConfigFile, type McpServerConfig } from '../../core/config.js';
+import { DEFAULT_WEB_PORT } from '../../core/constants.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -477,7 +478,7 @@ export function createAbbenayService(state: DaemonState) {
         }
 
         // Consumer authorization gate (DR-024)
-        const auth = authorizeInlinePolicy(call, loadConfig());
+        const auth = authorizeConsumer(call, loadConfig(), 'inline_policy');
         if (!auth.allowed) {
           call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
           call.end();
@@ -841,7 +842,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<StartWebServerRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
-      const port = call.request.port || 8787;
+      const port = call.request.port || DEFAULT_WEB_PORT;
       
       if (isWebServerRunning()) {
         const currentPort = getWebServerPort();
@@ -1024,7 +1025,7 @@ export function createAbbenayService(state: DaemonState) {
         }
 
         // Consumer authorization gate (DR-024)
-        const auth = authorizeInlinePolicy(call, loadConfig());
+        const auth = authorizeConsumer(call, loadConfig(), 'inline_policy');
         if (!auth.allowed) {
           call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
           call.end();
@@ -1203,7 +1204,7 @@ export function createAbbenayService(state: DaemonState) {
       }
 
       // Consumer auth: require mcp_register capability
-      const authResult = authorizeMcpRegister(call, loadConfig());
+      const authResult = authorizeConsumer(call, loadConfig(), 'mcp_register');
       if (!authResult.allowed) {
         callback({ code: grpc.status.PERMISSION_DENIED, message: authResult.reason! });
         return;
@@ -1430,12 +1431,27 @@ function transportProtoToConfig(transport: McpTransportProto): McpServerConfig {
   throw new Error(`Unknown transport type: "${type}". Must be "stdio", "http", or "sse".`);
 }
 
-// ── Consumer authorization for MCP registration (DR-025) ──────────────
+// ── Consumer authorization (DR-024 / DR-025) ──────────────────────────
 
 /** @internal Exported for testing. */
-export function authorizeMcpRegister(
-  call: grpc.ServerUnaryCall<unknown, unknown>,
+export interface AuthResult {
+  allowed: boolean;
+  consumer?: string;
+  reason?: string;
+}
+
+export type ConsumerCapability = 'inline_policy' | 'mcp_register';
+
+const CAPABILITY_LABELS: Record<ConsumerCapability, string> = {
+  inline_policy: 'Inline policy',
+  mcp_register: 'MCP registration',
+};
+
+/** @internal Exported for testing. */
+export function authorizeConsumer(
+  call: { metadata: grpc.Metadata },
   config: ConfigFile,
+  capability: ConsumerCapability,
 ): AuthResult {
   const consumers = config.consumers;
 
@@ -1449,7 +1465,7 @@ export function authorizeMcpRegister(
   if (!token) {
     return {
       allowed: false,
-      reason: 'MCP registration requires consumer authentication. Set the x-abbenay-token gRPC metadata header.',
+      reason: `${CAPABILITY_LABELS[capability]} requires consumer authentication. Set the x-abbenay-token gRPC metadata header.`,
     };
   }
 
@@ -1460,62 +1476,29 @@ export function authorizeMcpRegister(
 
     if (!expectedToken) continue;
 
-    if (token === expectedToken && consumer.capabilities?.mcp_register) {
+    if (token === expectedToken && consumer.capabilities?.[capability]) {
       return { allowed: true, consumer: name };
     }
   }
 
   return {
     allowed: false,
-    reason: 'Consumer token not recognized or lacks mcp_register capability.',
+    reason: `Consumer token not recognized or lacks ${CAPABILITY_LABELS[capability]} capability.`,
   };
 }
 
-// ── Consumer authorization for inline policy (DR-024) ──────────────────
-
-/** @internal Exported for testing. */
-export interface AuthResult {
-  allowed: boolean;
-  consumer?: string;
-  reason?: string;
+/** @deprecated Use authorizeConsumer(call, config, 'mcp_register') instead. */
+export function authorizeMcpRegister(
+  call: grpc.ServerUnaryCall<unknown, unknown>,
+  config: ConfigFile,
+): AuthResult {
+  return authorizeConsumer(call, config, 'mcp_register');
 }
 
-/** @internal Exported for testing. */
+/** @deprecated Use authorizeConsumer(call, config, 'inline_policy') instead. */
 export function authorizeInlinePolicy(
   call: grpc.ServerWritableStream<unknown, unknown>,
   config: ConfigFile,
 ): AuthResult {
-  const consumers = config.consumers;
-
-  // Default-open: no consumers section means all callers are allowed
-  if (!consumers || Object.keys(consumers).length === 0) {
-    return { allowed: true };
-  }
-
-  const metadata = call.metadata.get('x-abbenay-token');
-  const token = metadata.length > 0 ? String(metadata[0]) : undefined;
-
-  if (!token) {
-    return {
-      allowed: false,
-      reason: 'Inline policy requires consumer authentication. Set the x-abbenay-token gRPC metadata header.',
-    };
-  }
-
-  for (const [name, consumer] of Object.entries(consumers)) {
-    const expectedToken = consumer.token_env
-      ? process.env[consumer.token_env]
-      : undefined;
-
-    if (!expectedToken) { continue; }
-
-    if (token === expectedToken && consumer.capabilities?.inline_policy) {
-      return { allowed: true, consumer: name };
-    }
-  }
-
-  return {
-    allowed: false,
-    reason: 'Consumer token not recognized or lacks inline_policy capability.',
-  };
+  return authorizeConsumer(call, config, 'inline_policy');
 }

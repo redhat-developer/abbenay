@@ -152,6 +152,9 @@ export {
   getUserPoliciesPath,
 } from './policies.js';
 
+/** Shared constants */
+export { DEFAULT_WEB_PORT } from './constants.js';
+
 /** Platform-aware path utilities */
 export {
   getRuntimeDir,
