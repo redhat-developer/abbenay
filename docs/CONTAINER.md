@@ -108,8 +108,9 @@ podman logs -f abbenay
 
 ## Overriding the command
 
-The default `CMD` is `start --port 8787`, which runs all services. You
-can override it to run a subset:
+The default `CMD` is `start --port 8787 --grpc-port 50051 --grpc-host 0.0.0.0`,
+which runs all services with gRPC accessible from outside the container.
+You can override it to run a subset:
 
 ```bash
 # Web dashboard and REST API only
@@ -125,10 +126,10 @@ podman run -d -p 8787:8787 \
   abbenay:latest serve --port 8787
 
 # gRPC daemon only (no HTTP port needed)
-podman run -d \
+podman run -d -p 50051:50051 \
   -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
   -e OPENROUTER_API_KEY=sk-or-... \
-  abbenay:latest daemon
+  abbenay:latest daemon --grpc-port 50051 --grpc-host 0.0.0.0
 ```
 
 ---
@@ -292,3 +293,24 @@ spec:
   instead.
 - Sessions are ephemeral by default. To persist sessions across restarts,
   mount a volume at `/home/abbenay/.local/share/abbenay/sessions/`.
+
+---
+
+## Security: `--grpc-host`
+
+The `--grpc-host` flag controls which network interface the TCP gRPC
+listener binds to:
+
+| Value | Effect |
+|-------|--------|
+| `127.0.0.1` (default) | Loopback only -- safe for local development |
+| `0.0.0.0` | All interfaces -- required inside containers so that published ports are reachable |
+
+The container's default `CMD` uses `--grpc-host 0.0.0.0` because
+container networking requires the listener to accept connections from
+outside the container's network namespace. The daemon logs a warning
+when `0.0.0.0` is used without consumer authentication.
+
+**Recommendation:** When exposing gRPC outside a trusted network,
+configure a `consumers` section in `config.yaml` to require
+token-based authentication on every RPC.

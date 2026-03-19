@@ -81,8 +81,10 @@ function loadProto() {
 
 export interface DaemonOptions {
   keepAlive?: boolean;
-  /** When set, also bind gRPC to this TCP port (0.0.0.0). */
+  /** When set, also bind gRPC to this TCP port. */
   grpcPort?: number;
+  /** Host/IP to bind the TCP gRPC listener to (default: 127.0.0.1). */
+  grpcHost?: string;
 }
 
 /**
@@ -119,41 +121,63 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
   const abbenayService = createAbbenayService(state);
   server.addService(abbenayProto.Abbenay.service, abbenayService);
   
-  // Bind to Unix socket
   const socketPath = getDefaultSocketPath();
-  
-  await new Promise<void>((resolve, reject) => {
-    server!.bindAsync(
-      `unix://${socketPath}`,
-      grpc.ServerCredentials.createInsecure(),
-      (error, _port) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      }
-    );
-  });
-  
-  console.log(`Abbenay daemon listening on ${socketPath}`);
 
-  // Optionally bind gRPC to a TCP port for remote / container access
-  if (opts?.grpcPort) {
+  try {
+    // Bind to Unix socket
     await new Promise<void>((resolve, reject) => {
       server!.bindAsync(
-        `0.0.0.0:${opts.grpcPort}`,
+        `unix://${socketPath}`,
         grpc.ServerCredentials.createInsecure(),
-        (error, boundPort) => {
+        (error, _port) => {
           if (error) {
             reject(error);
           } else {
-            console.log(`Abbenay gRPC listening on 0.0.0.0:${boundPort}`);
             resolve();
           }
         }
       );
     });
+    
+    console.log(`Abbenay daemon listening on ${socketPath}`);
+
+    // Optionally bind gRPC to a TCP port for remote / container access
+    if (opts?.grpcPort) {
+      const grpcHost = opts.grpcHost ?? '127.0.0.1';
+
+      if (grpcHost === '0.0.0.0') {
+        console.warn(
+          '[Daemon] WARNING: gRPC is bound to 0.0.0.0 — the API is accessible from ' +
+          'any network interface. Ensure a consumers section is configured in config.yaml ' +
+          'to require authentication, or use --grpc-host 127.0.0.1 to restrict access.',
+        );
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        server!.bindAsync(
+          `${grpcHost}:${opts.grpcPort}`,
+          grpc.ServerCredentials.createInsecure(),
+          (error, boundPort) => {
+            if (error) {
+              reject(error);
+            } else {
+              console.log(`Abbenay gRPC listening on ${grpcHost}:${boundPort}`);
+              resolve();
+            }
+          }
+        );
+      });
+    }
+  } catch (err) {
+    // Clean up PID file, socket, and server on bind failure
+    await new Promise<void>((resolve) => {
+      server!.tryShutdown(() => resolve());
+    });
+    server = null;
+    cleanupSocket();
+    removePidFile();
+    state = null;
+    throw err;
   }
 
   console.log(`Version: ${state.version}`);

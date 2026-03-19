@@ -34,7 +34,7 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 ARG APP_USER=abbenay
 ARG APP_UID=1001
 
-RUN microdnf install -y shadow-utils && \
+RUN microdnf install -y shadow-utils curl-minimal && \
     useradd -u ${APP_UID} -m ${APP_USER} && \
     microdnf clean all
 
@@ -60,4 +60,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8787/api/health || exit 1
 
 ENTRYPOINT ["./abbenay"]
-CMD ["start", "--port", "8787", "--grpc-port", "50051"]
+CMD ["start", "--port", "8787", "--grpc-port", "50051", "--grpc-host", "0.0.0.0"]
