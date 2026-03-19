@@ -20,6 +20,9 @@ packages/daemon/dist/
 # OS
 .DS_Store
 
+# Coverage
+coverage/
+
 # Logs
 *.log
 
