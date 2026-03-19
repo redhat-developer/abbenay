@@ -60,8 +60,8 @@ const chatRequests: Array<{ model: string; messages: any[] }> = [];
 /** In-memory secret store for testing */
 const mockSecretStore: SecretStore = {
   async get(key: string) { return key === 'OPENAI_API_KEY' ? 'sk-test' : null; },
-  async set(key: string, value: string) {},
-  async delete(key: string) { return true; },
+  async set(_key: string, _value: string) {},
+  async delete(_key: string) { return true; },
   async has(key: string) { return key === 'OPENAI_API_KEY'; },
 };
 
@@ -445,8 +445,7 @@ describe('Web API - Key Status Endpoint', () => {
 
 describe('Web API - CORS and Headers', () => {
   it('should set CORS headers on responses', async () => {
-    const { statusCode, body } = await httpRequest('GET', `${baseUrl}/api/health`);
-    // CORS is handled by middleware, verify the response is accessible
+    const { statusCode } = await httpRequest('GET', `${baseUrl}/api/health`);
     expect(statusCode).toBe(200);
   });
 

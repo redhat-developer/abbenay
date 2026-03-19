@@ -20,6 +20,7 @@ import { startDaemon, stopDaemon, getDaemonStatus } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { startEmbeddedWebServer } from './web/server.js';
 import { getEngines, fetchModels } from '../core/engines.js';
+import { DEFAULT_WEB_PORT } from '../core/paths.js';
 import { VERSION } from '../version.js';
 
 function printTable(headers: string[], rows: string[][]): void {
@@ -178,7 +179,7 @@ async function runServer(opts: ServerOptions): Promise<void> {
 program
   .command('start')
   .description('Start all services (daemon, web dashboard, OpenAI API, MCP server)')
-  .option('-p, --port <port>', 'Port to listen on', '8787')
+  .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
   .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .action(async (options) => {
@@ -217,7 +218,7 @@ program
 program
   .command('web')
   .description('Start web dashboard')
-  .option('-p, --port <port>', 'Port to listen on', '8787')
+  .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
   .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .option('--mcp', 'Start MCP server on /mcp endpoint')
@@ -245,7 +246,7 @@ program
 program
   .command('serve')
   .description('Start OpenAI-compatible API server (serves /v1/models, /v1/chat/completions)')
-  .option('-p, --port <port>', 'Port to listen on', '8787')
+  .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
   .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .option('--mcp', 'Start MCP server on /mcp endpoint')

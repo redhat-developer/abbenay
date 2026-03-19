@@ -138,10 +138,9 @@ export async function createMockDaemon(chatOptions?: MockChatOptions): Promise<M
             call.write({ done: { finish_reason: finishReason } });
             call.end();
           }
-        } catch (err: any) {
-          // Stream may have been cancelled/closed
+        } catch (_err: unknown) {
           if (!call.cancelled) {
-            try { call.end(); } catch {}
+            try { call.end(); } catch { /* stream already closed */ }
           }
         }
       })();

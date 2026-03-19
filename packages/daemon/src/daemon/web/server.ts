@@ -22,6 +22,7 @@ import { maybeSummarize, generateSessionSummary } from '../../core/session-summa
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
 import { getEngines, getProviderTemplates } from '../../core/engines.js';
+import { DEFAULT_WEB_PORT } from '../../core/paths.js';
 import { registerOpenAIRoutes } from './openai-compat.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1131,7 +1132,7 @@ let _lastApp: Express | null = null;
  */
 export async function startEmbeddedWebServer(
   state: DaemonState,
-  port: number = 8787,
+  port: number = DEFAULT_WEB_PORT,
 ): Promise<{ port: number; url: string; app: Express }> {
   if (_httpServer) {
     return { port: _webPort!, url: `http://localhost:${_webPort}`, app: _lastApp! };

@@ -7,7 +7,7 @@ export default tseslint.config(
   {
     files: ['**/*.ts'],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
@@ -15,6 +15,12 @@ export default tseslint.config(
       'no-inner-declarations': 'off',
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       semi: 'off',
+    },
+  },
+  {
+    files: ['**/*.test.ts', 'tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'warn',
     },
   },
   { ignores: ['dist/**', 'build.js', '**/*.d.ts'] },

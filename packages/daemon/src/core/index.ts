@@ -154,6 +154,7 @@ export {
 
 /** Platform-aware path utilities */
 export {
+  DEFAULT_WEB_PORT,
   getRuntimeDir,
   getConfigDir,
   getWorkspaceConfigDir,
