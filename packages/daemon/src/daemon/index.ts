@@ -20,7 +20,7 @@ import { startDaemon, stopDaemon, getDaemonStatus } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { startEmbeddedWebServer } from './web/server.js';
 import { getEngines, fetchModels } from '../core/engines.js';
-import { DEFAULT_WEB_PORT } from '../core/paths.js';
+import { DEFAULT_WEB_PORT } from '../core/constants.js';
 import { VERSION } from '../version.js';
 
 function printTable(headers: string[], rows: string[][]): void {

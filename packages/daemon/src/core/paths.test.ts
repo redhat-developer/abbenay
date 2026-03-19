@@ -2,7 +2,6 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as path from 'node:path';
 
 import {
-  DEFAULT_WEB_PORT,
   getRuntimeDir,
   getConfigDir,
   getDataDir,
@@ -14,6 +13,7 @@ import {
   getWorkspaceConfigPath,
   getUserPoliciesPath,
 } from './paths.js';
+import { DEFAULT_WEB_PORT } from './constants.js';
 
 // ── DEFAULT_WEB_PORT ─────────────────────────────────────────────────────────
 

@@ -14,7 +14,7 @@ import {
 import { listAllPolicies, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 import { loadConfig, type ConfigFile, type McpServerConfig } from '../../core/config.js';
-import { DEFAULT_WEB_PORT } from '../../core/paths.js';
+import { DEFAULT_WEB_PORT } from '../../core/constants.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -1483,7 +1483,7 @@ export function authorizeConsumer(
 
   return {
     allowed: false,
-    reason: `Consumer token not recognized or lacks ${capability} capability.`,
+    reason: `Consumer token not recognized or lacks ${CAPABILITY_LABELS[capability]} capability.`,
   };
 }
 

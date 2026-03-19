@@ -25,9 +25,6 @@ import * as path from 'node:path';
 
 const APP_NAME = 'abbenay';
 
-/** Default HTTP port for the web dashboard and API server. */
-export const DEFAULT_WEB_PORT = 8787;
-
 // ── Runtime directory ────────────────────────────────────────────────
 
 /**

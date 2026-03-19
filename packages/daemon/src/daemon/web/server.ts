@@ -22,7 +22,7 @@ import { maybeSummarize, generateSessionSummary } from '../../core/session-summa
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
 import { getEngines, getProviderTemplates } from '../../core/engines.js';
-import { DEFAULT_WEB_PORT } from '../../core/paths.js';
+import { DEFAULT_WEB_PORT } from '../../core/constants.js';
 import { registerOpenAIRoutes } from './openai-compat.js';
 
 const __filename = fileURLToPath(import.meta.url);
