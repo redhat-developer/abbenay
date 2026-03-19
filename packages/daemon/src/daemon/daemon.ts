@@ -79,11 +79,17 @@ function loadProto() {
   return grpc.loadPackageDefinition(packageDefinition);
 }
 
+export interface DaemonOptions {
+  keepAlive?: boolean;
+  /** When set, also bind gRPC to this TCP port (0.0.0.0). */
+  grpcPort?: number;
+}
+
 /**
  * Start the daemon (gRPC server only, no web).
  * Returns the DaemonState for callers that need it (e.g. `abbenay web` in-process mode).
  */
-export async function startDaemon(opts?: { keepAlive?: boolean }): Promise<DaemonState> {
+export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
   // Check if already running
   if (isDaemonRunningSync()) {
     throw new Error('Abbenay daemon is already running');
@@ -131,6 +137,25 @@ export async function startDaemon(opts?: { keepAlive?: boolean }): Promise<Daemo
   });
   
   console.log(`Abbenay daemon listening on ${socketPath}`);
+
+  // Optionally bind gRPC to a TCP port for remote / container access
+  if (opts?.grpcPort) {
+    await new Promise<void>((resolve, reject) => {
+      server!.bindAsync(
+        `0.0.0.0:${opts.grpcPort}`,
+        grpc.ServerCredentials.createInsecure(),
+        (error, boundPort) => {
+          if (error) {
+            reject(error);
+          } else {
+            console.log(`Abbenay gRPC listening on 0.0.0.0:${boundPort}`);
+            resolve();
+          }
+        }
+      );
+    });
+  }
+
   console.log(`Version: ${state.version}`);
   
   // Initialize MCP connections from config (non-blocking)

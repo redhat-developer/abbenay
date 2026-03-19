@@ -48,9 +48,12 @@ program
 program
   .command('daemon')
   .description('Start the daemon (foreground)')
-  .action(async () => {
+  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
+  .action(async (options) => {
     try {
-      await startDaemon();
+      await startDaemon({
+        grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
+      });
     } catch (error) {
       console.error('Failed to start daemon:', error);
       process.exit(1);
@@ -92,6 +95,7 @@ program
 interface ServerOptions {
   port: number;
   mcp?: boolean;
+  grpcPort?: number;
   /** Lines printed after the server URL, before "Press Ctrl+C" */
   bannerLines?: (url: string, mcpStarted: boolean) => string[];
 }
@@ -110,7 +114,7 @@ function validatePort(raw: string): number {
 }
 
 async function runServer(opts: ServerOptions): Promise<void> {
-  const { port, mcp, bannerLines } = opts;
+  const { port, mcp, grpcPort, bannerLines } = opts;
 
   if (isDaemonRunningSync()) {
     console.log('Daemon is running, requesting web server start via gRPC...');
@@ -150,7 +154,7 @@ async function runServer(opts: ServerOptions): Promise<void> {
     });
   } else {
     console.log('No daemon running, starting in-process...');
-    const daemonState = await startDaemon({ keepAlive: false });
+    const daemonState = await startDaemon({ keepAlive: false, grpcPort });
     const { url, app } = await startEmbeddedWebServer(daemonState, port);
 
     if (mcp && app) {
@@ -172,13 +176,16 @@ program
   .command('start')
   .description('Start all services (daemon, web dashboard, OpenAI API, MCP server)')
   .option('-p, --port <port>', 'Port to listen on', '8787')
+  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .action(async (options) => {
     const port = validatePort(options.port);
     try {
       await runServer({
         port,
         mcp: true,
+        grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         bannerLines: (url, mcpStarted) => {
+          const grpc = options.grpcPort ? validatePort(options.grpcPort) : undefined;
           const lines = [
             '',
             `  Abbenay is running on ${url}`,
@@ -189,6 +196,7 @@ program
             `    Models     ${url}/v1/models`,
           ];
           if (mcpStarted) lines.push(`    MCP        ${url}/mcp`);
+          if (grpc) lines.push(`    gRPC       0.0.0.0:${grpc}`);
           lines.push('');
           return lines;
         },
@@ -204,6 +212,7 @@ program
   .command('web')
   .description('Start web dashboard')
   .option('-p, --port <port>', 'Port to listen on', '8787')
+  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--mcp', 'Start MCP server on /mcp endpoint')
   .action(async (options) => {
     const port = validatePort(options.port);
@@ -211,6 +220,7 @@ program
       await runServer({
         port,
         mcp: options.mcp,
+        grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         bannerLines: (url, mcpStarted) => {
           const lines = [`Abbenay Web Dashboard: ${url}`];
           if (mcpStarted) lines.push(`MCP Server: ${url}/mcp`);
@@ -228,6 +238,7 @@ program
   .command('serve')
   .description('Start OpenAI-compatible API server (serves /v1/models, /v1/chat/completions)')
   .option('-p, --port <port>', 'Port to listen on', '8787')
+  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--mcp', 'Start MCP server on /mcp endpoint')
   .action(async (options) => {
     const port = validatePort(options.port);
@@ -235,6 +246,7 @@ program
       await runServer({
         port,
         mcp: options.mcp,
+        grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         bannerLines: (url, mcpStarted) => {
           const lines = [
             `Abbenay API server: ${url}`,

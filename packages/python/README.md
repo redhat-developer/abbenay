@@ -50,6 +50,24 @@ async def main():
     # ... or explicitly: await client.reconnect()
 ```
 
+## Connecting to a Container
+
+When the daemon runs in a container, connect via TCP instead of the
+default Unix socket:
+
+```python
+async with AbbenayClient(host="localhost", port=50051) as client:
+    async for chunk in client.chat("openrouter/anthropic/claude-sonnet-4", "Hello!"):
+        if chunk.text:
+            print(chunk.text, end="")
+```
+
+The container must be started with `--grpc-port 50051` (the default
+`Containerfile` CMD does this) and the port published (`-p 50051:50051`).
+
+See [docs/CONTAINER.md](../../docs/CONTAINER.md) for full container
+deployment instructions.
+
 ## Features
 
 - **Chat**: Streaming chat with any configured model

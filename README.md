@@ -278,6 +278,7 @@ abbenay/
 - [Core Library (API Reference)](docs/CORE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)
+- [Container Deployment](docs/CONTAINER.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)

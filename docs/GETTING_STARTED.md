@@ -38,7 +38,24 @@ npm install
 node build.js                  # builds SEA binary + VSIX + dist archives
 ```
 
-### Option C: Run from source (development)
+### Option C: Container image
+
+```bash
+git clone https://github.com/redhat-developer/abbenay.git
+cd abbenay
+podman build -f Containerfile -t abbenay:latest .
+
+podman run -d --name abbenay \
+  -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
+  -e OPENROUTER_API_KEY=sk-or-... \
+  -p 8787:8787 \
+  abbenay:latest
+```
+
+See [CONTAINER.md](CONTAINER.md) for full container deployment docs
+including Kubernetes manifests.
+
+### Option D: Run from source (development)
 
 ```bash
 git clone https://github.com/redhat-developer/abbenay.git

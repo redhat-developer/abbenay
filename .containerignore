@@ -1,0 +1,32 @@
+# Build output
+dist/
+packages/daemon/dist/
+packages/vscode/bin/
+
+# Downloaded build tools (re-installed in builder stage)
+.build-tools/
+node_modules/
+
+# Python
+.venv/
+.build-venv/
+__pycache__/
+*.egg-info/
+
+# VS Code extension artifacts
+*.vsix
+.vscode-test/
+
+# Git and editor
+.git/
+.gitignore
+.DS_Store
+
+# Design docs and RFEs
+DESIGN-*.md
+RFE-*.md
+
+# CI / IDE
+.github/
+.cursor/
+.codex/
