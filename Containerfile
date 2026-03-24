@@ -1,6 +1,6 @@
 # Abbenay — Multi-stage container build
 #
-# Build:   podman build -f Containerfile -t abbenay:latest .
+# Build:   podman build -f Containerfile -t abbenay:latest .  (podman 4+ / BuildKit required)
 # Run:     podman run -d -p 8787:8787 \
 #            -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
 #            -e OPENROUTER_API_KEY=sk-... \
@@ -21,21 +21,38 @@ RUN dnf install -y --nodocs python3 python3-pip xz && \
     dnf clean all
 
 WORKDIR /build
-COPY . .
 
 # Download an official nodejs.org binary for SEA injection.  The UBI9
 # Node.js package doesn't contain the NODE_SEA_FUSE sentinel required
 # to produce a Single Executable Application.
+# Cached via BuildKit mount so re-downloads are skipped across builds.
 ARG TARGETARCH
-RUN node_arch=$([ "$TARGETARCH" = "amd64" ] && echo "x64" || echo "${TARGETARCH:-$(node -p process.arch)}") && \
+COPY .node-version .node-version
+RUN --mount=type=cache,target=/tmp/node-cache,sharing=locked \
+    node_arch=$([ "$TARGETARCH" = "amd64" ] && echo "x64" || echo "${TARGETARCH:-$(node -p process.arch)}") && \
     node_version=$(cat .node-version | tr -d '[:space:]') && \
+    tarball="/tmp/node-cache/node-v${node_version}-linux-${node_arch}.tar.xz" && \
     mkdir -p /build/.sea-node && \
-    curl -fsSL "https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-${node_arch}.tar.xz" \
-      | tar xJ --strip-components=1 -C /build/.sea-node && \
+    if [ ! -f "$tarball" ] || ! tar -tJf "$tarball" >/dev/null 2>&1; then \
+      rm -f "$tarball"; \
+      curl -fsSL "https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-${node_arch}.tar.xz" -o "${tarball}.tmp" && \
+      mv "${tarball}.tmp" "$tarball"; \
+    fi && \
+    tar xJf "$tarball" --strip-components=1 -C /build/.sea-node && \
     grep -q 'NODE_SEA_FUSE' /build/.sea-node/bin/node
 
-RUN npm ci --ignore-scripts && \
+# Copy lockfiles and workspace package.json files first so the npm ci
+# layer is only invalidated when dependencies actually change.
+COPY package.json package-lock.json ./
+COPY packages/daemon/package.json packages/daemon/
+COPY packages/vscode/package.json packages/vscode/
+COPY packages/proto-ts/package.json packages/proto-ts/
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --ignore-scripts && \
     npx node-gyp rebuild --directory node_modules/keytar 2>/dev/null || true
+
+# Now copy the full source tree and build.
+COPY . .
 
 RUN node_arch=$([ "$TARGETARCH" = "amd64" ] && echo "x64" || echo "${TARGETARCH:-$(node -p process.arch)}") && \
     export NODE_SEA_BASE="/build/.sea-node/bin/node" && \
