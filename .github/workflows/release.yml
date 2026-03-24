@@ -31,8 +31,21 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libsecret-1-dev
 
+      - name: Cache build tools
+        uses: actions/cache@v4
+        with:
+          path: .build-tools
+          key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version') }}
+
       - name: Bootstrap
         run: ./bootstrap.sh
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
         run: npm ci
@@ -81,6 +94,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Cache build tools
+        uses: actions/cache@v4
+        with:
+          path: .build-tools
+          key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version') }}
 
       - name: Bootstrap
         run: ./bootstrap.sh
