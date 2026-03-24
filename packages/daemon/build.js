@@ -126,7 +126,7 @@ async function build() {
       '@ai-sdk/fireworks': '^1',
       '@ai-sdk/togetherai': '^1',
       '@ai-sdk/perplexity': '^1',
-      '@ai-sdk/openai-compatible': '^0',
+      '@ai-sdk/openai-compatible': '^2',
     },
     peerDependenciesMeta: {
       '@ai-sdk/openai': { optional: true },
