@@ -48,17 +48,46 @@ export interface EngineInfo {
   createModel: (modelId: string, config: ProviderFactoryConfig) => Promise<LanguageModel>;
 }
 
-// ── Dynamic provider loading ────────────────────────────────────────────
+// ── Provider loading ────────────────────────────────────────────────────
 
 /**
- * Dynamically import an @ai-sdk/* provider package.
- * This allows provider packages to be truly optional — only the engines
- * a consumer actually uses need to be installed.
+ * Static import map for @ai-sdk/* provider packages.
+ *
+ * esbuild cannot follow `import(variable)` — it emits a bare `require()`
+ * that fails inside a Node.js SEA (no node_modules on disk).  Using
+ * string-literal specifiers lets esbuild resolve and bundle them in the
+ * SEA build, while the @abbenay/core build externalises them via the
+ * `external: ['@ai-sdk/*']` glob as before.
+ */
+const PROVIDER_LOADERS: Record<string, () => Promise<unknown>> = {
+  '@ai-sdk/openai':            () => import('@ai-sdk/openai'),
+  '@ai-sdk/anthropic':         () => import('@ai-sdk/anthropic'),
+  '@ai-sdk/google':            () => import('@ai-sdk/google'),
+  '@ai-sdk/mistral':           () => import('@ai-sdk/mistral'),
+  '@ai-sdk/xai':               () => import('@ai-sdk/xai'),
+  '@ai-sdk/deepseek':          () => import('@ai-sdk/deepseek'),
+  '@ai-sdk/groq':              () => import('@ai-sdk/groq'),
+  '@ai-sdk/cohere':            () => import('@ai-sdk/cohere'),
+  '@ai-sdk/amazon-bedrock':    () => import('@ai-sdk/amazon-bedrock'),
+  '@ai-sdk/fireworks':         () => import('@ai-sdk/fireworks'),
+  '@ai-sdk/togetherai':        () => import('@ai-sdk/togetherai'),
+  '@ai-sdk/perplexity':        () => import('@ai-sdk/perplexity'),
+  '@ai-sdk/openai-compatible': () => import('@ai-sdk/openai-compatible'),
+};
+
+/**
+ * Load an @ai-sdk/* provider package by name.
+ * Uses the static PROVIDER_LOADERS map so the SEA build can bundle them.
  */
 async function loadProviderFactory(packageName: string, exportName: string): Promise<unknown> {
+  const loader = PROVIDER_LOADERS[packageName];
+  if (!loader) {
+    throw new Error(`Unknown AI SDK provider package '${packageName}'`);
+  }
   try {
-    const mod = await import(packageName);
-    const factory = mod[exportName];
+    const mod = await loader();
+    const exported = mod as Record<string, unknown>;
+    const factory = exported[exportName];
     if (!factory) {
       throw new Error(`Package '${packageName}' does not export '${exportName}'`);
     }
