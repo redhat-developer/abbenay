@@ -680,6 +680,7 @@ export class CoreState {
         providerCfg.engine, engineModelId, processedMessages,
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
+        true,
       );
     } else if (shouldRetryJson) {
       yield* streamChatWithJsonRetry(
@@ -859,7 +860,8 @@ export function stripJsonFences(raw: string): string {
 /**
  * Stream chat with JSON validation and retry.
  * Buffers the full response, strips markdown fences, then attempts
- * JSON.parse().  Only retries if the cleaned content is still invalid.
+ * JSON.parse().  Distinguishes between truncation (finish_reason=length)
+ * and formatting errors, and uses an appropriate retry prompt for each.
  */
 async function* streamChatWithJsonRetry(
   engine: string,
@@ -874,15 +876,19 @@ async function* streamChatWithJsonRetry(
   maxSteps: number,
 ): AsyncGenerator<ChatChunk> {
   let fullText = '';
+  let finishReason = 'stop';
   const buffered: ChatChunk[] = [];
 
-  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps)) {
+  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true)) {
     buffered.push(chunk);
     if (chunk.type === 'text') {
       fullText += chunk.text;
+    } else if (chunk.type === 'done') {
+      finishReason = chunk.finishReason;
     }
   }
 
+  const wasTruncated = finishReason === 'length';
   const cleaned = stripJsonFences(fullText);
 
   try {
@@ -908,14 +914,22 @@ async function* streamChatWithJsonRetry(
     }
     return;
   } catch {
-    console.warn(`[State] json_strict: response is not valid JSON (${cleaned.length} chars). Retrying once.`);
+    if (wasTruncated) {
+      console.warn(`[State] json_strict: response truncated (finish_reason=length, ${cleaned.length} chars). Retrying with continuation prompt.`);
+    } else {
+      console.warn(`[State] json_strict: response is not valid JSON (${cleaned.length} chars, finish_reason=${finishReason}). Retrying once.`);
+    }
   }
+
+  const retryPrompt = wasTruncated
+    ? 'Your previous response was cut off and produced incomplete JSON. Respond with the COMPLETE JSON object. If the output is too large, reduce detail or omit lower-confidence entries to fit within the token limit. No explanation, no markdown fences — just the full, valid JSON.'
+    : 'Your previous response was not valid JSON. Respond with ONLY valid JSON. Fix the output — no explanation, no markdown fences, just the JSON.';
 
   const retryMessages = [
     ...messages,
     { role: 'assistant', content: fullText },
-    { role: 'user', content: 'Your previous response was not valid JSON. Respond with ONLY valid JSON. Fix the output — no explanation, no markdown fences, just the JSON.' },
+    { role: 'user', content: retryPrompt },
   ];
 
-  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps);
+  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true);
 }
