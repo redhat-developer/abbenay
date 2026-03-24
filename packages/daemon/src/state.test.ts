@@ -711,6 +711,121 @@ describe('DaemonState.chat json_strict fence stripping', () => {
     expect(mockStreamChat).toHaveBeenCalledTimes(2);
   });
 
+  it('should use truncation-aware retry prompt when finish_reason is length', async () => {
+    let callCount = 0;
+    async function* truncatedStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      callCount++;
+      if (callCount === 1) {
+        yield { type: 'text', text: '{"patches": [{"rule_id": "L024"' };
+        yield { type: 'done', finishReason: 'length' };
+      } else {
+        yield { type: 'text', text: jsonPayload };
+        yield { type: 'done', finishReason: 'stop' };
+      }
+    }
+    mockStreamChat.mockImplementation(() => truncatedStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonStrictPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(2);
+    const retryCallMessages = mockStreamChat.mock.calls[1][2];
+    const lastMessage = retryCallMessages[retryCallMessages.length - 1];
+    expect(lastMessage.content).toContain('cut off');
+    expect(lastMessage.content).toContain('token limit');
+  });
+
+  it('should use format-error retry prompt when finish_reason is stop but JSON is invalid', async () => {
+    let callCount = 0;
+    async function* badFormatStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      callCount++;
+      if (callCount === 1) {
+        yield { type: 'text', text: 'Here is your data: {not json}' };
+        yield { type: 'done', finishReason: 'stop' };
+      } else {
+        yield { type: 'text', text: jsonPayload };
+        yield { type: 'done', finishReason: 'stop' };
+      }
+    }
+    mockStreamChat.mockImplementation(() => badFormatStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonStrictPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(2);
+    const retryCallMessages = mockStreamChat.mock.calls[1][2];
+    const lastMessage = retryCallMessages[retryCallMessages.length - 1];
+    expect(lastMessage.content).toContain('not valid JSON');
+    expect(lastMessage.content).not.toContain('cut off');
+  });
+
+  it('should pass jsonMode=true to streamChat when json_only is set', async () => {
+    async function* cleanStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      yield { type: 'text', text: jsonPayload };
+      yield { type: 'done', finishReason: 'stop' };
+    }
+    mockStreamChat.mockReturnValue(cleanStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonStrictPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    const jsonModeArg = mockStreamChat.mock.calls[0][10];
+    expect(jsonModeArg).toBe(true);
+  });
+
+  it('should pass jsonMode=true when json_only without retry', async () => {
+    const jsonOnlyNoRetryPolicy = {
+      output: { format: 'json_only' as const },
+    };
+    async function* cleanStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
+      yield { type: 'text', text: jsonPayload };
+      yield { type: 'done', finishReason: 'stop' };
+    }
+    mockStreamChat.mockReturnValue(cleanStream());
+
+    const chunks = [];
+    for await (const chunk of state.chat(
+      'my-mock/json-model',
+      [{ role: 'user', content: 'give me json' }],
+      undefined,
+      undefined,
+      undefined,
+      jsonOnlyNoRetryPolicy,
+    )) {
+      chunks.push(chunk);
+    }
+
+    const jsonModeArg = mockStreamChat.mock.calls[0][10];
+    expect(jsonModeArg).toBe(true);
+  });
+
   it('should accept bare-fenced (no language tag) JSON without retrying', async () => {
     async function* bareFencedStream(): AsyncGenerator<{ type: string; text?: string; finishReason?: string }> {
       yield { type: 'text', text: `\`\`\`\n${jsonPayload}\n\`\`\`` };

@@ -618,6 +618,7 @@ export async function* streamChat(
   toolExecutor?: ToolExecutor,
   toolValidator?: ToolValidationCallback,
   maxSteps: number = 10,
+  jsonMode: boolean = false,
 ): AsyncGenerator<ChatChunk> {
   // Mock engine — no network, no key, deterministic
   if (engineId === 'mock') {
@@ -689,6 +690,8 @@ export async function* streamChat(
       ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
       ...(params?.top_k != null ? { topK: params.top_k } : {}),
+      ...(params?.timeout != null ? { timeout: params.timeout } : {}),
+      ...(jsonMode ? { responseFormat: { type: 'json' as const } } : {}),
     };
 
     const result = streamText(streamOptions);
