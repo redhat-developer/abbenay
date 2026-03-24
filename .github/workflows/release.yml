@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build-tools
-          key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version') }}
+          key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'bootstrap.sh') }}
 
       - name: Bootstrap
         run: ./bootstrap.sh
@@ -99,7 +99,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build-tools
-          key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version') }}
+          key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'bootstrap.sh') }}
 
       - name: Bootstrap
         run: ./bootstrap.sh

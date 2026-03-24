@@ -1,6 +1,6 @@
 # Abbenay — Multi-stage container build
 #
-# Build:   podman build -f Containerfile -t abbenay:latest .
+# Build:   podman build -f Containerfile -t abbenay:latest .  (podman 4+ / BuildKit required)
 # Run:     podman run -d -p 8787:8787 \
 #            -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
 #            -e OPENROUTER_API_KEY=sk-... \
@@ -33,8 +33,10 @@ RUN --mount=type=cache,target=/tmp/node-cache,sharing=locked \
     node_version=$(cat .node-version | tr -d '[:space:]') && \
     tarball="/tmp/node-cache/node-v${node_version}-linux-${node_arch}.tar.xz" && \
     mkdir -p /build/.sea-node && \
-    if [ ! -f "$tarball" ]; then \
-      curl -fsSL "https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-${node_arch}.tar.xz" -o "$tarball"; \
+    if [ ! -f "$tarball" ] || ! tar -tJf "$tarball" >/dev/null 2>&1; then \
+      rm -f "$tarball"; \
+      curl -fsSL "https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-${node_arch}.tar.xz" -o "${tarball}.tmp" && \
+      mv "${tarball}.tmp" "$tarball"; \
     fi && \
     tar xJf "$tarball" --strip-components=1 -C /build/.sea-node && \
     grep -q 'NODE_SEA_FUSE' /build/.sea-node/bin/node
