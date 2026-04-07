@@ -63,6 +63,7 @@ const PROVIDER_LOADERS: Record<string, () => Promise<unknown>> = {
   '@ai-sdk/openai':            () => import('@ai-sdk/openai'),
   '@ai-sdk/anthropic':         () => import('@ai-sdk/anthropic'),
   '@ai-sdk/google':            () => import('@ai-sdk/google'),
+  '@ai-sdk/google-vertex/anthropic': () => import('@ai-sdk/google-vertex/anthropic'),
   '@ai-sdk/mistral':           () => import('@ai-sdk/mistral'),
   '@ai-sdk/xai':               () => import('@ai-sdk/xai'),
   '@ai-sdk/deepseek':          () => import('@ai-sdk/deepseek'),
@@ -95,9 +96,12 @@ async function loadProviderFactory(packageName: string, exportName: string): Pro
   } catch (err: unknown) {
     const code = err && typeof err === 'object' && 'code' in err ? (err as { code?: string }).code : undefined;
     if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
+      const installName = packageName.startsWith('@')
+        ? packageName.split('/').slice(0, 2).join('/')
+        : packageName.split('/')[0];
       throw new Error(
         `AI SDK provider package '${packageName}' is not installed. ` +
-        `Install it with: npm install ${packageName}`
+        `Install it with: npm install ${installName}`
       );
     }
     throw err;
@@ -137,6 +141,150 @@ async function openaiCompatibleProvider(
     ...(config.apiKey ? { apiKey: config.apiKey } : {}),
   });
   return provider.chatModel(modelId);
+}
+
+type VertexAnthropicProviderFactory = (config: Record<string, unknown>) => (modelId: string) => LanguageModel;
+
+/**
+ * Strip fields the Anthropic Vertex API rejects but the AI SDK may inject.
+ * Returns the sanitized JSON string and the list of removed field names,
+ * or null if no changes were needed.
+ */
+export function sanitizeVertexRequestBody(bodyStr: string): { body: string; removed: string[] } | null {
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(bodyStr) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const removed: string[] = [];
+  if ('stream_options' in body) { delete body.stream_options; removed.push('stream_options'); }
+  if ('stream' in body) { delete body.stream; removed.push('stream'); }
+  if (removed.length === 0) {
+    return null;
+  }
+  return { body: JSON.stringify(body), removed };
+}
+
+export type SseConversionResult =
+  | { ok: true; body: string }
+  | { ok: false; reason: 'parse-error' | 'non-text-content' };
+
+/**
+ * Convert an Anthropic Messages API JSON response into SSE events that
+ * the Vercel AI SDK's @ai-sdk/google-vertex/anthropic parser expects.
+ *
+ * Returns `{ ok: false, reason }` when conversion cannot be performed:
+ * - `'parse-error'`: the input is not valid JSON
+ * - `'non-text-content'`: the response contains non-text content blocks
+ *   (e.g. tool_use) that cannot be faithfully represented
+ */
+export function convertAnthropicJsonToSse(jsonStr: string): SseConversionResult {
+  let msg: Record<string, unknown>;
+  try {
+    msg = JSON.parse(jsonStr) as Record<string, unknown>;
+  } catch {
+    return { ok: false, reason: 'parse-error' };
+  }
+  if (!Array.isArray(msg.content)) {
+    return { ok: false, reason: 'parse-error' };
+  }
+  const content = msg.content;
+  let fullText = '';
+  for (const block of content) {
+    if (!block || typeof block !== 'object') {
+      return { ok: false, reason: 'non-text-content' };
+    }
+    const b = block as Record<string, unknown>;
+    if (b.type === 'text') {
+      fullText += typeof b.text === 'string' ? b.text : '';
+    } else {
+      return { ok: false, reason: 'non-text-content' };
+    }
+  }
+  const stopReason = typeof msg.stop_reason === 'string' ? msg.stop_reason : 'end_turn';
+  const stopSequence = typeof msg.stop_sequence === 'string' || msg.stop_sequence === null
+    ? msg.stop_sequence
+    : null;
+  const events = [
+    `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { id: msg.id || '', type: 'message', role: 'assistant', content: [], model: msg.model || '', stop_reason: null, stop_sequence: null, usage: msg.usage || { input_tokens: 0, output_tokens: 0 } } })}\n`,
+    `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}\n`,
+    `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: fullText } })}\n`,
+    `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n`,
+    `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: stopSequence }, usage: msg.usage || { output_tokens: 0 } })}\n`,
+    `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n`,
+  ];
+  return { ok: true as const, body: `${events.join('\n')}\n` };
+}
+
+/**
+ * Create model via @ai-sdk/google-vertex/anthropic (dynamically loaded).
+ *
+ * Supports two modes:
+ * - Standard Vertex AI: uses Google Cloud Application Default Credentials (ADC)
+ * - Bearer-token proxy: when apiKey is set, injects it as the Authorization
+ *   header via a synthetic authClient, bypassing Google credential discovery.
+ *
+ * For corporate proxies with self-signed certificates, set the standard
+ * NODE_EXTRA_CA_CERTS environment variable to the CA bundle path instead
+ * of disabling TLS verification.
+ */
+async function vertexAnthropicProvider(
+  config: ProviderFactoryConfig,
+  modelId: string,
+): Promise<LanguageModel> {
+  const factory = await loadProviderFactory(
+    '@ai-sdk/google-vertex/anthropic', 'createVertexAnthropic',
+  ) as VertexAnthropicProviderFactory;
+
+  const providerConfig: Record<string, unknown> = {};
+  if (config.baseURL) {
+    providerConfig.baseURL = config.baseURL;
+  }
+  if (config.apiKey) {
+    providerConfig.googleAuthOptions = {
+      authClient: {
+        getAccessToken: async () => ({ token: config.apiKey }),
+        getRequestHeaders: async () => ({ Authorization: `Bearer ${config.apiKey}` }),
+      },
+    };
+  }
+  providerConfig.fetch = (input: string | URL | Request, init?: RequestInit) => {
+    const patchedInit = { ...(init ?? {}) };
+    if (typeof patchedInit.body === 'string') {
+      const result = sanitizeVertexRequestBody(patchedInit.body);
+      if (result) {
+        patchedInit.body = result.body;
+        debug(`[Adapter] vertex-anthropic: stripped [${result.removed}] from request body`);
+      }
+    }
+    return fetch(input, patchedInit).then(async (resp) => {
+      const ct = resp.headers.get('content-type') || '';
+      if (resp.status === 200 && ct.includes('application/json') && !ct.includes('event-stream')) {
+        const text = await resp.text();
+        const result = convertAnthropicJsonToSse(text);
+        if (result.ok) {
+          debug(`[Adapter] vertex-anthropic: converted JSON response to SSE`);
+          const sseHeaders = new Headers(resp.headers);
+          sseHeaders.set('content-type', 'text/event-stream');
+          return new Response(result.body, { status: 200, statusText: 'OK', headers: sseHeaders });
+        }
+        if (result.reason === 'non-text-content') {
+          debug(
+            '[Adapter] vertex-anthropic: proxy returned application/json with non-text content blocks (e.g. tool_use). ' +
+            'JSON→SSE conversion only supports text blocks. Tool calling requires the proxy to return text/event-stream.',
+          );
+        } else {
+          debug('[Adapter] vertex-anthropic: proxy returned application/json but body is not valid Anthropic Messages API JSON.');
+        }
+        return new Response(text, { status: resp.status, statusText: resp.statusText, headers: resp.headers });
+      }
+      return resp;
+    });
+  };
+
+  const provider = factory(providerConfig);
+  return provider(modelId);
 }
 
 // ── Engine registry ────────────────────────────────────────────────────
@@ -225,6 +373,13 @@ const ENGINES: Record<string, EngineInfo> = {
     requiresKey: false, // Uses AWS credentials
     supportsTools: true,
     createModel: (modelId, config) => dedicatedProvider('@ai-sdk/amazon-bedrock', 'createAmazonBedrock', config, modelId),
+  },
+  'vertex-anthropic': {
+    id: 'vertex-anthropic',
+    requiresKey: false, // Google ADC by default; Bearer token optional via apiKey
+    defaultEnvVar: 'VERTEX_ANTHROPIC_API_KEY',
+    supportsTools: true,
+    createModel: (modelId, config) => vertexAnthropicProvider(config, modelId),
   },
   fireworks: {
     id: 'fireworks',
@@ -488,6 +643,11 @@ async function fetchModelsFromApi(
 
   // AWS Bedrock - skip for now (requires AWS SDK auth)
   if (engineId === 'bedrock') {
+    return [];
+  }
+
+  // Vertex Anthropic - no standard models discovery API
+  if (engineId === 'vertex-anthropic') {
     return [];
   }
 

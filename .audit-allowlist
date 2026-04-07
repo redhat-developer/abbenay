@@ -5,3 +5,6 @@
 # serialize-javascript via mocha via @vscode/test-cli (dev-only, no fix)
 # Added 2026-03-11
 https://github.com/advisories/GHSA-5c6j-r48x-rmvq
+# serialize-javascript via mocha via @vscode/test-cli (dev-only, no fix)
+# Added 2026-04-06
+https://github.com/advisories/GHSA-qj8w-gfj5-8c6v
