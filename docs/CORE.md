@@ -26,6 +26,7 @@ Then install only the AI SDK provider packages you need:
 npm install @ai-sdk/openai        # for OpenAI
 npm install @ai-sdk/anthropic     # for Anthropic
 npm install @ai-sdk/google        # for Google Gemini
+npm install @ai-sdk/google-vertex # for Vertex AI (Anthropic Claude on Vertex)
 npm install @ai-sdk/openai-compatible  # for Ollama, OpenRouter, LM Studio, etc.
 ```
 
@@ -280,6 +281,7 @@ The Vercel AI SDK handles the tool execution loop automatically (up to `maxSteps
 | Groq | `groq` | Yes | `@ai-sdk/groq` | Fast inference |
 | Cohere | `cohere` | Yes | `@ai-sdk/cohere` | Command models |
 | Amazon Bedrock | `bedrock` | No* | `@ai-sdk/amazon-bedrock` | Uses AWS credentials |
+| Vertex Anthropic | `vertex-anthropic` | No* | `@ai-sdk/google-vertex` | Claude on Vertex AI; supports Bearer-token proxies |
 | Fireworks | `fireworks` | Yes | `@ai-sdk/fireworks` | Optimized inference |
 | Together AI | `togetherai` | Yes | `@ai-sdk/togetherai` | Open models |
 | Perplexity | `perplexity` | Yes | `@ai-sdk/perplexity` | Search-augmented |

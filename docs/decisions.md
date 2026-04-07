@@ -345,3 +345,24 @@ the `consumers` section is present in config (same pattern as DR-024).
 `ChatOptions.tool_filter` (proto field 7, previously unimplemented) is also
 implemented as a complementary feature, giving callers per-request control over
 which tools the LLM sees.
+
+---
+
+## DR-026: Vertex Anthropic engine with Bearer-token proxy support
+
+**Date:** 2026-04-06
+**Decision:** Add a `vertex-anthropic` engine backed by `@ai-sdk/google-vertex/anthropic`.
+When an API key is configured, inject it as a Bearer token via a synthetic
+`authClient` passed to `googleAuthOptions`, bypassing Google credential
+discovery. When no key is configured, fall back to standard Google Cloud ADC.
+**Rationale:** Corporate Vertex AI proxies (e.g., Red Hat APIcast) front the
+Vertex Anthropic API but authenticate with a simple Bearer token instead of
+Google OAuth. The `@ai-sdk/google-vertex` Node.js variant requires
+`google-auth-library` and always attempts Google credential resolution, which
+throws when real GCP credentials are absent. Injecting a synthetic `authClient`
+satisfies the library's auth contract without dummy credentials and avoids
+needing a fetch wrapper for authentication; proxy deployments may still use a
+small fetch wrapper for request sanitization and optional JSON→SSE adaptation,
+while keeping the integration aligned with SDK updates. The `base_url` config
+field carries the full URL prefix (including any proxy-specific path segments);
+the SDK appends `/<model>:streamRawPredict` automatically.

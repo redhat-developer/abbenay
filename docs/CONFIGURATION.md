@@ -94,6 +94,7 @@ If neither option is set, the engine's default environment variable is checked (
 | Groq | `groq` | `GROQ_API_KEY` | Yes |
 | Cohere | `cohere` | `COHERE_API_KEY` | Yes |
 | Amazon Bedrock | `bedrock` | *(AWS credentials)* | No |
+| Vertex Anthropic | `vertex-anthropic` | `VERTEX_ANTHROPIC_API_KEY` | No |
 | Fireworks | `fireworks` | `FIREWORKS_API_KEY` | Yes |
 | Together AI | `togetherai` | `TOGETHER_AI_API_KEY` | Yes |
 | Perplexity | `perplexity` | `PERPLEXITY_API_KEY` | Yes |
@@ -247,6 +248,58 @@ providers:
     models:
       claude-sonnet-4-20250514: {}
 ```
+
+### Vertex-Hosted Anthropic (Bearer Token Proxy)
+
+For corporate Vertex AI proxies that authenticate via Bearer token instead of
+Google Cloud ADC:
+
+```yaml
+providers:
+  corp-vertex:
+    engine: vertex-anthropic
+    base_url: "https://your-proxy.example.com/sonnet/models"
+    api_key_env_var_name: "VERTEX_ANTHROPIC_API_KEY"  # reads Bearer token from env
+    models:
+      claude-sonnet-4:
+        model_id: "claude-sonnet-4@20250514"
+```
+
+Set the environment variable to your Bearer token:
+
+```bash
+export VERTEX_ANTHROPIC_API_KEY="your-bearer-token-here"
+```
+
+The `base_url` should include the full path prefix up to `/models` (the engine
+appends `/<model-id>:streamRawPredict` automatically). When no API key is
+configured, the engine falls back to standard Google Cloud Application Default
+Credentials.
+
+For proxies with self-signed or internal CA certificates, set the standard
+Node.js `NODE_EXTRA_CA_CERTS` environment variable to the CA bundle path.
+
+If your proxy returns streaming responses as `application/json`, note that
+Abbenay only converts text-only content blocks to SSE. Responses containing
+`tool_use` blocks are passed through unchanged, so tool calling may not work in
+this proxy mode. If you need tool calling via a proxy, prefer a proxy that
+returns `text/event-stream`.
+
+### Vertex Anthropic (Google Cloud ADC)
+
+For standard Vertex AI with Google Cloud authentication:
+
+```yaml
+providers:
+  vertex-claude:
+    engine: vertex-anthropic
+    models:
+      claude-sonnet-4:
+        model_id: "claude-sonnet-4@20250514"
+```
+
+Set `GOOGLE_VERTEX_PROJECT` and `GOOGLE_VERTEX_LOCATION` environment variables,
+and ensure Google Cloud ADC is configured (e.g., via `GOOGLE_APPLICATION_CREDENTIALS`).
 
 ## Best Practices
 
