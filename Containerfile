@@ -56,6 +56,7 @@ COPY . .
 
 RUN node_arch=$([ "$TARGETARCH" = "amd64" ] && echo "x64" || echo "${TARGETARCH:-$(node -p process.arch)}") && \
     export NODE_SEA_BASE="/build/.sea-node/bin/node" && \
+    export ABBENAY_SKIP_EXTENSION=1 && \
     node build.js
 
 # Copy the platform-specific binary to a fixed path for the runtime stage.

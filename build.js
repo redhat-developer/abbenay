@@ -8,6 +8,7 @@
  *   node build.js --skip-sea     # (REMOVED — SEA is always required)
  *   node build.js --skip-proto   # Skip proto generation (use existing generated code)
  *   node build.js --skip-zip     # Skip zip creation
+ *   node build.js --skip-extension # Skip VSIX packaging (or set ABBENAY_SKIP_EXTENSION=1)
  *   node build.js --code-install # Install VSIX into VS Code after building
  *
  * Prerequisites: Node.js >= 20, python3, protoc
@@ -43,6 +44,7 @@ const PROTO_ONLY = args.has('--proto-only');
 const SKIP_SEA = args.has('--skip-sea');
 const SKIP_PROTO = args.has('--skip-proto');
 const SKIP_ZIP = args.has('--skip-zip');
+const SKIP_EXTENSION = args.has('--skip-extension') || process.env.ABBENAY_SKIP_EXTENSION === '1';
 const CODE_INSTALL = args.has('--code-install');
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -367,7 +369,11 @@ async function main() {
     // Stage 3b removed: vendor list is static (single "abbenay" vendor)
 
     // Stage 4: Package extension
-    packageExtension();
+    if (!SKIP_EXTENSION) {
+        packageExtension();
+    } else {
+        console.log('\nSkipping extension packaging (--skip-extension or ABBENAY_SKIP_EXTENSION=1)\n');
+    }
 
     // Stage 5: Distribution zip
     if (!SKIP_ZIP) {
@@ -375,8 +381,10 @@ async function main() {
     }
 
     // Stage 6: Install into VS Code
-    if (CODE_INSTALL) {
+    if (CODE_INSTALL && !SKIP_EXTENSION) {
         installExtension();
+    } else if (CODE_INSTALL && SKIP_EXTENSION) {
+        console.log('\nSkipping --code-install because extension packaging was skipped\n');
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
