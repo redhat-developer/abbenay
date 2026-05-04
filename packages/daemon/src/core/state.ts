@@ -462,6 +462,14 @@ export class CoreState {
         const compositeId = `${providerId}/${modelName}`;
         const discovered = discoveryMap.get(engineModelId);
 
+        // Fall back to engine's static metadata when discovery returns nothing.
+        // Without this, engines that have no discovery API (e.g. vertex-anthropic)
+        // would report supportsTools=false, causing VS Code/Copilot to hide the model.
+        const capabilities = discovered?.capabilities ?? {
+          supportsTools: engineInfo.supportsTools,
+          supportsVision: false,
+        };
+
         allModels.push({
           id: compositeId,
           name: modelName,
@@ -469,7 +477,7 @@ export class CoreState {
           provider: providerId,
           engine: providerCfg.engine,
           contextWindow: discovered?.contextWindow || 0,
-          capabilities: discovered?.capabilities,
+          capabilities,
           params: Object.keys(modelCfg).length > 0 ? modelCfg : undefined,
         });
       }

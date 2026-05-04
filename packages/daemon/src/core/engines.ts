@@ -147,6 +147,8 @@ type VertexAnthropicProviderFactory = (config: Record<string, unknown>) => (mode
 
 /**
  * Strip fields the Anthropic Vertex API rejects but the AI SDK may inject.
+ * Also removes empty text content blocks which Vertex Anthropic rejects with
+ * "text content blocks must be non-empty".
  * Returns the sanitized JSON string and the list of removed field names,
  * or null if no changes were needed.
  */
@@ -160,6 +162,50 @@ export function sanitizeVertexRequestBody(bodyStr: string): { body: string; remo
   const removed: string[] = [];
   if ('stream_options' in body) { delete body.stream_options; removed.push('stream_options'); }
   if ('stream' in body) { delete body.stream; removed.push('stream'); }
+
+  // Filter empty/whitespace text content blocks from messages — Vertex Anthropic rejects them.
+  // This handles both string content (e.g. content: ' ') and array content
+  // (e.g. [{type:'text', text:' '}]). Messages that have no content remaining
+  // after filtering are dropped entirely.
+  if (Array.isArray(body.messages)) {
+    let messagesChanged = false;
+    const filteredMessages: Array<Record<string, unknown>> = [];
+    for (const msg of body.messages as Array<Record<string, unknown>>) {
+      // String content: if empty/whitespace, drop the message
+      if (typeof msg.content === 'string') {
+        if (msg.content.trim() === '') {
+          messagesChanged = true;
+          continue;
+        }
+        filteredMessages.push(msg);
+        continue;
+      }
+      // Array content: filter whitespace-only text blocks
+      if (!Array.isArray(msg.content)) {
+        filteredMessages.push(msg);
+        continue;
+      }
+      const filtered = (msg.content as Array<Record<string, unknown>>).filter(
+        block => !(block.type === 'text' && typeof block.text === 'string' && block.text.trim() === ''),
+      );
+      if (filtered.length === 0 && (msg.content as unknown[]).length > 0) {
+        // All content was empty text blocks — drop the whole message
+        messagesChanged = true;
+        continue;
+      }
+      if (filtered.length !== (msg.content as unknown[]).length) {
+        messagesChanged = true;
+        filteredMessages.push({ ...msg, content: filtered });
+      } else {
+        filteredMessages.push(msg);
+      }
+    }
+    if (messagesChanged) {
+      body.messages = filteredMessages;
+      removed.push('empty_text_blocks');
+    }
+  }
+
   if (removed.length === 0) {
     return null;
   }
@@ -189,31 +235,44 @@ export function convertAnthropicJsonToSse(jsonStr: string): SseConversionResult 
   if (!Array.isArray(msg.content)) {
     return { ok: false, reason: 'parse-error' };
   }
-  const content = msg.content;
-  let fullText = '';
-  for (const block of content) {
+  const content = msg.content as Array<Record<string, unknown>>;
+
+  const events: string[] = [
+    `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { id: msg.id || '', type: 'message', role: 'assistant', content: [], model: msg.model || '', stop_reason: null, stop_sequence: null, usage: msg.usage || { input_tokens: 0, output_tokens: 0 } } })}\n`,
+  ];
+
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i];
     if (!block || typeof block !== 'object') {
       return { ok: false, reason: 'non-text-content' };
     }
-    const b = block as Record<string, unknown>;
-    if (b.type === 'text') {
-      fullText += typeof b.text === 'string' ? b.text : '';
+    if (block.type === 'text') {
+      const text = typeof block.text === 'string' ? block.text : '';
+      events.push(
+        `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: i, content_block: { type: 'text', text: '' } })}\n`,
+        `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: i, delta: { type: 'text_delta', text } })}\n`,
+        `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: i })}\n`,
+      );
+    } else if (block.type === 'tool_use') {
+      const inputStr = block.input != null ? JSON.stringify(block.input) : '{}';
+      events.push(
+        `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: i, content_block: { type: 'tool_use', id: block.id || '', name: block.name || '', input: {} } })}\n`,
+        `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: inputStr } })}\n`,
+        `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: i })}\n`,
+      );
     } else {
       return { ok: false, reason: 'non-text-content' };
     }
   }
+
   const stopReason = typeof msg.stop_reason === 'string' ? msg.stop_reason : 'end_turn';
   const stopSequence = typeof msg.stop_sequence === 'string' || msg.stop_sequence === null
     ? msg.stop_sequence
     : null;
-  const events = [
-    `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { id: msg.id || '', type: 'message', role: 'assistant', content: [], model: msg.model || '', stop_reason: null, stop_sequence: null, usage: msg.usage || { input_tokens: 0, output_tokens: 0 } } })}\n`,
-    `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}\n`,
-    `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: fullText } })}\n`,
-    `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n`,
+  events.push(
     `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: stopSequence }, usage: msg.usage || { output_tokens: 0 } })}\n`,
     `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n`,
-  ];
+  );
   return { ok: true as const, body: `${events.join('\n')}\n` };
 }
 
@@ -957,12 +1016,14 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
       case 'user':
         return { role: 'user' as const, content: m.content };
 
-      case 'assistant':
+      case 'assistant': {
+        // Always use array form so empty content is handled uniformly.
+        // sanitizeVertexRequestBody will drop messages with empty content arrays.
+        const parts: AssistantModelMessage['content'] = [];
+        if (m.content && m.content.trim()) {
+          parts.push({ type: 'text', text: m.content });
+        }
         if (m.tool_calls && m.tool_calls.length > 0) {
-          const parts: AssistantModelMessage['content'] = [];
-          if (m.content) {
-            parts.push({ type: 'text', text: m.content });
-          }
           for (const tc of m.tool_calls) {
             const item = tc && typeof tc === 'object' ? tc as Record<string, unknown> : {};
             const args = item.arguments;
@@ -973,9 +1034,9 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
               input: typeof args === 'string' ? JSON.parse(args) as Record<string, unknown> : (args && typeof args === 'object' ? args as Record<string, unknown> : {}),
             });
           }
-          return { role: 'assistant' as const, content: parts };
         }
-        return { role: 'assistant' as const, content: m.content };
+        return { role: 'assistant' as const, content: parts };
+      }
 
       case 'tool':
         return {
