@@ -115,7 +115,7 @@ describe('convertAnthropicJsonToSse', () => {
     expect(result.body.endsWith('\n')).toBe(true);
   });
 
-  it('should return non-text-content reason for tool_use blocks', () => {
+  it('should convert tool_use blocks to SSE events', () => {
     const json = JSON.stringify({
       id: 'msg_456',
       content: [
@@ -124,12 +124,26 @@ describe('convertAnthropicJsonToSse', () => {
       ],
     });
     const result = convertAnthropicJsonToSse(json);
-    expect(result).toEqual({ ok: false, reason: 'non-text-content' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.body).toContain('Let me call a tool');
+    expect(result.body).toContain('"type":"tool_use"');
+    expect(result.body).toContain('"name":"search"');
+    expect(result.body).toContain('"id":"call_1"');
+    expect(result.body).toContain('input_json_delta');
+    expect(result.body).toContain('event: message_stop');
   });
 
   it('should return parse-error reason for invalid JSON', () => {
     const result = convertAnthropicJsonToSse('{broken');
     expect(result).toEqual({ ok: false, reason: 'parse-error' });
+  });
+
+  it('should return parse-error for JSON that is not an Anthropic Messages response', () => {
+    const errorPayload = JSON.stringify({ error: { type: 'server_error', message: 'Internal error' } });
+    expect(convertAnthropicJsonToSse(errorPayload)).toEqual({ ok: false, reason: 'parse-error' });
+    const randomObj = JSON.stringify({ status: 'ok', data: [1, 2, 3] });
+    expect(convertAnthropicJsonToSse(randomObj)).toEqual({ ok: false, reason: 'parse-error' });
   });
 
   it('should return parse-error for JSON that is not an Anthropic Messages response', () => {
@@ -153,7 +167,7 @@ describe('convertAnthropicJsonToSse', () => {
     expect(result.body).toContain('event: message_start');
   });
 
-  it('should concatenate multiple text blocks', () => {
+  it('should stream multiple text blocks as separate SSE events', () => {
     const json = JSON.stringify({
       id: 'msg',
       content: [{ type: 'text', text: 'Hello ' }, { type: 'text', text: 'world' }],
@@ -161,7 +175,9 @@ describe('convertAnthropicJsonToSse', () => {
     const result = convertAnthropicJsonToSse(json);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.body).toContain('Hello world');
+    expect(result.body).toContain('Hello ');
+    expect(result.body).toContain('');
+    expect(result.body).toContain('world');
   });
 
   it('should preserve message metadata in SSE events', () => {
