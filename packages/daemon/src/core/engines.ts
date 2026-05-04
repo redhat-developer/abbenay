@@ -188,8 +188,7 @@ export function sanitizeVertexRequestBody(bodyStr: string): { body: string; remo
       const filtered = (msg.content as Array<Record<string, unknown>>).filter(
         block => !(block.type === 'text' && typeof block.text === 'string' && block.text.trim() === ''),
       );
-      if (filtered.length === 0 && (msg.content as unknown[]).length > 0) {
-        // All content was empty text blocks — drop the whole message
+      if (filtered.length === 0) {
         messagesChanged = true;
         continue;
       }
@@ -221,9 +220,10 @@ export type SseConversionResult =
  * the Vercel AI SDK's @ai-sdk/google-vertex/anthropic parser expects.
  *
  * Returns `{ ok: false, reason }` when conversion cannot be performed:
- * - `'parse-error'`: the input is not valid JSON
- * - `'non-text-content'`: the response contains non-text content blocks
- *   (e.g. tool_use) that cannot be faithfully represented
+ * - `'parse-error'`: the input is not valid JSON or not an Anthropic Messages response
+ * - `'non-text-content'`: the response contains unsupported content blocks
+ *   (e.g. null entries) that cannot be faithfully represented.
+ *   `text` and `tool_use` blocks are handled.
  */
 export function convertAnthropicJsonToSse(jsonStr: string): SseConversionResult {
   let msg: Record<string, unknown>;
@@ -330,8 +330,8 @@ async function vertexAnthropicProvider(
         }
         if (result.reason === 'non-text-content') {
           debug(
-            '[Adapter] vertex-anthropic: proxy returned application/json with non-text content blocks (e.g. tool_use). ' +
-            'JSON→SSE conversion only supports text blocks. Tool calling requires the proxy to return text/event-stream.',
+            '[Adapter] vertex-anthropic: proxy returned application/json with unsupported content blocks. ' +
+            'JSON→SSE conversion supports text and tool_use blocks only.',
           );
         } else {
           debug('[Adapter] vertex-anthropic: proxy returned application/json but body is not valid Anthropic Messages API JSON.');
@@ -1017,8 +1017,6 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
         return { role: 'user' as const, content: m.content };
 
       case 'assistant': {
-        // Always use array form so empty content is handled uniformly.
-        // sanitizeVertexRequestBody will drop messages with empty content arrays.
         const parts: AssistantModelMessage['content'] = [];
         if (m.content && m.content.trim()) {
           parts.push({ type: 'text', text: m.content });
@@ -1034,6 +1032,9 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
               input: typeof args === 'string' ? JSON.parse(args) as Record<string, unknown> : (args && typeof args === 'object' ? args as Record<string, unknown> : {}),
             });
           }
+        }
+        if (parts.length === 0) {
+          return { role: 'assistant' as const, content: m.content || '' };
         }
         return { role: 'assistant' as const, content: parts };
       }

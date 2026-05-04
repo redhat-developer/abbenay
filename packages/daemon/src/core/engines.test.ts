@@ -146,13 +146,6 @@ describe('convertAnthropicJsonToSse', () => {
     expect(convertAnthropicJsonToSse(randomObj)).toEqual({ ok: false, reason: 'parse-error' });
   });
 
-  it('should return parse-error for JSON that is not an Anthropic Messages response', () => {
-    const errorPayload = JSON.stringify({ error: { type: 'server_error', message: 'Internal error' } });
-    expect(convertAnthropicJsonToSse(errorPayload)).toEqual({ ok: false, reason: 'parse-error' });
-    const randomObj = JSON.stringify({ status: 'ok', data: [1, 2, 3] });
-    expect(convertAnthropicJsonToSse(randomObj)).toEqual({ ok: false, reason: 'parse-error' });
-  });
-
   it('should return non-text-content reason for null content blocks', () => {
     const json = JSON.stringify({ id: 'msg', content: [null, { type: 'text', text: 'hi' }] });
     const result = convertAnthropicJsonToSse(json);
@@ -176,8 +169,9 @@ describe('convertAnthropicJsonToSse', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.body).toContain('Hello ');
-    expect(result.body).toContain('');
     expect(result.body).toContain('world');
+    const blockDeltaCount = (result.body.match(/event: content_block_delta/g) || []).length;
+    expect(blockDeltaCount).toBe(2);
   });
 
   it('should preserve message metadata in SSE events', () => {

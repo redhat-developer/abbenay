@@ -540,8 +540,6 @@ export function createWebApp(state: DaemonState): Express {
     // Convert web messages to the format state.chat() expects
     const chatMessages = messages.map((m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }) => ({
       role: m.role || 'user',
-      // Preserve null/undefined as-is so convertMessages can skip empty content
-      // blocks rather than producing empty strings that Vertex Anthropic rejects
       content: m.content ?? '',
       name: m.name || undefined,
       tool_call_id: m.tool_call_id || undefined,
