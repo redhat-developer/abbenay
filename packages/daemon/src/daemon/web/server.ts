@@ -540,7 +540,7 @@ export function createWebApp(state: DaemonState): Express {
     // Convert web messages to the format state.chat() expects
     const chatMessages = messages.map((m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }) => ({
       role: m.role || 'user',
-      content: m.content || '',
+      content: m.content ?? '',
       name: m.name || undefined,
       tool_call_id: m.tool_call_id || undefined,
       tool_calls: m.tool_calls || undefined,

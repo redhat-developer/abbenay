@@ -115,7 +115,7 @@ describe('convertAnthropicJsonToSse', () => {
     expect(result.body.endsWith('\n')).toBe(true);
   });
 
-  it('should return non-text-content reason for tool_use blocks', () => {
+  it('should convert tool_use blocks to SSE events', () => {
     const json = JSON.stringify({
       id: 'msg_456',
       content: [
@@ -124,7 +124,14 @@ describe('convertAnthropicJsonToSse', () => {
       ],
     });
     const result = convertAnthropicJsonToSse(json);
-    expect(result).toEqual({ ok: false, reason: 'non-text-content' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.body).toContain('Let me call a tool');
+    expect(result.body).toContain('"type":"tool_use"');
+    expect(result.body).toContain('"name":"search"');
+    expect(result.body).toContain('"id":"call_1"');
+    expect(result.body).toContain('input_json_delta');
+    expect(result.body).toContain('event: message_stop');
   });
 
   it('should return parse-error reason for invalid JSON', () => {
@@ -153,7 +160,7 @@ describe('convertAnthropicJsonToSse', () => {
     expect(result.body).toContain('event: message_start');
   });
 
-  it('should concatenate multiple text blocks', () => {
+  it('should stream multiple text blocks as separate SSE events', () => {
     const json = JSON.stringify({
       id: 'msg',
       content: [{ type: 'text', text: 'Hello ' }, { type: 'text', text: 'world' }],
@@ -161,7 +168,10 @@ describe('convertAnthropicJsonToSse', () => {
     const result = convertAnthropicJsonToSse(json);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.body).toContain('Hello world');
+    expect(result.body).toContain('Hello ');
+    expect(result.body).toContain('world');
+    const blockDeltaCount = (result.body.match(/event: content_block_delta/g) || []).length;
+    expect(blockDeltaCount).toBe(2);
   });
 
   it('should preserve message metadata in SSE events', () => {
