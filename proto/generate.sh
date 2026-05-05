@@ -26,6 +26,11 @@ generate_python() {
     # Create __init__.py files
     touch "$PYTHON_OUT/abbenay/__init__.py"
     touch "$PYTHON_OUT/abbenay/v1/__init__.py"
+
+    # protoc generates imports relative to the proto package (abbenay.v1) but
+    # the Python package is nested under abbenay_grpc/. Fix the grpc stub import.
+    sed -i 's/^from abbenay\.v1 import/from abbenay_grpc.abbenay.v1 import/' \
+        "$PYTHON_OUT/abbenay/v1/service_pb2_grpc.py"
     
     echo "Python client generated at $PYTHON_OUT"
 }

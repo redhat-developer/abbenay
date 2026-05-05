@@ -47,6 +47,7 @@ interface DiscoverModelsRequestProto {
   engine_id?: string;
   engineId?: string;
   provider_id?: string;
+  providerId?: string;
   api_key?: string;
   apiKey?: string;
   base_url?: string;
@@ -493,7 +494,7 @@ export function createAbbenayService(state: DaemonState) {
       }
       let apiKey = call.request.api_key || call.request.apiKey || undefined;
       let baseUrl = call.request.base_url || call.request.baseUrl || undefined;
-      const providerId = call.request.provider_id;
+      const providerId = call.request.provider_id || call.request.providerId || undefined;
 
       const doDiscover = async () => {
         if (providerId && !apiKey) {
@@ -1420,6 +1421,10 @@ export function createAbbenayService(state: DaemonState) {
             callback({ code: grpc.status.INVALID_ARGUMENT, message: 'provider_id is required' });
             return;
           }
+          if (!isValidVirtualName(providerId)) {
+            callback({ code: grpc.status.INVALID_ARGUMENT, message: 'provider_id must be lowercase alphanumeric with dots, hyphens, or underscores' });
+            return;
+          }
 
           const engine = call.request.engine;
           const apiKey = call.request.api_key || call.request.apiKey;
@@ -1427,6 +1432,11 @@ export function createAbbenayService(state: DaemonState) {
           const baseUrl = call.request.base_url || call.request.baseUrl;
           const target = call.request.target || 'user';
           const workspacePath = call.request.workspace_path || call.request.workspacePath;
+
+          if (target === 'workspace' && !workspacePath) {
+            callback({ code: grpc.status.INVALID_ARGUMENT, message: 'workspace_path is required when target is "workspace"' });
+            return;
+          }
 
           const config: ConfigFile = (target === 'workspace' && workspacePath
             ? loadWorkspaceConfig(workspacePath)
@@ -1485,6 +1495,11 @@ export function createAbbenayService(state: DaemonState) {
 
           const target = call.request.target || 'user';
           const workspacePath = call.request.workspace_path || call.request.workspacePath;
+
+          if (target === 'workspace' && !workspacePath) {
+            callback({ code: grpc.status.INVALID_ARGUMENT, message: 'workspace_path is required when target is "workspace"' });
+            return;
+          }
 
           const config: ConfigFile = (target === 'workspace' && workspacePath
             ? loadWorkspaceConfig(workspacePath)
