@@ -757,14 +757,16 @@ class ListModelsResponse(_message.Message):
     def __init__(self, models: _Optional[_Iterable[_Union[Model, _Mapping]]] = ...) -> None: ...
 
 class DiscoverModelsRequest(_message.Message):
-    __slots__ = ("engine_id", "api_key", "base_url")
+    __slots__ = ("engine_id", "api_key", "base_url", "provider_id")
     ENGINE_ID_FIELD_NUMBER: _ClassVar[int]
     API_KEY_FIELD_NUMBER: _ClassVar[int]
     BASE_URL_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_ID_FIELD_NUMBER: _ClassVar[int]
     engine_id: str
     api_key: str
     base_url: str
-    def __init__(self, engine_id: _Optional[str] = ..., api_key: _Optional[str] = ..., base_url: _Optional[str] = ...) -> None: ...
+    provider_id: str
+    def __init__(self, engine_id: _Optional[str] = ..., api_key: _Optional[str] = ..., base_url: _Optional[str] = ..., provider_id: _Optional[str] = ...) -> None: ...
 
 class DiscoverModelsResponse(_message.Message):
     __slots__ = ("models",)
@@ -939,54 +941,291 @@ class ExecuteToolResponse(_message.Message):
     def __init__(self, content: _Optional[str] = ..., is_error: bool = ...) -> None: ...
 
 class GetConfigRequest(_message.Message):
-    __slots__ = ()
-    def __init__(self) -> None: ...
+    __slots__ = ("location",)
+    LOCATION_FIELD_NUMBER: _ClassVar[int]
+    location: str
+    def __init__(self, location: _Optional[str] = ...) -> None: ...
+
+class GetConfigResponse(_message.Message):
+    __slots__ = ("config", "path")
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    config: Config
+    path: str
+    def __init__(self, config: _Optional[_Union[Config, _Mapping]] = ..., path: _Optional[str] = ...) -> None: ...
 
 class Config(_message.Message):
-    __slots__ = ("default_model", "providers", "session_ttl_days", "log_level")
+    __slots__ = ("providers", "mcp_servers", "tool_policy", "consumers")
     class ProvidersEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
         VALUE_FIELD_NUMBER: _ClassVar[int]
         key: str
-        value: ProviderConfig
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ProviderConfig, _Mapping]] = ...) -> None: ...
-    DEFAULT_MODEL_FIELD_NUMBER: _ClassVar[int]
+        value: FullProviderConfig
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[FullProviderConfig, _Mapping]] = ...) -> None: ...
+    class McpServersEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: McpServerConfigMsg
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[McpServerConfigMsg, _Mapping]] = ...) -> None: ...
+    class ConsumersEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: ConsumerConfigMsg
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ConsumerConfigMsg, _Mapping]] = ...) -> None: ...
     PROVIDERS_FIELD_NUMBER: _ClassVar[int]
-    SESSION_TTL_DAYS_FIELD_NUMBER: _ClassVar[int]
-    LOG_LEVEL_FIELD_NUMBER: _ClassVar[int]
-    default_model: str
-    providers: _containers.MessageMap[str, ProviderConfig]
-    session_ttl_days: int
-    log_level: LogLevel
-    def __init__(self, default_model: _Optional[str] = ..., providers: _Optional[_Mapping[str, ProviderConfig]] = ..., session_ttl_days: _Optional[int] = ..., log_level: _Optional[_Union[LogLevel, str]] = ...) -> None: ...
+    MCP_SERVERS_FIELD_NUMBER: _ClassVar[int]
+    TOOL_POLICY_FIELD_NUMBER: _ClassVar[int]
+    CONSUMERS_FIELD_NUMBER: _ClassVar[int]
+    providers: _containers.MessageMap[str, FullProviderConfig]
+    mcp_servers: _containers.MessageMap[str, McpServerConfigMsg]
+    tool_policy: ToolPolicyConfigMsg
+    consumers: _containers.MessageMap[str, ConsumerConfigMsg]
+    def __init__(self, providers: _Optional[_Mapping[str, FullProviderConfig]] = ..., mcp_servers: _Optional[_Mapping[str, McpServerConfigMsg]] = ..., tool_policy: _Optional[_Union[ToolPolicyConfigMsg, _Mapping]] = ..., consumers: _Optional[_Mapping[str, ConsumerConfigMsg]] = ...) -> None: ...
 
-class ProviderConfig(_message.Message):
-    __slots__ = ("enabled", "api_key_ref", "base_url", "extra")
-    class ExtraEntry(_message.Message):
+class FullProviderConfig(_message.Message):
+    __slots__ = ("engine", "api_key_keychain_name", "api_key_env_var_name", "base_url", "models")
+    class ModelsEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: ModelParamConfig
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ModelParamConfig, _Mapping]] = ...) -> None: ...
+    ENGINE_FIELD_NUMBER: _ClassVar[int]
+    API_KEY_KEYCHAIN_NAME_FIELD_NUMBER: _ClassVar[int]
+    API_KEY_ENV_VAR_NAME_FIELD_NUMBER: _ClassVar[int]
+    BASE_URL_FIELD_NUMBER: _ClassVar[int]
+    MODELS_FIELD_NUMBER: _ClassVar[int]
+    engine: str
+    api_key_keychain_name: str
+    api_key_env_var_name: str
+    base_url: str
+    models: _containers.MessageMap[str, ModelParamConfig]
+    def __init__(self, engine: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ..., api_key_env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., models: _Optional[_Mapping[str, ModelParamConfig]] = ...) -> None: ...
+
+class ModelParamConfig(_message.Message):
+    __slots__ = ("model_id", "policy", "system_prompt", "system_prompt_mode", "temperature", "top_p", "top_k", "max_tokens", "timeout")
+    MODEL_ID_FIELD_NUMBER: _ClassVar[int]
+    POLICY_FIELD_NUMBER: _ClassVar[int]
+    SYSTEM_PROMPT_FIELD_NUMBER: _ClassVar[int]
+    SYSTEM_PROMPT_MODE_FIELD_NUMBER: _ClassVar[int]
+    TEMPERATURE_FIELD_NUMBER: _ClassVar[int]
+    TOP_P_FIELD_NUMBER: _ClassVar[int]
+    TOP_K_FIELD_NUMBER: _ClassVar[int]
+    MAX_TOKENS_FIELD_NUMBER: _ClassVar[int]
+    TIMEOUT_FIELD_NUMBER: _ClassVar[int]
+    model_id: str
+    policy: str
+    system_prompt: str
+    system_prompt_mode: str
+    temperature: float
+    top_p: float
+    top_k: int
+    max_tokens: int
+    timeout: int
+    def __init__(self, model_id: _Optional[str] = ..., policy: _Optional[str] = ..., system_prompt: _Optional[str] = ..., system_prompt_mode: _Optional[str] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., top_k: _Optional[int] = ..., max_tokens: _Optional[int] = ..., timeout: _Optional[int] = ...) -> None: ...
+
+class McpServerConfigMsg(_message.Message):
+    __slots__ = ("command", "args", "url", "transport", "enabled", "headers", "env", "max_response_size")
+    class HeadersEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
         VALUE_FIELD_NUMBER: _ClassVar[int]
         key: str
         value: str
         def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    class EnvEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    COMMAND_FIELD_NUMBER: _ClassVar[int]
+    ARGS_FIELD_NUMBER: _ClassVar[int]
+    URL_FIELD_NUMBER: _ClassVar[int]
+    TRANSPORT_FIELD_NUMBER: _ClassVar[int]
     ENABLED_FIELD_NUMBER: _ClassVar[int]
-    API_KEY_REF_FIELD_NUMBER: _ClassVar[int]
-    BASE_URL_FIELD_NUMBER: _ClassVar[int]
-    EXTRA_FIELD_NUMBER: _ClassVar[int]
+    HEADERS_FIELD_NUMBER: _ClassVar[int]
+    ENV_FIELD_NUMBER: _ClassVar[int]
+    MAX_RESPONSE_SIZE_FIELD_NUMBER: _ClassVar[int]
+    command: str
+    args: _containers.RepeatedScalarFieldContainer[str]
+    url: str
+    transport: str
     enabled: bool
-    api_key_ref: str
-    base_url: str
-    extra: _containers.ScalarMap[str, str]
-    def __init__(self, enabled: bool = ..., api_key_ref: _Optional[str] = ..., base_url: _Optional[str] = ..., extra: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    headers: _containers.ScalarMap[str, str]
+    env: _containers.ScalarMap[str, str]
+    max_response_size: int
+    def __init__(self, command: _Optional[str] = ..., args: _Optional[_Iterable[str]] = ..., url: _Optional[str] = ..., transport: _Optional[str] = ..., enabled: bool = ..., headers: _Optional[_Mapping[str, str]] = ..., env: _Optional[_Mapping[str, str]] = ..., max_response_size: _Optional[int] = ...) -> None: ...
+
+class ToolPolicyConfigMsg(_message.Message):
+    __slots__ = ("max_tool_iterations", "auto_approve", "require_approval", "disabled_tools", "aliases")
+    class AliasesEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    MAX_TOOL_ITERATIONS_FIELD_NUMBER: _ClassVar[int]
+    AUTO_APPROVE_FIELD_NUMBER: _ClassVar[int]
+    REQUIRE_APPROVAL_FIELD_NUMBER: _ClassVar[int]
+    DISABLED_TOOLS_FIELD_NUMBER: _ClassVar[int]
+    ALIASES_FIELD_NUMBER: _ClassVar[int]
+    max_tool_iterations: int
+    auto_approve: _containers.RepeatedScalarFieldContainer[str]
+    require_approval: _containers.RepeatedScalarFieldContainer[str]
+    disabled_tools: _containers.RepeatedScalarFieldContainer[str]
+    aliases: _containers.ScalarMap[str, str]
+    def __init__(self, max_tool_iterations: _Optional[int] = ..., auto_approve: _Optional[_Iterable[str]] = ..., require_approval: _Optional[_Iterable[str]] = ..., disabled_tools: _Optional[_Iterable[str]] = ..., aliases: _Optional[_Mapping[str, str]] = ...) -> None: ...
+
+class ConsumerConfigMsg(_message.Message):
+    __slots__ = ("token_env", "token_keychain", "capabilities")
+    TOKEN_ENV_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_KEYCHAIN_FIELD_NUMBER: _ClassVar[int]
+    CAPABILITIES_FIELD_NUMBER: _ClassVar[int]
+    token_env: str
+    token_keychain: str
+    capabilities: ConsumerCapabilitiesMsg
+    def __init__(self, token_env: _Optional[str] = ..., token_keychain: _Optional[str] = ..., capabilities: _Optional[_Union[ConsumerCapabilitiesMsg, _Mapping]] = ...) -> None: ...
+
+class ConsumerCapabilitiesMsg(_message.Message):
+    __slots__ = ("inline_policy", "mcp_register")
+    INLINE_POLICY_FIELD_NUMBER: _ClassVar[int]
+    MCP_REGISTER_FIELD_NUMBER: _ClassVar[int]
+    inline_policy: bool
+    mcp_register: bool
+    def __init__(self, inline_policy: bool = ..., mcp_register: bool = ...) -> None: ...
 
 class UpdateConfigRequest(_message.Message):
-    __slots__ = ("config", "update_mask")
+    __slots__ = ("config", "location")
     CONFIG_FIELD_NUMBER: _ClassVar[int]
-    UPDATE_MASK_FIELD_NUMBER: _ClassVar[int]
+    LOCATION_FIELD_NUMBER: _ClassVar[int]
     config: Config
-    update_mask: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, config: _Optional[_Union[Config, _Mapping]] = ..., update_mask: _Optional[_Iterable[str]] = ...) -> None: ...
+    location: str
+    def __init__(self, config: _Optional[_Union[Config, _Mapping]] = ..., location: _Optional[str] = ...) -> None: ...
+
+class ConfigureProviderRequest(_message.Message):
+    __slots__ = ("provider_id", "engine", "api_key", "env_var_name", "base_url", "target", "workspace_path")
+    PROVIDER_ID_FIELD_NUMBER: _ClassVar[int]
+    ENGINE_FIELD_NUMBER: _ClassVar[int]
+    API_KEY_FIELD_NUMBER: _ClassVar[int]
+    ENV_VAR_NAME_FIELD_NUMBER: _ClassVar[int]
+    BASE_URL_FIELD_NUMBER: _ClassVar[int]
+    TARGET_FIELD_NUMBER: _ClassVar[int]
+    WORKSPACE_PATH_FIELD_NUMBER: _ClassVar[int]
+    provider_id: str
+    engine: str
+    api_key: str
+    env_var_name: str
+    base_url: str
+    target: str
+    workspace_path: str
+    def __init__(self, provider_id: _Optional[str] = ..., engine: _Optional[str] = ..., api_key: _Optional[str] = ..., env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., target: _Optional[str] = ..., workspace_path: _Optional[str] = ...) -> None: ...
+
+class ConfigureProviderResponse(_message.Message):
+    __slots__ = ("success",)
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    def __init__(self, success: bool = ...) -> None: ...
+
+class RemoveProviderRequest(_message.Message):
+    __slots__ = ("provider_id", "target", "workspace_path")
+    PROVIDER_ID_FIELD_NUMBER: _ClassVar[int]
+    TARGET_FIELD_NUMBER: _ClassVar[int]
+    WORKSPACE_PATH_FIELD_NUMBER: _ClassVar[int]
+    provider_id: str
+    target: str
+    workspace_path: str
+    def __init__(self, provider_id: _Optional[str] = ..., target: _Optional[str] = ..., workspace_path: _Optional[str] = ...) -> None: ...
+
+class GetProviderTemplatesRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class GetProviderTemplatesResponse(_message.Message):
+    __slots__ = ("templates",)
+    TEMPLATES_FIELD_NUMBER: _ClassVar[int]
+    templates: _containers.RepeatedCompositeFieldContainer[ProviderTemplate]
+    def __init__(self, templates: _Optional[_Iterable[_Union[ProviderTemplate, _Mapping]]] = ...) -> None: ...
+
+class ProviderTemplate(_message.Message):
+    __slots__ = ("engine", "suggested_name", "default_base_url", "requires_key")
+    ENGINE_FIELD_NUMBER: _ClassVar[int]
+    SUGGESTED_NAME_FIELD_NUMBER: _ClassVar[int]
+    DEFAULT_BASE_URL_FIELD_NUMBER: _ClassVar[int]
+    REQUIRES_KEY_FIELD_NUMBER: _ClassVar[int]
+    engine: str
+    suggested_name: str
+    default_base_url: str
+    requires_key: bool
+    def __init__(self, engine: _Optional[str] = ..., suggested_name: _Optional[str] = ..., default_base_url: _Optional[str] = ..., requires_key: bool = ...) -> None: ...
+
+class GetKeyStatusRequest(_message.Message):
+    __slots__ = ("source", "name")
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    source: str
+    name: str
+    def __init__(self, source: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
+
+class GetKeyStatusResponse(_message.Message):
+    __slots__ = ("exists",)
+    EXISTS_FIELD_NUMBER: _ClassVar[int]
+    exists: bool
+    def __init__(self, exists: bool = ...) -> None: ...
+
+class ListMcpServerConfigsRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ListMcpServerConfigsResponse(_message.Message):
+    __slots__ = ("mcp_servers",)
+    MCP_SERVERS_FIELD_NUMBER: _ClassVar[int]
+    mcp_servers: _containers.RepeatedCompositeFieldContainer[McpServerStatusEntry]
+    def __init__(self, mcp_servers: _Optional[_Iterable[_Union[McpServerStatusEntry, _Mapping]]] = ...) -> None: ...
+
+class McpServerStatusEntry(_message.Message):
+    __slots__ = ("id", "transport", "enabled", "status", "tool_count", "error")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    TRANSPORT_FIELD_NUMBER: _ClassVar[int]
+    ENABLED_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    TOOL_COUNT_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    transport: str
+    enabled: bool
+    status: str
+    tool_count: int
+    error: str
+    def __init__(self, id: _Optional[str] = ..., transport: _Optional[str] = ..., enabled: bool = ..., status: _Optional[str] = ..., tool_count: _Optional[int] = ..., error: _Optional[str] = ...) -> None: ...
+
+class ReconnectMcpServerRequest(_message.Message):
+    __slots__ = ("server_id",)
+    SERVER_ID_FIELD_NUMBER: _ClassVar[int]
+    server_id: str
+    def __init__(self, server_id: _Optional[str] = ...) -> None: ...
+
+class CreatePolicyRequest(_message.Message):
+    __slots__ = ("name", "config")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    config: PolicyConfig
+    def __init__(self, name: _Optional[str] = ..., config: _Optional[_Union[PolicyConfig, _Mapping]] = ...) -> None: ...
+
+class DeletePolicyRequest(_message.Message):
+    __slots__ = ("name",)
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    def __init__(self, name: _Optional[str] = ...) -> None: ...
 
 class GetSecretRequest(_message.Message):
     __slots__ = ("key",)

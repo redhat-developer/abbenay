@@ -11,10 +11,15 @@ import {
   isWebServerRunning,
   getWebServerPort,
 } from '../web/server.js';
-import { listAllPolicies, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
+import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig as PolicyCfg } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
-import { loadConfig, type ConfigFile, type McpServerConfig } from '../../core/config.js';
+import {
+  loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig,
+  getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName,
+  type ConfigFile, type ProviderConfig as DaemonProviderConfig, type McpServerConfig,
+} from '../../core/config.js';
 import { DEFAULT_WEB_PORT } from '../../core/constants.js';
+import { getProviderTemplates } from '../../core/engines.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -187,11 +192,107 @@ interface VSCodeResponseProto {
   [key: string]: unknown;
 }
 
-interface ProviderConfigOutput {
-  enabled: boolean;
-  engine: string;
-  api_key_ref: string;
-  base_url: string;
+interface GetConfigRequestProto {
+  location?: string;
+}
+
+interface UpdateConfigRequestProto {
+  config?: ConfigProto;
+  location?: string;
+}
+
+interface ConfigProto {
+  providers?: Record<string, FullProviderConfigProto>;
+  mcp_servers?: Record<string, McpServerConfigMsgProto>;
+  tool_policy?: ToolPolicyConfigMsgProto;
+  consumers?: Record<string, ConsumerConfigMsgProto>;
+}
+
+interface FullProviderConfigProto {
+  engine?: string;
+  api_key_keychain_name?: string;
+  api_key_env_var_name?: string;
+  base_url?: string;
+  models?: Record<string, ModelParamConfigProto>;
+}
+
+interface ModelParamConfigProto {
+  model_id?: string;
+  policy?: string;
+  system_prompt?: string;
+  system_prompt_mode?: string;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  max_tokens?: number;
+  timeout?: number;
+}
+
+interface McpServerConfigMsgProto {
+  command?: string;
+  args?: string[];
+  url?: string;
+  transport?: string;
+  enabled?: boolean;
+  headers?: Record<string, string>;
+  env?: Record<string, string>;
+  max_response_size?: number;
+}
+
+interface ToolPolicyConfigMsgProto {
+  max_tool_iterations?: number;
+  auto_approve?: string[];
+  require_approval?: string[];
+  disabled_tools?: string[];
+  aliases?: Record<string, string>;
+}
+
+interface ConsumerConfigMsgProto {
+  token_env?: string;
+  token_keychain?: string;
+  capabilities?: { inline_policy?: boolean; mcp_register?: boolean };
+}
+
+interface ConfigureProviderRequestProto {
+  provider_id?: string;
+  providerId?: string;
+  engine?: string;
+  api_key?: string;
+  apiKey?: string;
+  env_var_name?: string;
+  envVarName?: string;
+  base_url?: string;
+  baseUrl?: string;
+  target?: string;
+  workspace_path?: string;
+  workspacePath?: string;
+}
+
+interface RemoveProviderRequestProto {
+  provider_id?: string;
+  providerId?: string;
+  target?: string;
+  workspace_path?: string;
+  workspacePath?: string;
+}
+
+interface GetKeyStatusRequestProto {
+  source?: string;
+  name?: string;
+}
+
+interface ReconnectMcpServerRequestProto {
+  server_id?: string;
+  serverId?: string;
+}
+
+interface CreatePolicyRequestProto {
+  name?: string;
+  config?: PolicyConfigProto;
+}
+
+interface DeletePolicyRequestProto {
+  name?: string;
 }
 
 interface PolicyProtoOutput {
@@ -382,7 +483,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<DiscoverModelsRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
-      const engineId = call.request.engine_id || call.request.engineId || call.request.provider_id || '';
+      const engineId = call.request.engine_id || call.request.engineId || '';
       if (!engineId) {
         callback({
           code: grpc.status.INVALID_ARGUMENT,
@@ -390,9 +491,20 @@ export function createAbbenayService(state: DaemonState) {
         });
         return;
       }
-      const apiKey = call.request.api_key || call.request.apiKey || undefined;
-      const baseUrl = call.request.base_url || call.request.baseUrl || undefined;
-      state.discoverModels(engineId, apiKey, baseUrl).then((models) => {
+      let apiKey = call.request.api_key || call.request.apiKey || undefined;
+      let baseUrl = call.request.base_url || call.request.baseUrl || undefined;
+      const providerId = call.request.provider_id;
+
+      const doDiscover = async () => {
+        if (providerId && !apiKey) {
+          const resolved = await state.resolveProviderCredentials(providerId);
+          if (resolved.apiKey) apiKey = resolved.apiKey;
+          if (resolved.baseUrl && !baseUrl) baseUrl = resolved.baseUrl;
+        }
+        return state.discoverModels(engineId, apiKey, baseUrl);
+      };
+
+      doDiscover().then((models) => {
         callback(null, {
           models: models.map((m) => ({
             id: m.id,
@@ -743,50 +855,68 @@ export function createAbbenayService(state: DaemonState) {
       });
     },
     
-    /**
-     * Get current configuration
-     */
     GetConfig(
-      call: grpc.ServerUnaryCall<object, object>,
+      call: grpc.ServerUnaryCall<GetConfigRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
-      const config = state.loadProviderConfig();
-      
-      const providers: Record<string, ProviderConfigOutput> = {};
-      for (const [pid, pcfg] of Object.entries(config)) {
-        providers[pid] = {
-          enabled: true,
-          engine: pcfg.engine || pid,
-          api_key_ref: pcfg.api_key_keychain_name || pcfg.api_key_env_var_name || '',
-          base_url: pcfg.base_url || '',
-        };
+      try {
+        const location = call.request.location || 'user';
+        let config: ConfigFile;
+        let configPath: string;
+
+        if (location === 'user') {
+          config = loadConfig() || { providers: {} };
+          configPath = getUserConfigPath();
+        } else {
+          config = loadWorkspaceConfig(location) || { providers: {} };
+          configPath = getWorkspaceConfigPath(location);
+        }
+
+        callback(null, { config: configFileToProto(config), path: configPath });
+      } catch (error: unknown) {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
-      
-      callback(null, {
-        default_model: '',
-        providers,
-        session_ttl_days: 0,
-        log_level: 3, // INFO
-      });
     },
-    
-    /**
-     * Update configuration (not fully implemented yet)
-     */
+
     UpdateConfig(
-      call: grpc.ServerUnaryCall<object, object>,
+      call: grpc.ServerUnaryCall<UpdateConfigRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
-      // For now, just return the existing config
-      const _config = state.loadProviderConfig();
-      callback(null, {
-        default_model: '',
-        providers: {},
-        session_ttl_days: 0,
-        log_level: 3,
-      });
-      // Notify VS Code that models may have changed
-      state.notifyModelsChanged('config_changed');
+      try {
+        const location = call.request.location || 'user';
+        const protoConfig = call.request.config;
+        if (!protoConfig) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: 'config is required' });
+          return;
+        }
+
+        const configFile = protoToConfigFile(protoConfig);
+        let savedPath: string;
+
+        if (location === 'user') {
+          saveConfig(configFile);
+          savedPath = getUserConfigPath();
+        } else {
+          saveWorkspaceConfig(location, configFile);
+          savedPath = getWorkspaceConfigPath(location);
+        }
+
+        state.notifyModelsChanged('config_changed');
+        state.refreshMcpConnections().catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('[gRPC] MCP refresh after config change failed:', msg);
+        });
+
+        callback(null, { config: configFileToProto(configFile), path: savedPath });
+      } catch (error: unknown) {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
     
     /**
@@ -1276,6 +1406,298 @@ export function createAbbenayService(state: DaemonState) {
         }
       })();
     },
+
+    // ─── Provider CRUD ──────────────────────────────────────────────────────
+
+    ConfigureProvider(
+      call: grpc.ServerUnaryCall<ConfigureProviderRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      (async () => {
+        try {
+          const providerId = call.request.provider_id || call.request.providerId || '';
+          if (!providerId) {
+            callback({ code: grpc.status.INVALID_ARGUMENT, message: 'provider_id is required' });
+            return;
+          }
+
+          const engine = call.request.engine;
+          const apiKey = call.request.api_key || call.request.apiKey;
+          const envVarName = call.request.env_var_name || call.request.envVarName;
+          const baseUrl = call.request.base_url || call.request.baseUrl;
+          const target = call.request.target || 'user';
+          const workspacePath = call.request.workspace_path || call.request.workspacePath;
+
+          const config: ConfigFile = (target === 'workspace' && workspacePath
+            ? loadWorkspaceConfig(workspacePath)
+            : loadConfig()) || { providers: {} };
+
+          if (!config.providers) config.providers = {};
+
+          const existing: Partial<DaemonProviderConfig> = config.providers[providerId]
+            ? { ...config.providers[providerId] }
+            : {};
+          if (engine) existing.engine = engine;
+          config.providers[providerId] = existing as DaemonProviderConfig;
+
+          if (apiKey) {
+            const keychainName = `${providerId.toUpperCase()}_API_KEY`;
+            await state.secretStore.set(keychainName, apiKey);
+            config.providers[providerId].api_key_keychain_name = keychainName;
+            delete config.providers[providerId].api_key_env_var_name;
+          } else if (envVarName) {
+            config.providers[providerId].api_key_env_var_name = envVarName;
+            delete config.providers[providerId].api_key_keychain_name;
+          }
+
+          if (baseUrl) {
+            config.providers[providerId].base_url = baseUrl;
+          }
+
+          if (target === 'workspace' && workspacePath) {
+            saveWorkspaceConfig(workspacePath, config);
+          } else {
+            saveConfig(config);
+          }
+
+          state.notifyModelsChanged('provider_configured');
+          callback(null, { success: true });
+        } catch (error: unknown) {
+          callback({
+            code: grpc.status.INTERNAL,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+    },
+
+    RemoveProvider(
+      call: grpc.ServerUnaryCall<RemoveProviderRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      (async () => {
+        try {
+          const providerId = call.request.provider_id || call.request.providerId || '';
+          if (!providerId) {
+            callback({ code: grpc.status.INVALID_ARGUMENT, message: 'provider_id is required' });
+            return;
+          }
+
+          const target = call.request.target || 'user';
+          const workspacePath = call.request.workspace_path || call.request.workspacePath;
+
+          const config: ConfigFile = (target === 'workspace' && workspacePath
+            ? loadWorkspaceConfig(workspacePath)
+            : loadConfig()) || { providers: {} };
+
+          if (config.providers && config.providers[providerId]) {
+            const keychainName = config.providers[providerId].api_key_keychain_name;
+            if (keychainName) {
+              try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
+            }
+            delete config.providers[providerId];
+
+            if (target === 'workspace' && workspacePath) {
+              saveWorkspaceConfig(workspacePath, config);
+            } else {
+              saveConfig(config);
+            }
+          }
+
+          state.notifyModelsChanged('provider_removed');
+          callback(null, {});
+        } catch (error: unknown) {
+          callback({
+            code: grpc.status.INTERNAL,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+    },
+
+    GetProviderTemplates(
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      const templates = getProviderTemplates();
+      callback(null, {
+        templates: templates.map(t => ({
+          engine: t.engine,
+          suggested_name: t.suggestedName,
+          default_base_url: t.defaultBaseUrl,
+          requires_key: t.requiresKey,
+        })),
+      });
+    },
+
+    // ─── Key status ─────────────────────────────────────────────────────────
+
+    GetKeyStatus(
+      call: grpc.ServerUnaryCall<GetKeyStatusRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      const source = call.request.source || '';
+      const name = call.request.name || '';
+
+      if (!source || !name) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'source and name are required' });
+        return;
+      }
+
+      (async () => {
+        try {
+          let exists = false;
+          if (source === 'keychain') {
+            exists = await state.secretStore.has(name);
+          } else if (source === 'env') {
+            exists = !!process.env[name];
+          }
+          callback(null, { exists });
+        } catch (error: unknown) {
+          callback({
+            code: grpc.status.INTERNAL,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+    },
+
+    // ─── MCP Server Config ──────────────────────────────────────────────────
+
+    ListMcpServerConfigs(
+      call: grpc.ServerUnaryCall<object, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      try {
+        const statuses = state.mcpClientPool.getStatuses();
+        const config = loadConfig();
+        const mcpCfg = config.mcp_servers || {};
+        const statusMap = new Map(statuses.map(s => [s.id, s]));
+
+        const result = [];
+        for (const [id, cfg] of Object.entries(mcpCfg)) {
+          const st = statusMap.get(id);
+          result.push({
+            id,
+            transport: cfg.transport || 'stdio',
+            enabled: cfg.enabled !== false,
+            status: st ? (st.connected ? 'connected' : (st.error ? 'error' : 'disconnected')) : (cfg.enabled === false ? 'disabled' : 'not started'),
+            tool_count: st?.toolCount || 0,
+            error: st?.error || undefined,
+          });
+        }
+        for (const st of statuses) {
+          if (!mcpCfg[st.id]) {
+            result.push({
+              id: st.id,
+              transport: st.config?.transport || 'stdio',
+              enabled: st.config?.enabled !== false,
+              status: st.connected ? 'connected' : (st.error ? 'error' : 'disconnected'),
+              tool_count: st.toolCount || 0,
+              error: st.error || undefined,
+            });
+          }
+        }
+
+        callback(null, { mcp_servers: result });
+      } catch (error: unknown) {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+
+    ReconnectMcpServer(
+      call: grpc.ServerUnaryCall<ReconnectMcpServerRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      const serverId = call.request.server_id || call.request.serverId || '';
+      if (!serverId) {
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: 'server_id is required' });
+        return;
+      }
+
+      state.mcpClientPool.reconnect(serverId).then(() => {
+        callback(null, {});
+      }).catch((error: unknown) => {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+    },
+
+    // ─── Policy CRUD ────────────────────────────────────────────────────────
+
+    CreatePolicy(
+      call: grpc.ServerUnaryCall<CreatePolicyRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      try {
+        const name = call.request.name || '';
+        const protoConfig = call.request.config;
+
+        if (!name) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: 'Policy name is required' });
+          return;
+        }
+        if (!isValidVirtualName(name)) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: 'Policy name must be lowercase alphanumeric with dots, hyphens, or underscores' });
+          return;
+        }
+        if (BUILTIN_POLICY_NAMES.includes(name)) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: `Cannot overwrite built-in policy "${name}". Duplicate it with a different name.` });
+          return;
+        }
+        if (!protoConfig) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: 'Policy config is required' });
+          return;
+        }
+
+        const policyCfg = protoToPolicyConfig(protoConfig);
+        const custom = loadCustomPolicies();
+        custom[name] = policyCfg;
+        saveCustomPolicies(custom);
+        callback(null, {});
+      } catch (error: unknown) {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+
+    DeletePolicy(
+      call: grpc.ServerUnaryCall<DeletePolicyRequestProto, object>,
+      callback: grpc.sendUnaryData<object>
+    ): void {
+      try {
+        const name = call.request.name || '';
+        if (!name) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: 'Policy name is required' });
+          return;
+        }
+        if (BUILTIN_POLICY_NAMES.includes(name)) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: `Cannot delete built-in policy "${name}"` });
+          return;
+        }
+
+        const custom = loadCustomPolicies();
+        if (!(name in custom)) {
+          callback({ code: grpc.status.NOT_FOUND, message: `Custom policy "${name}" not found` });
+          return;
+        }
+        delete custom[name];
+        saveCustomPolicies(custom);
+        callback(null, {});
+      } catch (error: unknown) {
+        callback({
+          code: grpc.status.INTERNAL,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
   };
 }
 
@@ -1347,6 +1769,157 @@ function policyToProto(cfg: PolicyCfg): PolicyProtoOutput {
       timeout: cfg.reliability.timeout,
     } : undefined,
   };
+}
+
+// ── ConfigFile ↔ proto conversion ──────────────────────────────────────
+
+/** @internal Exported for testing. */
+export function configFileToProto(config: ConfigFile): ConfigProto {
+  const providers: Record<string, FullProviderConfigProto> = {};
+  if (config.providers) {
+    for (const [pid, pcfg] of Object.entries(config.providers)) {
+      const models: Record<string, ModelParamConfigProto> = {};
+      if (pcfg.models) {
+        for (const [mid, mcfg] of Object.entries(pcfg.models)) {
+          models[mid] = {
+            model_id: mcfg.model_id,
+            policy: mcfg.policy,
+            system_prompt: mcfg.system_prompt,
+            system_prompt_mode: mcfg.system_prompt_mode,
+            temperature: mcfg.temperature,
+            top_p: mcfg.top_p,
+            top_k: mcfg.top_k,
+            max_tokens: mcfg.max_tokens,
+            timeout: mcfg.timeout,
+          };
+        }
+      }
+      providers[pid] = {
+        engine: pcfg.engine || pid,
+        api_key_keychain_name: pcfg.api_key_keychain_name,
+        api_key_env_var_name: pcfg.api_key_env_var_name,
+        base_url: pcfg.base_url,
+        models,
+      };
+    }
+  }
+
+  const mcpServers: Record<string, McpServerConfigMsgProto> = {};
+  if (config.mcp_servers) {
+    for (const [id, cfg] of Object.entries(config.mcp_servers)) {
+      mcpServers[id] = {
+        command: cfg.command,
+        args: cfg.args,
+        url: cfg.url,
+        transport: cfg.transport,
+        enabled: cfg.enabled,
+        headers: cfg.headers,
+        env: cfg.env,
+        max_response_size: cfg.max_response_size,
+      };
+    }
+  }
+
+  const toolPolicy: ToolPolicyConfigMsgProto | undefined = config.tool_policy ? {
+    max_tool_iterations: config.tool_policy.max_tool_iterations,
+    auto_approve: config.tool_policy.auto_approve || [],
+    require_approval: config.tool_policy.require_approval || [],
+    disabled_tools: config.tool_policy.disabled_tools || [],
+    aliases: config.tool_policy.aliases || {},
+  } : undefined;
+
+  const consumers: Record<string, ConsumerConfigMsgProto> = {};
+  if (config.consumers) {
+    for (const [name, ccfg] of Object.entries(config.consumers)) {
+      consumers[name] = {
+        token_env: ccfg.token_env,
+        token_keychain: ccfg.token_keychain,
+        capabilities: {
+          inline_policy: ccfg.capabilities?.inline_policy,
+          mcp_register: ccfg.capabilities?.mcp_register,
+        },
+      };
+    }
+  }
+
+  return { providers, mcp_servers: mcpServers, tool_policy: toolPolicy, consumers };
+}
+
+/** @internal Exported for testing. */
+export function protoToConfigFile(proto: ConfigProto): ConfigFile {
+  const config: ConfigFile = {};
+
+  if (proto.providers) {
+    config.providers = {};
+    for (const [pid, pcfg] of Object.entries(proto.providers)) {
+      const models: Record<string, import('../../core/config.js').ModelConfig> = {};
+      if (pcfg.models) {
+        for (const [mid, mcfg] of Object.entries(pcfg.models)) {
+          models[mid] = {
+            model_id: mcfg.model_id || undefined,
+            policy: mcfg.policy || undefined,
+            system_prompt: mcfg.system_prompt || undefined,
+            system_prompt_mode: mcfg.system_prompt_mode as 'prepend' | 'replace' | undefined,
+            temperature: mcfg.temperature,
+            top_p: mcfg.top_p,
+            top_k: mcfg.top_k,
+            max_tokens: mcfg.max_tokens,
+            timeout: mcfg.timeout,
+          };
+        }
+      }
+      config.providers[pid] = {
+        engine: pcfg.engine || pid,
+        api_key_keychain_name: pcfg.api_key_keychain_name || undefined,
+        api_key_env_var_name: pcfg.api_key_env_var_name || undefined,
+        base_url: pcfg.base_url || undefined,
+        models: Object.keys(models).length > 0 ? models : undefined,
+      };
+    }
+  }
+
+  if (proto.mcp_servers) {
+    config.mcp_servers = {};
+    for (const [id, cfg] of Object.entries(proto.mcp_servers)) {
+      config.mcp_servers[id] = {
+        command: cfg.command || undefined,
+        args: cfg.args || undefined,
+        url: cfg.url || undefined,
+        transport: (cfg.transport || 'stdio') as 'stdio' | 'http' | 'sse',
+        enabled: cfg.enabled !== false,
+        headers: cfg.headers || undefined,
+        env: cfg.env || undefined,
+        max_response_size: cfg.max_response_size,
+      };
+    }
+  }
+
+  if (proto.tool_policy) {
+    const tp = proto.tool_policy;
+    config.tool_policy = {
+      max_tool_iterations: tp.max_tool_iterations,
+      auto_approve: tp.auto_approve?.length ? tp.auto_approve : undefined,
+      require_approval: tp.require_approval?.length ? tp.require_approval : undefined,
+      disabled_tools: tp.disabled_tools?.length ? tp.disabled_tools : undefined,
+      aliases: tp.aliases && Object.keys(tp.aliases).length > 0 ? tp.aliases : undefined,
+    };
+  }
+
+  if (proto.consumers) {
+    config.consumers = {};
+    for (const [name, ccfg] of Object.entries(proto.consumers)) {
+      config.consumers[name] = {
+        token_env: ccfg.token_env || undefined,
+        token_keychain: ccfg.token_keychain || undefined,
+        capabilities: {
+          inline_policy: ccfg.capabilities?.inline_policy,
+          mcp_register: ccfg.capabilities?.mcp_register,
+        },
+      };
+    }
+  }
+
+  return config;
 }
 
 // ── Inline policy: proto → internal conversion with validation ─────────

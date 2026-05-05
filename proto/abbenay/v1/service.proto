@@ -300,11 +300,30 @@ service Abbenay {
   rpc ListEngines(ListEnginesRequest) returns (ListEnginesResponse);
   
   //
+  // Providers (CRUD)
+  //
+
+  // Configure a provider (add or update, with optional API key storage)
+  rpc ConfigureProvider(ConfigureProviderRequest) returns (ConfigureProviderResponse);
+
+  // Remove a provider configuration
+  rpc RemoveProvider(RemoveProviderRequest) returns (Empty);
+
+  // Get predefined provider templates for the add-provider wizard
+  rpc GetProviderTemplates(GetProviderTemplatesRequest) returns (GetProviderTemplatesResponse);
+
+  //
   // Policies
   //
   
   // List all policies (built-in + custom)
   rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+
+  // Create or update a custom policy
+  rpc CreatePolicy(CreatePolicyRequest) returns (Empty);
+
+  // Delete a custom policy
+  rpc DeletePolicy(DeletePolicyRequest) returns (Empty);
   
   //
   // Tools
@@ -320,11 +339,20 @@ service Abbenay {
   // Configuration
   //
   
-  // Get current configuration
-  rpc GetConfig(GetConfigRequest) returns (Config);
+  // Get current configuration (user or workspace level)
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
   
-  // Update configuration
-  rpc UpdateConfig(UpdateConfigRequest) returns (Config);
+  // Update configuration (user or workspace level)
+  rpc UpdateConfig(UpdateConfigRequest) returns (GetConfigResponse);
+
+  // Check if a specific key is available (keychain or env)
+  rpc GetKeyStatus(GetKeyStatusRequest) returns (GetKeyStatusResponse);
+
+  // List configured MCP servers with connection status
+  rpc ListMcpServerConfigs(ListMcpServerConfigsRequest) returns (ListMcpServerConfigsResponse);
+
+  // Reconnect a failed MCP server
+  rpc ReconnectMcpServer(ReconnectMcpServerRequest) returns (Empty);
   
   //
   // Secrets
@@ -679,6 +707,7 @@ message DiscoverModelsRequest {
   string engine_id = 1;               // Which engine to discover models for (was provider_id)
   optional string api_key = 2;        // API key for authenticated discovery
   optional string base_url = 3;       // Custom base URL for discovery
+  optional string provider_id = 4;    // Resolve credentials from this provider's config
 }
 
 message DiscoverModelsResponse {
@@ -806,20 +835,70 @@ message ExecuteToolResponse {
 // Configuration
 //
 
-message GetConfigRequest {}
-
-message Config {
-  string default_model = 1;
-  map<string, ProviderConfig> providers = 2;
-  int32 session_ttl_days = 3;
-  LogLevel log_level = 4;
+message GetConfigRequest {
+  optional string location = 1;         // "user" (default) or workspace path
 }
 
-message ProviderConfig {
-  bool enabled = 1;
-  optional string api_key_ref = 2;      // Reference to secret
-  optional string base_url = 3;
-  map<string, string> extra = 4;
+message GetConfigResponse {
+  Config config = 1;
+  string path = 2;                      // Filesystem path of the config file
+}
+
+message Config {
+  map<string, FullProviderConfig> providers = 1;
+  map<string, McpServerConfigMsg> mcp_servers = 2;
+  ToolPolicyConfigMsg tool_policy = 3;
+  map<string, ConsumerConfigMsg> consumers = 4;
+}
+
+message FullProviderConfig {
+  string engine = 1;
+  optional string api_key_keychain_name = 2;
+  optional string api_key_env_var_name = 3;
+  optional string base_url = 4;
+  map<string, ModelParamConfig> models = 5;
+}
+
+message ModelParamConfig {
+  optional string model_id = 1;         // Actual engine model ID (if key is virtual name)
+  optional string policy = 2;           // Named policy for behavioral defaults
+  optional string system_prompt = 3;
+  optional string system_prompt_mode = 4; // "prepend" | "replace"
+  optional float temperature = 5;
+  optional float top_p = 6;
+  optional int32 top_k = 7;
+  optional int32 max_tokens = 8;
+  optional int32 timeout = 9;           // Request timeout in ms
+}
+
+message McpServerConfigMsg {
+  optional string command = 1;          // Command for stdio transport
+  repeated string args = 2;            // Arguments for the command
+  optional string url = 3;             // URL for HTTP/SSE transport
+  string transport = 4;                // "stdio" | "http" | "sse"
+  bool enabled = 5;
+  map<string, string> headers = 6;     // HTTP headers for authenticated endpoints
+  map<string, string> env = 7;         // Environment variables for stdio subprocess
+  optional int32 max_response_size = 8; // Max tool response size in bytes
+}
+
+message ToolPolicyConfigMsg {
+  optional int32 max_tool_iterations = 1;
+  repeated string auto_approve = 2;     // Tier 1: execute without confirmation (globs)
+  repeated string require_approval = 3; // Tier 2: pause and ask user (globs)
+  repeated string disabled_tools = 4;   // Tier 3: never register with LLM (globs)
+  map<string, string> aliases = 5;      // Canonical aliases: LLM name -> namespaced name
+}
+
+message ConsumerConfigMsg {
+  optional string token_env = 1;        // Env var holding the consumer's token
+  optional string token_keychain = 2;   // Keychain key for the consumer's token
+  ConsumerCapabilitiesMsg capabilities = 3;
+}
+
+message ConsumerCapabilitiesMsg {
+  optional bool inline_policy = 1;      // Allow inline PolicyConfig on ChatRequest
+  optional bool mcp_register = 2;       // Allow dynamic MCP server registration
 }
 
 enum LogLevel {
@@ -833,7 +912,93 @@ enum LogLevel {
 
 message UpdateConfigRequest {
   Config config = 1;
-  repeated string update_mask = 2;      // Which fields to update
+  optional string location = 2;         // "user" (default) or workspace path
+}
+
+//
+// Provider CRUD
+//
+
+message ConfigureProviderRequest {
+  string provider_id = 1;              // Virtual provider name
+  optional string engine = 2;          // Engine type (e.g., "openai")
+  optional string api_key = 3;         // Raw API key (daemon stores in keychain)
+  optional string env_var_name = 4;    // Alternative: use env var for API key
+  optional string base_url = 5;        // Custom API base URL
+  optional string target = 6;          // "user" (default) or "workspace"
+  optional string workspace_path = 7;  // Required if target is "workspace"
+}
+
+message ConfigureProviderResponse {
+  bool success = 1;
+}
+
+message RemoveProviderRequest {
+  string provider_id = 1;
+  optional string target = 2;          // "user" (default) or "workspace"
+  optional string workspace_path = 3;  // Required if target is "workspace"
+}
+
+message GetProviderTemplatesRequest {}
+
+message GetProviderTemplatesResponse {
+  repeated ProviderTemplate templates = 1;
+}
+
+message ProviderTemplate {
+  string engine = 1;
+  string suggested_name = 2;
+  optional string default_base_url = 3;
+  bool requires_key = 4;
+}
+
+//
+// Key status
+//
+
+message GetKeyStatusRequest {
+  string source = 1;                   // "keychain" | "env"
+  string name = 2;                     // Key or env var name
+}
+
+message GetKeyStatusResponse {
+  bool exists = 1;
+}
+
+//
+// MCP Server Config (static config, not dynamic registration)
+//
+
+message ListMcpServerConfigsRequest {}
+
+message ListMcpServerConfigsResponse {
+  repeated McpServerStatusEntry mcp_servers = 1;
+}
+
+message McpServerStatusEntry {
+  string id = 1;
+  string transport = 2;
+  bool enabled = 3;
+  string status = 4;                   // "connected" | "error" | "disconnected" | "disabled" | "not started"
+  int32 tool_count = 5;
+  optional string error = 6;
+}
+
+message ReconnectMcpServerRequest {
+  string server_id = 1;
+}
+
+//
+// Policy CRUD
+//
+
+message CreatePolicyRequest {
+  string name = 1;
+  PolicyConfig config = 2;
+}
+
+message DeletePolicyRequest {
+  string name = 1;
 }
 
 //
