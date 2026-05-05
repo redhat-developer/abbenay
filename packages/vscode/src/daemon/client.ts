@@ -468,11 +468,116 @@ export class DaemonClient {
     }
 
     /**
-     * Get configuration
+     * Get configuration (user or workspace level)
      */
-    async getConfig(): Promise<proto.Config> {
+    async getConfig(location?: string): Promise<proto.GetConfigResponse> {
         const client = this.getClient();
-        return client.getConfig({});
+        return client.getConfig({ location });
+    }
+
+    /**
+     * Update configuration (user or workspace level)
+     */
+    async updateConfig(config: proto.Config, location?: string): Promise<proto.GetConfigResponse> {
+        const client = this.getClient();
+        return client.updateConfig({ config, location });
+    }
+
+    /**
+     * Configure a provider (add or update, with optional API key storage)
+     */
+    async configureProvider(params: {
+        providerId: string;
+        engine?: string;
+        apiKey?: string;
+        envVarName?: string;
+        baseUrl?: string;
+        target?: string;
+        workspacePath?: string;
+    }): Promise<proto.ConfigureProviderResponse> {
+        const client = this.getClient();
+        return client.configureProvider({
+            providerId: params.providerId,
+            engine: params.engine,
+            apiKey: params.apiKey,
+            envVarName: params.envVarName,
+            baseUrl: params.baseUrl,
+            target: params.target,
+            workspacePath: params.workspacePath,
+        });
+    }
+
+    /**
+     * Remove a provider configuration
+     */
+    async removeProvider(providerId: string, target?: string, workspacePath?: string): Promise<void> {
+        const client = this.getClient();
+        await client.removeProvider({ providerId, target, workspacePath });
+    }
+
+    /**
+     * Get predefined provider templates for the add-provider wizard
+     */
+    async getProviderTemplates(): Promise<proto.ProviderTemplate[]> {
+        const client = this.getClient();
+        const response = await client.getProviderTemplates({});
+        return response.templates;
+    }
+
+    /**
+     * Discover models with optional credential resolution from provider config
+     */
+    async discoverModels(engineId: string, options?: { apiKey?: string; baseUrl?: string; providerId?: string }): Promise<proto.Model[]> {
+        const client = this.getClient();
+        const response = await client.discoverModels({
+            engineId,
+            apiKey: options?.apiKey,
+            baseUrl: options?.baseUrl,
+            providerId: options?.providerId,
+        });
+        return response.models;
+    }
+
+    /**
+     * Check if a specific key is available (keychain or env)
+     */
+    async getKeyStatus(source: string, name: string): Promise<boolean> {
+        const client = this.getClient();
+        const response = await client.getKeyStatus({ source, name });
+        return response.exists;
+    }
+
+    /**
+     * List configured MCP servers with connection status
+     */
+    async listMcpServerConfigs(): Promise<proto.McpServerStatusEntry[]> {
+        const client = this.getClient();
+        const response = await client.listMcpServerConfigs({});
+        return response.mcpServers;
+    }
+
+    /**
+     * Reconnect a failed MCP server
+     */
+    async reconnectMcpServer(serverId: string): Promise<void> {
+        const client = this.getClient();
+        await client.reconnectMcpServer({ serverId });
+    }
+
+    /**
+     * Create or update a custom policy
+     */
+    async createPolicy(name: string, config: proto.PolicyConfig): Promise<void> {
+        const client = this.getClient();
+        await client.createPolicy({ name, config });
+    }
+
+    /**
+     * Delete a custom policy
+     */
+    async deletePolicy(name: string): Promise<void> {
+        const client = this.getClient();
+        await client.deletePolicy({ name });
     }
 
     /**
@@ -495,12 +600,12 @@ export class DaemonClient {
     /**
      * Register MCP server (VS Code extension registers itself)
      */
-    async registerMcpServer(serverId: string, transport: string, capabilities: string[]): Promise<void> {
+    async registerMcpServer(serverId: string, transport: proto.McpTransport, toolFilter?: string[]): Promise<proto.RegisterMcpServerResponse> {
         const client = this.getClient();
-        await client.registerMcpServer({
+        return client.registerMcpServer({
             serverId,
             transport,
-            capabilities,
+            toolFilter,
         });
     }
 }

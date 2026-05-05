@@ -895,7 +895,11 @@ export interface DiscoverModelsRequest {
     | string
     | undefined;
   /** Custom base URL for discovery */
-  baseUrl?: string | undefined;
+  baseUrl?:
+    | string
+    | undefined;
+  /** Resolve credentials from this provider's config */
+  providerId?: string | undefined;
 }
 
 export interface DiscoverModelsResponse {
@@ -1045,39 +1049,247 @@ export interface ExecuteToolResponse {
 }
 
 export interface GetConfigRequest {
+  /** "user" (default) or workspace path */
+  location?: string | undefined;
+}
+
+export interface GetConfigResponse {
+  config:
+    | Config
+    | undefined;
+  /** Filesystem path of the config file */
+  path: string;
 }
 
 export interface Config {
-  defaultModel: string;
-  providers: { [key: string]: ProviderConfig };
-  sessionTtlDays: number;
-  logLevel: LogLevel;
+  providers: { [key: string]: FullProviderConfig };
+  mcpServers: { [key: string]: McpServerConfigMsg };
+  toolPolicy: ToolPolicyConfigMsg | undefined;
+  consumers: { [key: string]: ConsumerConfigMsg };
 }
 
 export interface Config_ProvidersEntry {
   key: string;
-  value: ProviderConfig | undefined;
+  value: FullProviderConfig | undefined;
 }
 
-export interface ProviderConfig {
-  enabled: boolean;
-  /** Reference to secret */
-  apiKeyRef?: string | undefined;
+export interface Config_McpServersEntry {
+  key: string;
+  value: McpServerConfigMsg | undefined;
+}
+
+export interface Config_ConsumersEntry {
+  key: string;
+  value: ConsumerConfigMsg | undefined;
+}
+
+export interface FullProviderConfig {
+  engine: string;
+  apiKeyKeychainName?: string | undefined;
+  apiKeyEnvVarName?: string | undefined;
   baseUrl?: string | undefined;
-  extra: { [key: string]: string };
+  models: { [key: string]: ModelParamConfig };
 }
 
-export interface ProviderConfig_ExtraEntry {
+export interface FullProviderConfig_ModelsEntry {
+  key: string;
+  value: ModelParamConfig | undefined;
+}
+
+export interface ModelParamConfig {
+  /** Actual engine model ID (if key is virtual name) */
+  modelId?:
+    | string
+    | undefined;
+  /** Named policy for behavioral defaults */
+  policy?: string | undefined;
+  systemPrompt?:
+    | string
+    | undefined;
+  /** "prepend" | "replace" */
+  systemPromptMode?: string | undefined;
+  temperature?: number | undefined;
+  topP?: number | undefined;
+  topK?: number | undefined;
+  maxTokens?:
+    | number
+    | undefined;
+  /** Request timeout in ms */
+  timeout?: number | undefined;
+}
+
+export interface McpServerConfigMsg {
+  /** Command for stdio transport */
+  command?:
+    | string
+    | undefined;
+  /** Arguments for the command */
+  args: string[];
+  /** URL for HTTP/SSE transport */
+  url?:
+    | string
+    | undefined;
+  /** "stdio" | "http" | "sse" */
+  transport: string;
+  enabled: boolean;
+  /** HTTP headers for authenticated endpoints */
+  headers: { [key: string]: string };
+  /** Environment variables for stdio subprocess */
+  env: { [key: string]: string };
+  /** Max tool response size in bytes */
+  maxResponseSize?: number | undefined;
+}
+
+export interface McpServerConfigMsg_HeadersEntry {
   key: string;
   value: string;
+}
+
+export interface McpServerConfigMsg_EnvEntry {
+  key: string;
+  value: string;
+}
+
+export interface ToolPolicyConfigMsg {
+  maxToolIterations?:
+    | number
+    | undefined;
+  /** Tier 1: execute without confirmation (globs) */
+  autoApprove: string[];
+  /** Tier 2: pause and ask user (globs) */
+  requireApproval: string[];
+  /** Tier 3: never register with LLM (globs) */
+  disabledTools: string[];
+  /** Canonical aliases: LLM name -> namespaced name */
+  aliases: { [key: string]: string };
+}
+
+export interface ToolPolicyConfigMsg_AliasesEntry {
+  key: string;
+  value: string;
+}
+
+export interface ConsumerConfigMsg {
+  /** Env var holding the consumer's token */
+  tokenEnv?:
+    | string
+    | undefined;
+  /** Keychain key for the consumer's token */
+  tokenKeychain?: string | undefined;
+  capabilities: ConsumerCapabilitiesMsg | undefined;
+}
+
+export interface ConsumerCapabilitiesMsg {
+  /** Allow inline PolicyConfig on ChatRequest */
+  inlinePolicy?:
+    | boolean
+    | undefined;
+  /** Allow dynamic MCP server registration */
+  mcpRegister?: boolean | undefined;
 }
 
 export interface UpdateConfigRequest {
   config:
     | Config
     | undefined;
-  /** Which fields to update */
-  updateMask: string[];
+  /** "user" (default) or workspace path */
+  location?: string | undefined;
+}
+
+export interface ConfigureProviderRequest {
+  /** Virtual provider name */
+  providerId: string;
+  /** Engine type (e.g., "openai") */
+  engine?:
+    | string
+    | undefined;
+  /** Raw API key (daemon stores in keychain) */
+  apiKey?:
+    | string
+    | undefined;
+  /** Alternative: use env var for API key */
+  envVarName?:
+    | string
+    | undefined;
+  /** Custom API base URL */
+  baseUrl?:
+    | string
+    | undefined;
+  /** "user" (default) or "workspace" */
+  target?:
+    | string
+    | undefined;
+  /** Required if target is "workspace" */
+  workspacePath?: string | undefined;
+}
+
+export interface ConfigureProviderResponse {
+  success: boolean;
+}
+
+export interface RemoveProviderRequest {
+  providerId: string;
+  /** "user" (default) or "workspace" */
+  target?:
+    | string
+    | undefined;
+  /** Required if target is "workspace" */
+  workspacePath?: string | undefined;
+}
+
+export interface GetProviderTemplatesRequest {
+}
+
+export interface GetProviderTemplatesResponse {
+  templates: ProviderTemplate[];
+}
+
+export interface ProviderTemplate {
+  engine: string;
+  suggestedName: string;
+  defaultBaseUrl?: string | undefined;
+  requiresKey: boolean;
+}
+
+export interface GetKeyStatusRequest {
+  /** "keychain" | "env" */
+  source: string;
+  /** Key or env var name */
+  name: string;
+}
+
+export interface GetKeyStatusResponse {
+  exists: boolean;
+}
+
+export interface ListMcpServerConfigsRequest {
+}
+
+export interface ListMcpServerConfigsResponse {
+  mcpServers: McpServerStatusEntry[];
+}
+
+export interface McpServerStatusEntry {
+  id: string;
+  transport: string;
+  enabled: boolean;
+  /** "connected" | "error" | "disconnected" | "disabled" | "not started" */
+  status: string;
+  toolCount: number;
+  error?: string | undefined;
+}
+
+export interface ReconnectMcpServerRequest {
+  serverId: string;
+}
+
+export interface CreatePolicyRequest {
+  name: string;
+  config: PolicyConfig | undefined;
+}
+
+export interface DeletePolicyRequest {
+  name: string;
 }
 
 export interface GetSecretRequest {
@@ -1395,16 +1607,65 @@ export interface PolicyReliability {
 }
 
 export interface RegisterMcpServerRequest {
-  /** e.g., "filesystem" */
+  /** e.g., "apme-ansible-doc" */
   serverId: string;
-  /** "stdio" or socket path */
-  transport: string;
-  /** What it provides */
-  capabilities: string[];
+  /** connection details */
+  transport:
+    | McpTransport
+    | undefined;
+  /** scope to session (auto-cleanup) */
+  sessionId?:
+    | string
+    | undefined;
+  /** only expose these tools (empty = all) */
+  toolFilter: string[];
+  /** per-tool-call limit in bytes (default 100KB) */
+  maxResponseSize?: number | undefined;
+}
+
+export interface McpTransport {
+  /** "stdio" | "http" | "sse" */
+  type: string;
+  /** stdio: command to run */
+  command?:
+    | string
+    | undefined;
+  /** stdio: command arguments */
+  args: string[];
+  /** http/sse: endpoint URL */
+  url?:
+    | string
+    | undefined;
+  /** http/sse: auth headers */
+  headers: { [key: string]: string };
+  /** stdio: environment variables */
+  env: { [key: string]: string };
+}
+
+export interface McpTransport_HeadersEntry {
+  key: string;
+  value: string;
+}
+
+export interface McpTransport_EnvEntry {
+  key: string;
+  value: string;
+}
+
+export interface RegisterMcpServerResponse {
+  success: boolean;
+  /** empty on success */
+  error: string;
+  /** tools found after connection */
+  discoveredTools: string[];
 }
 
 export interface UnregisterMcpServerRequest {
   serverId: string;
+}
+
+export interface UnregisterMcpServerResponse {
+  success: boolean;
 }
 
 function createBaseEmpty(): Empty {
@@ -8186,7 +8447,7 @@ export const ListModelsResponse: MessageFns<ListModelsResponse> = {
 };
 
 function createBaseDiscoverModelsRequest(): DiscoverModelsRequest {
-  return { engineId: "", apiKey: undefined, baseUrl: undefined };
+  return { engineId: "", apiKey: undefined, baseUrl: undefined, providerId: undefined };
 }
 
 export const DiscoverModelsRequest: MessageFns<DiscoverModelsRequest> = {
@@ -8199,6 +8460,9 @@ export const DiscoverModelsRequest: MessageFns<DiscoverModelsRequest> = {
     }
     if (message.baseUrl !== undefined) {
       writer.uint32(26).string(message.baseUrl);
+    }
+    if (message.providerId !== undefined) {
+      writer.uint32(34).string(message.providerId);
     }
     return writer;
   },
@@ -8234,6 +8498,14 @@ export const DiscoverModelsRequest: MessageFns<DiscoverModelsRequest> = {
           message.baseUrl = reader.string();
           continue;
         }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.providerId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -8260,6 +8532,11 @@ export const DiscoverModelsRequest: MessageFns<DiscoverModelsRequest> = {
         : isSet(object.base_url)
         ? globalThis.String(object.base_url)
         : undefined,
+      providerId: isSet(object.providerId)
+        ? globalThis.String(object.providerId)
+        : isSet(object.provider_id)
+        ? globalThis.String(object.provider_id)
+        : undefined,
     };
   },
 
@@ -8274,6 +8551,9 @@ export const DiscoverModelsRequest: MessageFns<DiscoverModelsRequest> = {
     if (message.baseUrl !== undefined) {
       obj.baseUrl = message.baseUrl;
     }
+    if (message.providerId !== undefined) {
+      obj.providerId = message.providerId;
+    }
     return obj;
   },
 
@@ -8285,6 +8565,7 @@ export const DiscoverModelsRequest: MessageFns<DiscoverModelsRequest> = {
     message.engineId = object.engineId ?? "";
     message.apiKey = object.apiKey ?? undefined;
     message.baseUrl = object.baseUrl ?? undefined;
+    message.providerId = object.providerId ?? undefined;
     return message;
   },
 };
@@ -9996,11 +10277,14 @@ export const ExecuteToolResponse: MessageFns<ExecuteToolResponse> = {
 };
 
 function createBaseGetConfigRequest(): GetConfigRequest {
-  return {};
+  return { location: undefined };
 }
 
 export const GetConfigRequest: MessageFns<GetConfigRequest> = {
-  encode(_: GetConfigRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(message: GetConfigRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.location !== undefined) {
+      writer.uint32(10).string(message.location);
+    }
     return writer;
   },
 
@@ -10011,6 +10295,14 @@ export const GetConfigRequest: MessageFns<GetConfigRequest> = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.location = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -10020,42 +10312,124 @@ export const GetConfigRequest: MessageFns<GetConfigRequest> = {
     return message;
   },
 
-  fromJSON(_: any): GetConfigRequest {
-    return {};
+  fromJSON(object: any): GetConfigRequest {
+    return { location: isSet(object.location) ? globalThis.String(object.location) : undefined };
   },
 
-  toJSON(_: GetConfigRequest): unknown {
+  toJSON(message: GetConfigRequest): unknown {
     const obj: any = {};
+    if (message.location !== undefined) {
+      obj.location = message.location;
+    }
     return obj;
   },
 
   create(base?: DeepPartial<GetConfigRequest>): GetConfigRequest {
     return GetConfigRequest.fromPartial(base ?? {});
   },
-  fromPartial(_: DeepPartial<GetConfigRequest>): GetConfigRequest {
+  fromPartial(object: DeepPartial<GetConfigRequest>): GetConfigRequest {
     const message = createBaseGetConfigRequest();
+    message.location = object.location ?? undefined;
+    return message;
+  },
+};
+
+function createBaseGetConfigResponse(): GetConfigResponse {
+  return { config: undefined, path: "" };
+}
+
+export const GetConfigResponse: MessageFns<GetConfigResponse> = {
+  encode(message: GetConfigResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.config !== undefined) {
+      Config.encode(message.config, writer.uint32(10).fork()).join();
+    }
+    if (message.path !== "") {
+      writer.uint32(18).string(message.path);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetConfigResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetConfigResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.config = Config.decode(reader, reader.uint32());
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.path = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GetConfigResponse {
+    return {
+      config: isSet(object.config) ? Config.fromJSON(object.config) : undefined,
+      path: isSet(object.path) ? globalThis.String(object.path) : "",
+    };
+  },
+
+  toJSON(message: GetConfigResponse): unknown {
+    const obj: any = {};
+    if (message.config !== undefined) {
+      obj.config = Config.toJSON(message.config);
+    }
+    if (message.path !== "") {
+      obj.path = message.path;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<GetConfigResponse>): GetConfigResponse {
+    return GetConfigResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<GetConfigResponse>): GetConfigResponse {
+    const message = createBaseGetConfigResponse();
+    message.config = (object.config !== undefined && object.config !== null)
+      ? Config.fromPartial(object.config)
+      : undefined;
+    message.path = object.path ?? "";
     return message;
   },
 };
 
 function createBaseConfig(): Config {
-  return { defaultModel: "", providers: {}, sessionTtlDays: 0, logLevel: 0 };
+  return { providers: {}, mcpServers: {}, toolPolicy: undefined, consumers: {} };
 }
 
 export const Config: MessageFns<Config> = {
   encode(message: Config, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.defaultModel !== "") {
-      writer.uint32(10).string(message.defaultModel);
-    }
-    globalThis.Object.entries(message.providers).forEach(([key, value]: [string, ProviderConfig]) => {
-      Config_ProvidersEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
+    globalThis.Object.entries(message.providers).forEach(([key, value]: [string, FullProviderConfig]) => {
+      Config_ProvidersEntry.encode({ key: key as any, value }, writer.uint32(10).fork()).join();
     });
-    if (message.sessionTtlDays !== 0) {
-      writer.uint32(24).int32(message.sessionTtlDays);
+    globalThis.Object.entries(message.mcpServers).forEach(([key, value]: [string, McpServerConfigMsg]) => {
+      Config_McpServersEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
+    });
+    if (message.toolPolicy !== undefined) {
+      ToolPolicyConfigMsg.encode(message.toolPolicy, writer.uint32(26).fork()).join();
     }
-    if (message.logLevel !== 0) {
-      writer.uint32(32).int32(message.logLevel);
-    }
+    globalThis.Object.entries(message.consumers).forEach(([key, value]: [string, ConsumerConfigMsg]) => {
+      Config_ConsumersEntry.encode({ key: key as any, value }, writer.uint32(34).fork()).join();
+    });
     return writer;
   },
 
@@ -10071,7 +10445,10 @@ export const Config: MessageFns<Config> = {
             break;
           }
 
-          message.defaultModel = reader.string();
+          const entry1 = Config_ProvidersEntry.decode(reader, reader.uint32());
+          if (entry1.value !== undefined) {
+            message.providers[entry1.key] = entry1.value;
+          }
           continue;
         }
         case 2: {
@@ -10079,26 +10456,29 @@ export const Config: MessageFns<Config> = {
             break;
           }
 
-          const entry2 = Config_ProvidersEntry.decode(reader, reader.uint32());
+          const entry2 = Config_McpServersEntry.decode(reader, reader.uint32());
           if (entry2.value !== undefined) {
-            message.providers[entry2.key] = entry2.value;
+            message.mcpServers[entry2.key] = entry2.value;
           }
           continue;
         }
         case 3: {
-          if (tag !== 24) {
+          if (tag !== 26) {
             break;
           }
 
-          message.sessionTtlDays = reader.int32();
+          message.toolPolicy = ToolPolicyConfigMsg.decode(reader, reader.uint32());
           continue;
         }
         case 4: {
-          if (tag !== 32) {
+          if (tag !== 34) {
             break;
           }
 
-          message.logLevel = reader.int32() as any;
+          const entry4 = Config_ConsumersEntry.decode(reader, reader.uint32());
+          if (entry4.value !== undefined) {
+            message.consumers[entry4.key] = entry4.value;
+          }
           continue;
         }
       }
@@ -10112,52 +10492,80 @@ export const Config: MessageFns<Config> = {
 
   fromJSON(object: any): Config {
     return {
-      defaultModel: isSet(object.defaultModel)
-        ? globalThis.String(object.defaultModel)
-        : isSet(object.default_model)
-        ? globalThis.String(object.default_model)
-        : "",
       providers: isObject(object.providers)
         ? (globalThis.Object.entries(object.providers) as [string, any][]).reduce(
-          (acc: { [key: string]: ProviderConfig }, [key, value]: [string, any]) => {
-            acc[key] = ProviderConfig.fromJSON(value);
+          (acc: { [key: string]: FullProviderConfig }, [key, value]: [string, any]) => {
+            acc[key] = FullProviderConfig.fromJSON(value);
             return acc;
           },
           {},
         )
         : {},
-      sessionTtlDays: isSet(object.sessionTtlDays)
-        ? globalThis.Number(object.sessionTtlDays)
-        : isSet(object.session_ttl_days)
-        ? globalThis.Number(object.session_ttl_days)
-        : 0,
-      logLevel: isSet(object.logLevel)
-        ? logLevelFromJSON(object.logLevel)
-        : isSet(object.log_level)
-        ? logLevelFromJSON(object.log_level)
-        : 0,
+      mcpServers: isObject(object.mcpServers)
+        ? (globalThis.Object.entries(object.mcpServers) as [string, any][]).reduce(
+          (acc: { [key: string]: McpServerConfigMsg }, [key, value]: [string, any]) => {
+            acc[key] = McpServerConfigMsg.fromJSON(value);
+            return acc;
+          },
+          {},
+        )
+        : isObject(object.mcp_servers)
+        ? (globalThis.Object.entries(object.mcp_servers) as [string, any][]).reduce(
+          (acc: { [key: string]: McpServerConfigMsg }, [key, value]: [string, any]) => {
+            acc[key] = McpServerConfigMsg.fromJSON(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
+      toolPolicy: isSet(object.toolPolicy)
+        ? ToolPolicyConfigMsg.fromJSON(object.toolPolicy)
+        : isSet(object.tool_policy)
+        ? ToolPolicyConfigMsg.fromJSON(object.tool_policy)
+        : undefined,
+      consumers: isObject(object.consumers)
+        ? (globalThis.Object.entries(object.consumers) as [string, any][]).reduce(
+          (acc: { [key: string]: ConsumerConfigMsg }, [key, value]: [string, any]) => {
+            acc[key] = ConsumerConfigMsg.fromJSON(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
     };
   },
 
   toJSON(message: Config): unknown {
     const obj: any = {};
-    if (message.defaultModel !== "") {
-      obj.defaultModel = message.defaultModel;
-    }
     if (message.providers) {
-      const entries = globalThis.Object.entries(message.providers) as [string, ProviderConfig][];
+      const entries = globalThis.Object.entries(message.providers) as [string, FullProviderConfig][];
       if (entries.length > 0) {
         obj.providers = {};
         entries.forEach(([k, v]) => {
-          obj.providers[k] = ProviderConfig.toJSON(v);
+          obj.providers[k] = FullProviderConfig.toJSON(v);
         });
       }
     }
-    if (message.sessionTtlDays !== 0) {
-      obj.sessionTtlDays = Math.round(message.sessionTtlDays);
+    if (message.mcpServers) {
+      const entries = globalThis.Object.entries(message.mcpServers) as [string, McpServerConfigMsg][];
+      if (entries.length > 0) {
+        obj.mcpServers = {};
+        entries.forEach(([k, v]) => {
+          obj.mcpServers[k] = McpServerConfigMsg.toJSON(v);
+        });
+      }
     }
-    if (message.logLevel !== 0) {
-      obj.logLevel = logLevelToJSON(message.logLevel);
+    if (message.toolPolicy !== undefined) {
+      obj.toolPolicy = ToolPolicyConfigMsg.toJSON(message.toolPolicy);
+    }
+    if (message.consumers) {
+      const entries = globalThis.Object.entries(message.consumers) as [string, ConsumerConfigMsg][];
+      if (entries.length > 0) {
+        obj.consumers = {};
+        entries.forEach(([k, v]) => {
+          obj.consumers[k] = ConsumerConfigMsg.toJSON(v);
+        });
+      }
     }
     return obj;
   },
@@ -10167,18 +10575,36 @@ export const Config: MessageFns<Config> = {
   },
   fromPartial(object: DeepPartial<Config>): Config {
     const message = createBaseConfig();
-    message.defaultModel = object.defaultModel ?? "";
-    message.providers = (globalThis.Object.entries(object.providers ?? {}) as [string, ProviderConfig][]).reduce(
-      (acc: { [key: string]: ProviderConfig }, [key, value]: [string, ProviderConfig]) => {
+    message.providers = (globalThis.Object.entries(object.providers ?? {}) as [string, FullProviderConfig][]).reduce(
+      (acc: { [key: string]: FullProviderConfig }, [key, value]: [string, FullProviderConfig]) => {
         if (value !== undefined) {
-          acc[key] = ProviderConfig.fromPartial(value);
+          acc[key] = FullProviderConfig.fromPartial(value);
         }
         return acc;
       },
       {},
     );
-    message.sessionTtlDays = object.sessionTtlDays ?? 0;
-    message.logLevel = object.logLevel ?? 0;
+    message.mcpServers = (globalThis.Object.entries(object.mcpServers ?? {}) as [string, McpServerConfigMsg][]).reduce(
+      (acc: { [key: string]: McpServerConfigMsg }, [key, value]: [string, McpServerConfigMsg]) => {
+        if (value !== undefined) {
+          acc[key] = McpServerConfigMsg.fromPartial(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.toolPolicy = (object.toolPolicy !== undefined && object.toolPolicy !== null)
+      ? ToolPolicyConfigMsg.fromPartial(object.toolPolicy)
+      : undefined;
+    message.consumers = (globalThis.Object.entries(object.consumers ?? {}) as [string, ConsumerConfigMsg][]).reduce(
+      (acc: { [key: string]: ConsumerConfigMsg }, [key, value]: [string, ConsumerConfigMsg]) => {
+        if (value !== undefined) {
+          acc[key] = ConsumerConfigMsg.fromPartial(value);
+        }
+        return acc;
+      },
+      {},
+    );
     return message;
   },
 };
@@ -10193,7 +10619,7 @@ export const Config_ProvidersEntry: MessageFns<Config_ProvidersEntry> = {
       writer.uint32(10).string(message.key);
     }
     if (message.value !== undefined) {
-      ProviderConfig.encode(message.value, writer.uint32(18).fork()).join();
+      FullProviderConfig.encode(message.value, writer.uint32(18).fork()).join();
     }
     return writer;
   },
@@ -10218,7 +10644,7 @@ export const Config_ProvidersEntry: MessageFns<Config_ProvidersEntry> = {
             break;
           }
 
-          message.value = ProviderConfig.decode(reader, reader.uint32());
+          message.value = FullProviderConfig.decode(reader, reader.uint32());
           continue;
         }
       }
@@ -10233,7 +10659,7 @@ export const Config_ProvidersEntry: MessageFns<Config_ProvidersEntry> = {
   fromJSON(object: any): Config_ProvidersEntry {
     return {
       key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? ProviderConfig.fromJSON(object.value) : undefined,
+      value: isSet(object.value) ? FullProviderConfig.fromJSON(object.value) : undefined,
     };
   },
 
@@ -10243,7 +10669,7 @@ export const Config_ProvidersEntry: MessageFns<Config_ProvidersEntry> = {
       obj.key = message.key;
     }
     if (message.value !== undefined) {
-      obj.value = ProviderConfig.toJSON(message.value);
+      obj.value = FullProviderConfig.toJSON(message.value);
     }
     return obj;
   },
@@ -10255,46 +10681,40 @@ export const Config_ProvidersEntry: MessageFns<Config_ProvidersEntry> = {
     const message = createBaseConfig_ProvidersEntry();
     message.key = object.key ?? "";
     message.value = (object.value !== undefined && object.value !== null)
-      ? ProviderConfig.fromPartial(object.value)
+      ? FullProviderConfig.fromPartial(object.value)
       : undefined;
     return message;
   },
 };
 
-function createBaseProviderConfig(): ProviderConfig {
-  return { enabled: false, apiKeyRef: undefined, baseUrl: undefined, extra: {} };
+function createBaseConfig_McpServersEntry(): Config_McpServersEntry {
+  return { key: "", value: undefined };
 }
 
-export const ProviderConfig: MessageFns<ProviderConfig> = {
-  encode(message: ProviderConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.enabled !== false) {
-      writer.uint32(8).bool(message.enabled);
+export const Config_McpServersEntry: MessageFns<Config_McpServersEntry> = {
+  encode(message: Config_McpServersEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
     }
-    if (message.apiKeyRef !== undefined) {
-      writer.uint32(18).string(message.apiKeyRef);
+    if (message.value !== undefined) {
+      McpServerConfigMsg.encode(message.value, writer.uint32(18).fork()).join();
     }
-    if (message.baseUrl !== undefined) {
-      writer.uint32(26).string(message.baseUrl);
-    }
-    globalThis.Object.entries(message.extra).forEach(([key, value]: [string, string]) => {
-      ProviderConfig_ExtraEntry.encode({ key: key as any, value }, writer.uint32(34).fork()).join();
-    });
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): ProviderConfig {
+  decode(input: BinaryReader | Uint8Array, length?: number): Config_McpServersEntry {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseProviderConfig();
+    const message = createBaseConfig_McpServersEntry();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1: {
-          if (tag !== 8) {
+          if (tag !== 10) {
             break;
           }
 
-          message.enabled = reader.bool();
+          message.key = reader.string();
           continue;
         }
         case 2: {
@@ -10302,7 +10722,172 @@ export const ProviderConfig: MessageFns<ProviderConfig> = {
             break;
           }
 
-          message.apiKeyRef = reader.string();
+          message.value = McpServerConfigMsg.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Config_McpServersEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? McpServerConfigMsg.fromJSON(object.value) : undefined,
+    };
+  },
+
+  toJSON(message: Config_McpServersEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== undefined) {
+      obj.value = McpServerConfigMsg.toJSON(message.value);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<Config_McpServersEntry>): Config_McpServersEntry {
+    return Config_McpServersEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<Config_McpServersEntry>): Config_McpServersEntry {
+    const message = createBaseConfig_McpServersEntry();
+    message.key = object.key ?? "";
+    message.value = (object.value !== undefined && object.value !== null)
+      ? McpServerConfigMsg.fromPartial(object.value)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseConfig_ConsumersEntry(): Config_ConsumersEntry {
+  return { key: "", value: undefined };
+}
+
+export const Config_ConsumersEntry: MessageFns<Config_ConsumersEntry> = {
+  encode(message: Config_ConsumersEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== undefined) {
+      ConsumerConfigMsg.encode(message.value, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Config_ConsumersEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConfig_ConsumersEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = ConsumerConfigMsg.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Config_ConsumersEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? ConsumerConfigMsg.fromJSON(object.value) : undefined,
+    };
+  },
+
+  toJSON(message: Config_ConsumersEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== undefined) {
+      obj.value = ConsumerConfigMsg.toJSON(message.value);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<Config_ConsumersEntry>): Config_ConsumersEntry {
+    return Config_ConsumersEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<Config_ConsumersEntry>): Config_ConsumersEntry {
+    const message = createBaseConfig_ConsumersEntry();
+    message.key = object.key ?? "";
+    message.value = (object.value !== undefined && object.value !== null)
+      ? ConsumerConfigMsg.fromPartial(object.value)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseFullProviderConfig(): FullProviderConfig {
+  return { engine: "", apiKeyKeychainName: undefined, apiKeyEnvVarName: undefined, baseUrl: undefined, models: {} };
+}
+
+export const FullProviderConfig: MessageFns<FullProviderConfig> = {
+  encode(message: FullProviderConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.engine !== "") {
+      writer.uint32(10).string(message.engine);
+    }
+    if (message.apiKeyKeychainName !== undefined) {
+      writer.uint32(18).string(message.apiKeyKeychainName);
+    }
+    if (message.apiKeyEnvVarName !== undefined) {
+      writer.uint32(26).string(message.apiKeyEnvVarName);
+    }
+    if (message.baseUrl !== undefined) {
+      writer.uint32(34).string(message.baseUrl);
+    }
+    globalThis.Object.entries(message.models).forEach(([key, value]: [string, ModelParamConfig]) => {
+      FullProviderConfig_ModelsEntry.encode({ key: key as any, value }, writer.uint32(42).fork()).join();
+    });
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FullProviderConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFullProviderConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.engine = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.apiKeyKeychainName = reader.string();
           continue;
         }
         case 3: {
@@ -10310,7 +10895,7 @@ export const ProviderConfig: MessageFns<ProviderConfig> = {
             break;
           }
 
-          message.baseUrl = reader.string();
+          message.apiKeyEnvVarName = reader.string();
           continue;
         }
         case 4: {
@@ -10318,9 +10903,17 @@ export const ProviderConfig: MessageFns<ProviderConfig> = {
             break;
           }
 
-          const entry4 = ProviderConfig_ExtraEntry.decode(reader, reader.uint32());
-          if (entry4.value !== undefined) {
-            message.extra[entry4.key] = entry4.value;
+          message.baseUrl = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          const entry5 = FullProviderConfig_ModelsEntry.decode(reader, reader.uint32());
+          if (entry5.value !== undefined) {
+            message.models[entry5.key] = entry5.value;
           }
           continue;
         }
@@ -10333,23 +10926,28 @@ export const ProviderConfig: MessageFns<ProviderConfig> = {
     return message;
   },
 
-  fromJSON(object: any): ProviderConfig {
+  fromJSON(object: any): FullProviderConfig {
     return {
-      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
-      apiKeyRef: isSet(object.apiKeyRef)
-        ? globalThis.String(object.apiKeyRef)
-        : isSet(object.api_key_ref)
-        ? globalThis.String(object.api_key_ref)
+      engine: isSet(object.engine) ? globalThis.String(object.engine) : "",
+      apiKeyKeychainName: isSet(object.apiKeyKeychainName)
+        ? globalThis.String(object.apiKeyKeychainName)
+        : isSet(object.api_key_keychain_name)
+        ? globalThis.String(object.api_key_keychain_name)
+        : undefined,
+      apiKeyEnvVarName: isSet(object.apiKeyEnvVarName)
+        ? globalThis.String(object.apiKeyEnvVarName)
+        : isSet(object.api_key_env_var_name)
+        ? globalThis.String(object.api_key_env_var_name)
         : undefined,
       baseUrl: isSet(object.baseUrl)
         ? globalThis.String(object.baseUrl)
         : isSet(object.base_url)
         ? globalThis.String(object.base_url)
         : undefined,
-      extra: isObject(object.extra)
-        ? (globalThis.Object.entries(object.extra) as [string, any][]).reduce(
-          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
-            acc[key] = globalThis.String(value);
+      models: isObject(object.models)
+        ? (globalThis.Object.entries(object.models) as [string, any][]).reduce(
+          (acc: { [key: string]: ModelParamConfig }, [key, value]: [string, any]) => {
+            acc[key] = ModelParamConfig.fromJSON(value);
             return acc;
           },
           {},
@@ -10358,41 +10956,45 @@ export const ProviderConfig: MessageFns<ProviderConfig> = {
     };
   },
 
-  toJSON(message: ProviderConfig): unknown {
+  toJSON(message: FullProviderConfig): unknown {
     const obj: any = {};
-    if (message.enabled !== false) {
-      obj.enabled = message.enabled;
+    if (message.engine !== "") {
+      obj.engine = message.engine;
     }
-    if (message.apiKeyRef !== undefined) {
-      obj.apiKeyRef = message.apiKeyRef;
+    if (message.apiKeyKeychainName !== undefined) {
+      obj.apiKeyKeychainName = message.apiKeyKeychainName;
+    }
+    if (message.apiKeyEnvVarName !== undefined) {
+      obj.apiKeyEnvVarName = message.apiKeyEnvVarName;
     }
     if (message.baseUrl !== undefined) {
       obj.baseUrl = message.baseUrl;
     }
-    if (message.extra) {
-      const entries = globalThis.Object.entries(message.extra) as [string, string][];
+    if (message.models) {
+      const entries = globalThis.Object.entries(message.models) as [string, ModelParamConfig][];
       if (entries.length > 0) {
-        obj.extra = {};
+        obj.models = {};
         entries.forEach(([k, v]) => {
-          obj.extra[k] = v;
+          obj.models[k] = ModelParamConfig.toJSON(v);
         });
       }
     }
     return obj;
   },
 
-  create(base?: DeepPartial<ProviderConfig>): ProviderConfig {
-    return ProviderConfig.fromPartial(base ?? {});
+  create(base?: DeepPartial<FullProviderConfig>): FullProviderConfig {
+    return FullProviderConfig.fromPartial(base ?? {});
   },
-  fromPartial(object: DeepPartial<ProviderConfig>): ProviderConfig {
-    const message = createBaseProviderConfig();
-    message.enabled = object.enabled ?? false;
-    message.apiKeyRef = object.apiKeyRef ?? undefined;
+  fromPartial(object: DeepPartial<FullProviderConfig>): FullProviderConfig {
+    const message = createBaseFullProviderConfig();
+    message.engine = object.engine ?? "";
+    message.apiKeyKeychainName = object.apiKeyKeychainName ?? undefined;
+    message.apiKeyEnvVarName = object.apiKeyEnvVarName ?? undefined;
     message.baseUrl = object.baseUrl ?? undefined;
-    message.extra = (globalThis.Object.entries(object.extra ?? {}) as [string, string][]).reduce(
-      (acc: { [key: string]: string }, [key, value]: [string, string]) => {
+    message.models = (globalThis.Object.entries(object.models ?? {}) as [string, ModelParamConfig][]).reduce(
+      (acc: { [key: string]: ModelParamConfig }, [key, value]: [string, ModelParamConfig]) => {
         if (value !== undefined) {
-          acc[key] = globalThis.String(value);
+          acc[key] = ModelParamConfig.fromPartial(value);
         }
         return acc;
       },
@@ -10402,12 +11004,547 @@ export const ProviderConfig: MessageFns<ProviderConfig> = {
   },
 };
 
-function createBaseProviderConfig_ExtraEntry(): ProviderConfig_ExtraEntry {
+function createBaseFullProviderConfig_ModelsEntry(): FullProviderConfig_ModelsEntry {
+  return { key: "", value: undefined };
+}
+
+export const FullProviderConfig_ModelsEntry: MessageFns<FullProviderConfig_ModelsEntry> = {
+  encode(message: FullProviderConfig_ModelsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== undefined) {
+      ModelParamConfig.encode(message.value, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FullProviderConfig_ModelsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFullProviderConfig_ModelsEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = ModelParamConfig.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): FullProviderConfig_ModelsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? ModelParamConfig.fromJSON(object.value) : undefined,
+    };
+  },
+
+  toJSON(message: FullProviderConfig_ModelsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== undefined) {
+      obj.value = ModelParamConfig.toJSON(message.value);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<FullProviderConfig_ModelsEntry>): FullProviderConfig_ModelsEntry {
+    return FullProviderConfig_ModelsEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<FullProviderConfig_ModelsEntry>): FullProviderConfig_ModelsEntry {
+    const message = createBaseFullProviderConfig_ModelsEntry();
+    message.key = object.key ?? "";
+    message.value = (object.value !== undefined && object.value !== null)
+      ? ModelParamConfig.fromPartial(object.value)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseModelParamConfig(): ModelParamConfig {
+  return {
+    modelId: undefined,
+    policy: undefined,
+    systemPrompt: undefined,
+    systemPromptMode: undefined,
+    temperature: undefined,
+    topP: undefined,
+    topK: undefined,
+    maxTokens: undefined,
+    timeout: undefined,
+  };
+}
+
+export const ModelParamConfig: MessageFns<ModelParamConfig> = {
+  encode(message: ModelParamConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.modelId !== undefined) {
+      writer.uint32(10).string(message.modelId);
+    }
+    if (message.policy !== undefined) {
+      writer.uint32(18).string(message.policy);
+    }
+    if (message.systemPrompt !== undefined) {
+      writer.uint32(26).string(message.systemPrompt);
+    }
+    if (message.systemPromptMode !== undefined) {
+      writer.uint32(34).string(message.systemPromptMode);
+    }
+    if (message.temperature !== undefined) {
+      writer.uint32(45).float(message.temperature);
+    }
+    if (message.topP !== undefined) {
+      writer.uint32(53).float(message.topP);
+    }
+    if (message.topK !== undefined) {
+      writer.uint32(56).int32(message.topK);
+    }
+    if (message.maxTokens !== undefined) {
+      writer.uint32(64).int32(message.maxTokens);
+    }
+    if (message.timeout !== undefined) {
+      writer.uint32(72).int32(message.timeout);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ModelParamConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseModelParamConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.modelId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.policy = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.systemPrompt = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.systemPromptMode = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 45) {
+            break;
+          }
+
+          message.temperature = reader.float();
+          continue;
+        }
+        case 6: {
+          if (tag !== 53) {
+            break;
+          }
+
+          message.topP = reader.float();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.topK = reader.int32();
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.maxTokens = reader.int32();
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.timeout = reader.int32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ModelParamConfig {
+    return {
+      modelId: isSet(object.modelId)
+        ? globalThis.String(object.modelId)
+        : isSet(object.model_id)
+        ? globalThis.String(object.model_id)
+        : undefined,
+      policy: isSet(object.policy) ? globalThis.String(object.policy) : undefined,
+      systemPrompt: isSet(object.systemPrompt)
+        ? globalThis.String(object.systemPrompt)
+        : isSet(object.system_prompt)
+        ? globalThis.String(object.system_prompt)
+        : undefined,
+      systemPromptMode: isSet(object.systemPromptMode)
+        ? globalThis.String(object.systemPromptMode)
+        : isSet(object.system_prompt_mode)
+        ? globalThis.String(object.system_prompt_mode)
+        : undefined,
+      temperature: isSet(object.temperature) ? globalThis.Number(object.temperature) : undefined,
+      topP: isSet(object.topP)
+        ? globalThis.Number(object.topP)
+        : isSet(object.top_p)
+        ? globalThis.Number(object.top_p)
+        : undefined,
+      topK: isSet(object.topK)
+        ? globalThis.Number(object.topK)
+        : isSet(object.top_k)
+        ? globalThis.Number(object.top_k)
+        : undefined,
+      maxTokens: isSet(object.maxTokens)
+        ? globalThis.Number(object.maxTokens)
+        : isSet(object.max_tokens)
+        ? globalThis.Number(object.max_tokens)
+        : undefined,
+      timeout: isSet(object.timeout) ? globalThis.Number(object.timeout) : undefined,
+    };
+  },
+
+  toJSON(message: ModelParamConfig): unknown {
+    const obj: any = {};
+    if (message.modelId !== undefined) {
+      obj.modelId = message.modelId;
+    }
+    if (message.policy !== undefined) {
+      obj.policy = message.policy;
+    }
+    if (message.systemPrompt !== undefined) {
+      obj.systemPrompt = message.systemPrompt;
+    }
+    if (message.systemPromptMode !== undefined) {
+      obj.systemPromptMode = message.systemPromptMode;
+    }
+    if (message.temperature !== undefined) {
+      obj.temperature = message.temperature;
+    }
+    if (message.topP !== undefined) {
+      obj.topP = message.topP;
+    }
+    if (message.topK !== undefined) {
+      obj.topK = Math.round(message.topK);
+    }
+    if (message.maxTokens !== undefined) {
+      obj.maxTokens = Math.round(message.maxTokens);
+    }
+    if (message.timeout !== undefined) {
+      obj.timeout = Math.round(message.timeout);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ModelParamConfig>): ModelParamConfig {
+    return ModelParamConfig.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ModelParamConfig>): ModelParamConfig {
+    const message = createBaseModelParamConfig();
+    message.modelId = object.modelId ?? undefined;
+    message.policy = object.policy ?? undefined;
+    message.systemPrompt = object.systemPrompt ?? undefined;
+    message.systemPromptMode = object.systemPromptMode ?? undefined;
+    message.temperature = object.temperature ?? undefined;
+    message.topP = object.topP ?? undefined;
+    message.topK = object.topK ?? undefined;
+    message.maxTokens = object.maxTokens ?? undefined;
+    message.timeout = object.timeout ?? undefined;
+    return message;
+  },
+};
+
+function createBaseMcpServerConfigMsg(): McpServerConfigMsg {
+  return {
+    command: undefined,
+    args: [],
+    url: undefined,
+    transport: "",
+    enabled: false,
+    headers: {},
+    env: {},
+    maxResponseSize: undefined,
+  };
+}
+
+export const McpServerConfigMsg: MessageFns<McpServerConfigMsg> = {
+  encode(message: McpServerConfigMsg, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.command !== undefined) {
+      writer.uint32(10).string(message.command);
+    }
+    for (const v of message.args) {
+      writer.uint32(18).string(v!);
+    }
+    if (message.url !== undefined) {
+      writer.uint32(26).string(message.url);
+    }
+    if (message.transport !== "") {
+      writer.uint32(34).string(message.transport);
+    }
+    if (message.enabled !== false) {
+      writer.uint32(40).bool(message.enabled);
+    }
+    globalThis.Object.entries(message.headers).forEach(([key, value]: [string, string]) => {
+      McpServerConfigMsg_HeadersEntry.encode({ key: key as any, value }, writer.uint32(50).fork()).join();
+    });
+    globalThis.Object.entries(message.env).forEach(([key, value]: [string, string]) => {
+      McpServerConfigMsg_EnvEntry.encode({ key: key as any, value }, writer.uint32(58).fork()).join();
+    });
+    if (message.maxResponseSize !== undefined) {
+      writer.uint32(64).int32(message.maxResponseSize);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): McpServerConfigMsg {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMcpServerConfigMsg();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.command = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.args.push(reader.string());
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.url = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.transport = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.enabled = reader.bool();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          const entry6 = McpServerConfigMsg_HeadersEntry.decode(reader, reader.uint32());
+          if (entry6.value !== undefined) {
+            message.headers[entry6.key] = entry6.value;
+          }
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          const entry7 = McpServerConfigMsg_EnvEntry.decode(reader, reader.uint32());
+          if (entry7.value !== undefined) {
+            message.env[entry7.key] = entry7.value;
+          }
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.maxResponseSize = reader.int32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): McpServerConfigMsg {
+    return {
+      command: isSet(object.command) ? globalThis.String(object.command) : undefined,
+      args: globalThis.Array.isArray(object?.args) ? object.args.map((e: any) => globalThis.String(e)) : [],
+      url: isSet(object.url) ? globalThis.String(object.url) : undefined,
+      transport: isSet(object.transport) ? globalThis.String(object.transport) : "",
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+      headers: isObject(object.headers)
+        ? (globalThis.Object.entries(object.headers) as [string, any][]).reduce(
+          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
+            acc[key] = globalThis.String(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
+      env: isObject(object.env)
+        ? (globalThis.Object.entries(object.env) as [string, any][]).reduce(
+          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
+            acc[key] = globalThis.String(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
+      maxResponseSize: isSet(object.maxResponseSize)
+        ? globalThis.Number(object.maxResponseSize)
+        : isSet(object.max_response_size)
+        ? globalThis.Number(object.max_response_size)
+        : undefined,
+    };
+  },
+
+  toJSON(message: McpServerConfigMsg): unknown {
+    const obj: any = {};
+    if (message.command !== undefined) {
+      obj.command = message.command;
+    }
+    if (message.args?.length) {
+      obj.args = message.args;
+    }
+    if (message.url !== undefined) {
+      obj.url = message.url;
+    }
+    if (message.transport !== "") {
+      obj.transport = message.transport;
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    if (message.headers) {
+      const entries = globalThis.Object.entries(message.headers) as [string, string][];
+      if (entries.length > 0) {
+        obj.headers = {};
+        entries.forEach(([k, v]) => {
+          obj.headers[k] = v;
+        });
+      }
+    }
+    if (message.env) {
+      const entries = globalThis.Object.entries(message.env) as [string, string][];
+      if (entries.length > 0) {
+        obj.env = {};
+        entries.forEach(([k, v]) => {
+          obj.env[k] = v;
+        });
+      }
+    }
+    if (message.maxResponseSize !== undefined) {
+      obj.maxResponseSize = Math.round(message.maxResponseSize);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<McpServerConfigMsg>): McpServerConfigMsg {
+    return McpServerConfigMsg.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<McpServerConfigMsg>): McpServerConfigMsg {
+    const message = createBaseMcpServerConfigMsg();
+    message.command = object.command ?? undefined;
+    message.args = object.args?.map((e) => e) || [];
+    message.url = object.url ?? undefined;
+    message.transport = object.transport ?? "";
+    message.enabled = object.enabled ?? false;
+    message.headers = (globalThis.Object.entries(object.headers ?? {}) as [string, string][]).reduce(
+      (acc: { [key: string]: string }, [key, value]: [string, string]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.env = (globalThis.Object.entries(object.env ?? {}) as [string, string][]).reduce(
+      (acc: { [key: string]: string }, [key, value]: [string, string]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.maxResponseSize = object.maxResponseSize ?? undefined;
+    return message;
+  },
+};
+
+function createBaseMcpServerConfigMsg_HeadersEntry(): McpServerConfigMsg_HeadersEntry {
   return { key: "", value: "" };
 }
 
-export const ProviderConfig_ExtraEntry: MessageFns<ProviderConfig_ExtraEntry> = {
-  encode(message: ProviderConfig_ExtraEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const McpServerConfigMsg_HeadersEntry: MessageFns<McpServerConfigMsg_HeadersEntry> = {
+  encode(message: McpServerConfigMsg_HeadersEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.key !== "") {
       writer.uint32(10).string(message.key);
     }
@@ -10417,10 +11554,10 @@ export const ProviderConfig_ExtraEntry: MessageFns<ProviderConfig_ExtraEntry> = 
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): ProviderConfig_ExtraEntry {
+  decode(input: BinaryReader | Uint8Array, length?: number): McpServerConfigMsg_HeadersEntry {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseProviderConfig_ExtraEntry();
+    const message = createBaseMcpServerConfigMsg_HeadersEntry();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -10449,14 +11586,14 @@ export const ProviderConfig_ExtraEntry: MessageFns<ProviderConfig_ExtraEntry> = 
     return message;
   },
 
-  fromJSON(object: any): ProviderConfig_ExtraEntry {
+  fromJSON(object: any): McpServerConfigMsg_HeadersEntry {
     return {
       key: isSet(object.key) ? globalThis.String(object.key) : "",
       value: isSet(object.value) ? globalThis.String(object.value) : "",
     };
   },
 
-  toJSON(message: ProviderConfig_ExtraEntry): unknown {
+  toJSON(message: McpServerConfigMsg_HeadersEntry): unknown {
     const obj: any = {};
     if (message.key !== "") {
       obj.key = message.key;
@@ -10467,19 +11604,522 @@ export const ProviderConfig_ExtraEntry: MessageFns<ProviderConfig_ExtraEntry> = 
     return obj;
   },
 
-  create(base?: DeepPartial<ProviderConfig_ExtraEntry>): ProviderConfig_ExtraEntry {
-    return ProviderConfig_ExtraEntry.fromPartial(base ?? {});
+  create(base?: DeepPartial<McpServerConfigMsg_HeadersEntry>): McpServerConfigMsg_HeadersEntry {
+    return McpServerConfigMsg_HeadersEntry.fromPartial(base ?? {});
   },
-  fromPartial(object: DeepPartial<ProviderConfig_ExtraEntry>): ProviderConfig_ExtraEntry {
-    const message = createBaseProviderConfig_ExtraEntry();
+  fromPartial(object: DeepPartial<McpServerConfigMsg_HeadersEntry>): McpServerConfigMsg_HeadersEntry {
+    const message = createBaseMcpServerConfigMsg_HeadersEntry();
     message.key = object.key ?? "";
     message.value = object.value ?? "";
     return message;
   },
 };
 
+function createBaseMcpServerConfigMsg_EnvEntry(): McpServerConfigMsg_EnvEntry {
+  return { key: "", value: "" };
+}
+
+export const McpServerConfigMsg_EnvEntry: MessageFns<McpServerConfigMsg_EnvEntry> = {
+  encode(message: McpServerConfigMsg_EnvEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): McpServerConfigMsg_EnvEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMcpServerConfigMsg_EnvEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): McpServerConfigMsg_EnvEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.String(object.value) : "",
+    };
+  },
+
+  toJSON(message: McpServerConfigMsg_EnvEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== "") {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<McpServerConfigMsg_EnvEntry>): McpServerConfigMsg_EnvEntry {
+    return McpServerConfigMsg_EnvEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<McpServerConfigMsg_EnvEntry>): McpServerConfigMsg_EnvEntry {
+    const message = createBaseMcpServerConfigMsg_EnvEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
+    return message;
+  },
+};
+
+function createBaseToolPolicyConfigMsg(): ToolPolicyConfigMsg {
+  return { maxToolIterations: undefined, autoApprove: [], requireApproval: [], disabledTools: [], aliases: {} };
+}
+
+export const ToolPolicyConfigMsg: MessageFns<ToolPolicyConfigMsg> = {
+  encode(message: ToolPolicyConfigMsg, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.maxToolIterations !== undefined) {
+      writer.uint32(8).int32(message.maxToolIterations);
+    }
+    for (const v of message.autoApprove) {
+      writer.uint32(18).string(v!);
+    }
+    for (const v of message.requireApproval) {
+      writer.uint32(26).string(v!);
+    }
+    for (const v of message.disabledTools) {
+      writer.uint32(34).string(v!);
+    }
+    globalThis.Object.entries(message.aliases).forEach(([key, value]: [string, string]) => {
+      ToolPolicyConfigMsg_AliasesEntry.encode({ key: key as any, value }, writer.uint32(42).fork()).join();
+    });
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ToolPolicyConfigMsg {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseToolPolicyConfigMsg();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.maxToolIterations = reader.int32();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.autoApprove.push(reader.string());
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.requireApproval.push(reader.string());
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.disabledTools.push(reader.string());
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          const entry5 = ToolPolicyConfigMsg_AliasesEntry.decode(reader, reader.uint32());
+          if (entry5.value !== undefined) {
+            message.aliases[entry5.key] = entry5.value;
+          }
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ToolPolicyConfigMsg {
+    return {
+      maxToolIterations: isSet(object.maxToolIterations)
+        ? globalThis.Number(object.maxToolIterations)
+        : isSet(object.max_tool_iterations)
+        ? globalThis.Number(object.max_tool_iterations)
+        : undefined,
+      autoApprove: globalThis.Array.isArray(object?.autoApprove)
+        ? object.autoApprove.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.auto_approve)
+        ? object.auto_approve.map((e: any) => globalThis.String(e))
+        : [],
+      requireApproval: globalThis.Array.isArray(object?.requireApproval)
+        ? object.requireApproval.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.require_approval)
+        ? object.require_approval.map((e: any) => globalThis.String(e))
+        : [],
+      disabledTools: globalThis.Array.isArray(object?.disabledTools)
+        ? object.disabledTools.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.disabled_tools)
+        ? object.disabled_tools.map((e: any) => globalThis.String(e))
+        : [],
+      aliases: isObject(object.aliases)
+        ? (globalThis.Object.entries(object.aliases) as [string, any][]).reduce(
+          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
+            acc[key] = globalThis.String(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
+    };
+  },
+
+  toJSON(message: ToolPolicyConfigMsg): unknown {
+    const obj: any = {};
+    if (message.maxToolIterations !== undefined) {
+      obj.maxToolIterations = Math.round(message.maxToolIterations);
+    }
+    if (message.autoApprove?.length) {
+      obj.autoApprove = message.autoApprove;
+    }
+    if (message.requireApproval?.length) {
+      obj.requireApproval = message.requireApproval;
+    }
+    if (message.disabledTools?.length) {
+      obj.disabledTools = message.disabledTools;
+    }
+    if (message.aliases) {
+      const entries = globalThis.Object.entries(message.aliases) as [string, string][];
+      if (entries.length > 0) {
+        obj.aliases = {};
+        entries.forEach(([k, v]) => {
+          obj.aliases[k] = v;
+        });
+      }
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ToolPolicyConfigMsg>): ToolPolicyConfigMsg {
+    return ToolPolicyConfigMsg.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ToolPolicyConfigMsg>): ToolPolicyConfigMsg {
+    const message = createBaseToolPolicyConfigMsg();
+    message.maxToolIterations = object.maxToolIterations ?? undefined;
+    message.autoApprove = object.autoApprove?.map((e) => e) || [];
+    message.requireApproval = object.requireApproval?.map((e) => e) || [];
+    message.disabledTools = object.disabledTools?.map((e) => e) || [];
+    message.aliases = (globalThis.Object.entries(object.aliases ?? {}) as [string, string][]).reduce(
+      (acc: { [key: string]: string }, [key, value]: [string, string]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    return message;
+  },
+};
+
+function createBaseToolPolicyConfigMsg_AliasesEntry(): ToolPolicyConfigMsg_AliasesEntry {
+  return { key: "", value: "" };
+}
+
+export const ToolPolicyConfigMsg_AliasesEntry: MessageFns<ToolPolicyConfigMsg_AliasesEntry> = {
+  encode(message: ToolPolicyConfigMsg_AliasesEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ToolPolicyConfigMsg_AliasesEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseToolPolicyConfigMsg_AliasesEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ToolPolicyConfigMsg_AliasesEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.String(object.value) : "",
+    };
+  },
+
+  toJSON(message: ToolPolicyConfigMsg_AliasesEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== "") {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ToolPolicyConfigMsg_AliasesEntry>): ToolPolicyConfigMsg_AliasesEntry {
+    return ToolPolicyConfigMsg_AliasesEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ToolPolicyConfigMsg_AliasesEntry>): ToolPolicyConfigMsg_AliasesEntry {
+    const message = createBaseToolPolicyConfigMsg_AliasesEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
+    return message;
+  },
+};
+
+function createBaseConsumerConfigMsg(): ConsumerConfigMsg {
+  return { tokenEnv: undefined, tokenKeychain: undefined, capabilities: undefined };
+}
+
+export const ConsumerConfigMsg: MessageFns<ConsumerConfigMsg> = {
+  encode(message: ConsumerConfigMsg, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.tokenEnv !== undefined) {
+      writer.uint32(10).string(message.tokenEnv);
+    }
+    if (message.tokenKeychain !== undefined) {
+      writer.uint32(18).string(message.tokenKeychain);
+    }
+    if (message.capabilities !== undefined) {
+      ConsumerCapabilitiesMsg.encode(message.capabilities, writer.uint32(26).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ConsumerConfigMsg {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConsumerConfigMsg();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.tokenEnv = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.tokenKeychain = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.capabilities = ConsumerCapabilitiesMsg.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ConsumerConfigMsg {
+    return {
+      tokenEnv: isSet(object.tokenEnv)
+        ? globalThis.String(object.tokenEnv)
+        : isSet(object.token_env)
+        ? globalThis.String(object.token_env)
+        : undefined,
+      tokenKeychain: isSet(object.tokenKeychain)
+        ? globalThis.String(object.tokenKeychain)
+        : isSet(object.token_keychain)
+        ? globalThis.String(object.token_keychain)
+        : undefined,
+      capabilities: isSet(object.capabilities) ? ConsumerCapabilitiesMsg.fromJSON(object.capabilities) : undefined,
+    };
+  },
+
+  toJSON(message: ConsumerConfigMsg): unknown {
+    const obj: any = {};
+    if (message.tokenEnv !== undefined) {
+      obj.tokenEnv = message.tokenEnv;
+    }
+    if (message.tokenKeychain !== undefined) {
+      obj.tokenKeychain = message.tokenKeychain;
+    }
+    if (message.capabilities !== undefined) {
+      obj.capabilities = ConsumerCapabilitiesMsg.toJSON(message.capabilities);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ConsumerConfigMsg>): ConsumerConfigMsg {
+    return ConsumerConfigMsg.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ConsumerConfigMsg>): ConsumerConfigMsg {
+    const message = createBaseConsumerConfigMsg();
+    message.tokenEnv = object.tokenEnv ?? undefined;
+    message.tokenKeychain = object.tokenKeychain ?? undefined;
+    message.capabilities = (object.capabilities !== undefined && object.capabilities !== null)
+      ? ConsumerCapabilitiesMsg.fromPartial(object.capabilities)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseConsumerCapabilitiesMsg(): ConsumerCapabilitiesMsg {
+  return { inlinePolicy: undefined, mcpRegister: undefined };
+}
+
+export const ConsumerCapabilitiesMsg: MessageFns<ConsumerCapabilitiesMsg> = {
+  encode(message: ConsumerCapabilitiesMsg, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.inlinePolicy !== undefined) {
+      writer.uint32(8).bool(message.inlinePolicy);
+    }
+    if (message.mcpRegister !== undefined) {
+      writer.uint32(16).bool(message.mcpRegister);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ConsumerCapabilitiesMsg {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConsumerCapabilitiesMsg();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.inlinePolicy = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.mcpRegister = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ConsumerCapabilitiesMsg {
+    return {
+      inlinePolicy: isSet(object.inlinePolicy)
+        ? globalThis.Boolean(object.inlinePolicy)
+        : isSet(object.inline_policy)
+        ? globalThis.Boolean(object.inline_policy)
+        : undefined,
+      mcpRegister: isSet(object.mcpRegister)
+        ? globalThis.Boolean(object.mcpRegister)
+        : isSet(object.mcp_register)
+        ? globalThis.Boolean(object.mcp_register)
+        : undefined,
+    };
+  },
+
+  toJSON(message: ConsumerCapabilitiesMsg): unknown {
+    const obj: any = {};
+    if (message.inlinePolicy !== undefined) {
+      obj.inlinePolicy = message.inlinePolicy;
+    }
+    if (message.mcpRegister !== undefined) {
+      obj.mcpRegister = message.mcpRegister;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ConsumerCapabilitiesMsg>): ConsumerCapabilitiesMsg {
+    return ConsumerCapabilitiesMsg.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ConsumerCapabilitiesMsg>): ConsumerCapabilitiesMsg {
+    const message = createBaseConsumerCapabilitiesMsg();
+    message.inlinePolicy = object.inlinePolicy ?? undefined;
+    message.mcpRegister = object.mcpRegister ?? undefined;
+    return message;
+  },
+};
+
 function createBaseUpdateConfigRequest(): UpdateConfigRequest {
-  return { config: undefined, updateMask: [] };
+  return { config: undefined, location: undefined };
 }
 
 export const UpdateConfigRequest: MessageFns<UpdateConfigRequest> = {
@@ -10487,8 +12127,8 @@ export const UpdateConfigRequest: MessageFns<UpdateConfigRequest> = {
     if (message.config !== undefined) {
       Config.encode(message.config, writer.uint32(10).fork()).join();
     }
-    for (const v of message.updateMask) {
-      writer.uint32(18).string(v!);
+    if (message.location !== undefined) {
+      writer.uint32(18).string(message.location);
     }
     return writer;
   },
@@ -10513,7 +12153,7 @@ export const UpdateConfigRequest: MessageFns<UpdateConfigRequest> = {
             break;
           }
 
-          message.updateMask.push(reader.string());
+          message.location = reader.string();
           continue;
         }
       }
@@ -10528,11 +12168,7 @@ export const UpdateConfigRequest: MessageFns<UpdateConfigRequest> = {
   fromJSON(object: any): UpdateConfigRequest {
     return {
       config: isSet(object.config) ? Config.fromJSON(object.config) : undefined,
-      updateMask: globalThis.Array.isArray(object?.updateMask)
-        ? object.updateMask.map((e: any) => globalThis.String(e))
-        : globalThis.Array.isArray(object?.update_mask)
-        ? object.update_mask.map((e: any) => globalThis.String(e))
-        : [],
+      location: isSet(object.location) ? globalThis.String(object.location) : undefined,
     };
   },
 
@@ -10541,8 +12177,8 @@ export const UpdateConfigRequest: MessageFns<UpdateConfigRequest> = {
     if (message.config !== undefined) {
       obj.config = Config.toJSON(message.config);
     }
-    if (message.updateMask?.length) {
-      obj.updateMask = message.updateMask;
+    if (message.location !== undefined) {
+      obj.location = message.location;
     }
     return obj;
   },
@@ -10555,7 +12191,1159 @@ export const UpdateConfigRequest: MessageFns<UpdateConfigRequest> = {
     message.config = (object.config !== undefined && object.config !== null)
       ? Config.fromPartial(object.config)
       : undefined;
-    message.updateMask = object.updateMask?.map((e) => e) || [];
+    message.location = object.location ?? undefined;
+    return message;
+  },
+};
+
+function createBaseConfigureProviderRequest(): ConfigureProviderRequest {
+  return {
+    providerId: "",
+    engine: undefined,
+    apiKey: undefined,
+    envVarName: undefined,
+    baseUrl: undefined,
+    target: undefined,
+    workspacePath: undefined,
+  };
+}
+
+export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
+  encode(message: ConfigureProviderRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.providerId !== "") {
+      writer.uint32(10).string(message.providerId);
+    }
+    if (message.engine !== undefined) {
+      writer.uint32(18).string(message.engine);
+    }
+    if (message.apiKey !== undefined) {
+      writer.uint32(26).string(message.apiKey);
+    }
+    if (message.envVarName !== undefined) {
+      writer.uint32(34).string(message.envVarName);
+    }
+    if (message.baseUrl !== undefined) {
+      writer.uint32(42).string(message.baseUrl);
+    }
+    if (message.target !== undefined) {
+      writer.uint32(50).string(message.target);
+    }
+    if (message.workspacePath !== undefined) {
+      writer.uint32(58).string(message.workspacePath);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ConfigureProviderRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConfigureProviderRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.providerId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.engine = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.apiKey = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.envVarName = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.baseUrl = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.target = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.workspacePath = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ConfigureProviderRequest {
+    return {
+      providerId: isSet(object.providerId)
+        ? globalThis.String(object.providerId)
+        : isSet(object.provider_id)
+        ? globalThis.String(object.provider_id)
+        : "",
+      engine: isSet(object.engine) ? globalThis.String(object.engine) : undefined,
+      apiKey: isSet(object.apiKey)
+        ? globalThis.String(object.apiKey)
+        : isSet(object.api_key)
+        ? globalThis.String(object.api_key)
+        : undefined,
+      envVarName: isSet(object.envVarName)
+        ? globalThis.String(object.envVarName)
+        : isSet(object.env_var_name)
+        ? globalThis.String(object.env_var_name)
+        : undefined,
+      baseUrl: isSet(object.baseUrl)
+        ? globalThis.String(object.baseUrl)
+        : isSet(object.base_url)
+        ? globalThis.String(object.base_url)
+        : undefined,
+      target: isSet(object.target) ? globalThis.String(object.target) : undefined,
+      workspacePath: isSet(object.workspacePath)
+        ? globalThis.String(object.workspacePath)
+        : isSet(object.workspace_path)
+        ? globalThis.String(object.workspace_path)
+        : undefined,
+    };
+  },
+
+  toJSON(message: ConfigureProviderRequest): unknown {
+    const obj: any = {};
+    if (message.providerId !== "") {
+      obj.providerId = message.providerId;
+    }
+    if (message.engine !== undefined) {
+      obj.engine = message.engine;
+    }
+    if (message.apiKey !== undefined) {
+      obj.apiKey = message.apiKey;
+    }
+    if (message.envVarName !== undefined) {
+      obj.envVarName = message.envVarName;
+    }
+    if (message.baseUrl !== undefined) {
+      obj.baseUrl = message.baseUrl;
+    }
+    if (message.target !== undefined) {
+      obj.target = message.target;
+    }
+    if (message.workspacePath !== undefined) {
+      obj.workspacePath = message.workspacePath;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ConfigureProviderRequest>): ConfigureProviderRequest {
+    return ConfigureProviderRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ConfigureProviderRequest>): ConfigureProviderRequest {
+    const message = createBaseConfigureProviderRequest();
+    message.providerId = object.providerId ?? "";
+    message.engine = object.engine ?? undefined;
+    message.apiKey = object.apiKey ?? undefined;
+    message.envVarName = object.envVarName ?? undefined;
+    message.baseUrl = object.baseUrl ?? undefined;
+    message.target = object.target ?? undefined;
+    message.workspacePath = object.workspacePath ?? undefined;
+    return message;
+  },
+};
+
+function createBaseConfigureProviderResponse(): ConfigureProviderResponse {
+  return { success: false };
+}
+
+export const ConfigureProviderResponse: MessageFns<ConfigureProviderResponse> = {
+  encode(message: ConfigureProviderResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.success !== false) {
+      writer.uint32(8).bool(message.success);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ConfigureProviderResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConfigureProviderResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.success = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ConfigureProviderResponse {
+    return { success: isSet(object.success) ? globalThis.Boolean(object.success) : false };
+  },
+
+  toJSON(message: ConfigureProviderResponse): unknown {
+    const obj: any = {};
+    if (message.success !== false) {
+      obj.success = message.success;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ConfigureProviderResponse>): ConfigureProviderResponse {
+    return ConfigureProviderResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ConfigureProviderResponse>): ConfigureProviderResponse {
+    const message = createBaseConfigureProviderResponse();
+    message.success = object.success ?? false;
+    return message;
+  },
+};
+
+function createBaseRemoveProviderRequest(): RemoveProviderRequest {
+  return { providerId: "", target: undefined, workspacePath: undefined };
+}
+
+export const RemoveProviderRequest: MessageFns<RemoveProviderRequest> = {
+  encode(message: RemoveProviderRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.providerId !== "") {
+      writer.uint32(10).string(message.providerId);
+    }
+    if (message.target !== undefined) {
+      writer.uint32(18).string(message.target);
+    }
+    if (message.workspacePath !== undefined) {
+      writer.uint32(26).string(message.workspacePath);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RemoveProviderRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRemoveProviderRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.providerId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.target = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.workspacePath = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): RemoveProviderRequest {
+    return {
+      providerId: isSet(object.providerId)
+        ? globalThis.String(object.providerId)
+        : isSet(object.provider_id)
+        ? globalThis.String(object.provider_id)
+        : "",
+      target: isSet(object.target) ? globalThis.String(object.target) : undefined,
+      workspacePath: isSet(object.workspacePath)
+        ? globalThis.String(object.workspacePath)
+        : isSet(object.workspace_path)
+        ? globalThis.String(object.workspace_path)
+        : undefined,
+    };
+  },
+
+  toJSON(message: RemoveProviderRequest): unknown {
+    const obj: any = {};
+    if (message.providerId !== "") {
+      obj.providerId = message.providerId;
+    }
+    if (message.target !== undefined) {
+      obj.target = message.target;
+    }
+    if (message.workspacePath !== undefined) {
+      obj.workspacePath = message.workspacePath;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<RemoveProviderRequest>): RemoveProviderRequest {
+    return RemoveProviderRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<RemoveProviderRequest>): RemoveProviderRequest {
+    const message = createBaseRemoveProviderRequest();
+    message.providerId = object.providerId ?? "";
+    message.target = object.target ?? undefined;
+    message.workspacePath = object.workspacePath ?? undefined;
+    return message;
+  },
+};
+
+function createBaseGetProviderTemplatesRequest(): GetProviderTemplatesRequest {
+  return {};
+}
+
+export const GetProviderTemplatesRequest: MessageFns<GetProviderTemplatesRequest> = {
+  encode(_: GetProviderTemplatesRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetProviderTemplatesRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetProviderTemplatesRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(_: any): GetProviderTemplatesRequest {
+    return {};
+  },
+
+  toJSON(_: GetProviderTemplatesRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create(base?: DeepPartial<GetProviderTemplatesRequest>): GetProviderTemplatesRequest {
+    return GetProviderTemplatesRequest.fromPartial(base ?? {});
+  },
+  fromPartial(_: DeepPartial<GetProviderTemplatesRequest>): GetProviderTemplatesRequest {
+    const message = createBaseGetProviderTemplatesRequest();
+    return message;
+  },
+};
+
+function createBaseGetProviderTemplatesResponse(): GetProviderTemplatesResponse {
+  return { templates: [] };
+}
+
+export const GetProviderTemplatesResponse: MessageFns<GetProviderTemplatesResponse> = {
+  encode(message: GetProviderTemplatesResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.templates) {
+      ProviderTemplate.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetProviderTemplatesResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetProviderTemplatesResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.templates.push(ProviderTemplate.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GetProviderTemplatesResponse {
+    return {
+      templates: globalThis.Array.isArray(object?.templates)
+        ? object.templates.map((e: any) => ProviderTemplate.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: GetProviderTemplatesResponse): unknown {
+    const obj: any = {};
+    if (message.templates?.length) {
+      obj.templates = message.templates.map((e) => ProviderTemplate.toJSON(e));
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<GetProviderTemplatesResponse>): GetProviderTemplatesResponse {
+    return GetProviderTemplatesResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<GetProviderTemplatesResponse>): GetProviderTemplatesResponse {
+    const message = createBaseGetProviderTemplatesResponse();
+    message.templates = object.templates?.map((e) => ProviderTemplate.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseProviderTemplate(): ProviderTemplate {
+  return { engine: "", suggestedName: "", defaultBaseUrl: undefined, requiresKey: false };
+}
+
+export const ProviderTemplate: MessageFns<ProviderTemplate> = {
+  encode(message: ProviderTemplate, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.engine !== "") {
+      writer.uint32(10).string(message.engine);
+    }
+    if (message.suggestedName !== "") {
+      writer.uint32(18).string(message.suggestedName);
+    }
+    if (message.defaultBaseUrl !== undefined) {
+      writer.uint32(26).string(message.defaultBaseUrl);
+    }
+    if (message.requiresKey !== false) {
+      writer.uint32(32).bool(message.requiresKey);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ProviderTemplate {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseProviderTemplate();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.engine = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.suggestedName = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.defaultBaseUrl = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.requiresKey = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ProviderTemplate {
+    return {
+      engine: isSet(object.engine) ? globalThis.String(object.engine) : "",
+      suggestedName: isSet(object.suggestedName)
+        ? globalThis.String(object.suggestedName)
+        : isSet(object.suggested_name)
+        ? globalThis.String(object.suggested_name)
+        : "",
+      defaultBaseUrl: isSet(object.defaultBaseUrl)
+        ? globalThis.String(object.defaultBaseUrl)
+        : isSet(object.default_base_url)
+        ? globalThis.String(object.default_base_url)
+        : undefined,
+      requiresKey: isSet(object.requiresKey)
+        ? globalThis.Boolean(object.requiresKey)
+        : isSet(object.requires_key)
+        ? globalThis.Boolean(object.requires_key)
+        : false,
+    };
+  },
+
+  toJSON(message: ProviderTemplate): unknown {
+    const obj: any = {};
+    if (message.engine !== "") {
+      obj.engine = message.engine;
+    }
+    if (message.suggestedName !== "") {
+      obj.suggestedName = message.suggestedName;
+    }
+    if (message.defaultBaseUrl !== undefined) {
+      obj.defaultBaseUrl = message.defaultBaseUrl;
+    }
+    if (message.requiresKey !== false) {
+      obj.requiresKey = message.requiresKey;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ProviderTemplate>): ProviderTemplate {
+    return ProviderTemplate.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ProviderTemplate>): ProviderTemplate {
+    const message = createBaseProviderTemplate();
+    message.engine = object.engine ?? "";
+    message.suggestedName = object.suggestedName ?? "";
+    message.defaultBaseUrl = object.defaultBaseUrl ?? undefined;
+    message.requiresKey = object.requiresKey ?? false;
+    return message;
+  },
+};
+
+function createBaseGetKeyStatusRequest(): GetKeyStatusRequest {
+  return { source: "", name: "" };
+}
+
+export const GetKeyStatusRequest: MessageFns<GetKeyStatusRequest> = {
+  encode(message: GetKeyStatusRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.source !== "") {
+      writer.uint32(10).string(message.source);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetKeyStatusRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetKeyStatusRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.source = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GetKeyStatusRequest {
+    return {
+      source: isSet(object.source) ? globalThis.String(object.source) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+    };
+  },
+
+  toJSON(message: GetKeyStatusRequest): unknown {
+    const obj: any = {};
+    if (message.source !== "") {
+      obj.source = message.source;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<GetKeyStatusRequest>): GetKeyStatusRequest {
+    return GetKeyStatusRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<GetKeyStatusRequest>): GetKeyStatusRequest {
+    const message = createBaseGetKeyStatusRequest();
+    message.source = object.source ?? "";
+    message.name = object.name ?? "";
+    return message;
+  },
+};
+
+function createBaseGetKeyStatusResponse(): GetKeyStatusResponse {
+  return { exists: false };
+}
+
+export const GetKeyStatusResponse: MessageFns<GetKeyStatusResponse> = {
+  encode(message: GetKeyStatusResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.exists !== false) {
+      writer.uint32(8).bool(message.exists);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetKeyStatusResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetKeyStatusResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.exists = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GetKeyStatusResponse {
+    return { exists: isSet(object.exists) ? globalThis.Boolean(object.exists) : false };
+  },
+
+  toJSON(message: GetKeyStatusResponse): unknown {
+    const obj: any = {};
+    if (message.exists !== false) {
+      obj.exists = message.exists;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<GetKeyStatusResponse>): GetKeyStatusResponse {
+    return GetKeyStatusResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<GetKeyStatusResponse>): GetKeyStatusResponse {
+    const message = createBaseGetKeyStatusResponse();
+    message.exists = object.exists ?? false;
+    return message;
+  },
+};
+
+function createBaseListMcpServerConfigsRequest(): ListMcpServerConfigsRequest {
+  return {};
+}
+
+export const ListMcpServerConfigsRequest: MessageFns<ListMcpServerConfigsRequest> = {
+  encode(_: ListMcpServerConfigsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListMcpServerConfigsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListMcpServerConfigsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(_: any): ListMcpServerConfigsRequest {
+    return {};
+  },
+
+  toJSON(_: ListMcpServerConfigsRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create(base?: DeepPartial<ListMcpServerConfigsRequest>): ListMcpServerConfigsRequest {
+    return ListMcpServerConfigsRequest.fromPartial(base ?? {});
+  },
+  fromPartial(_: DeepPartial<ListMcpServerConfigsRequest>): ListMcpServerConfigsRequest {
+    const message = createBaseListMcpServerConfigsRequest();
+    return message;
+  },
+};
+
+function createBaseListMcpServerConfigsResponse(): ListMcpServerConfigsResponse {
+  return { mcpServers: [] };
+}
+
+export const ListMcpServerConfigsResponse: MessageFns<ListMcpServerConfigsResponse> = {
+  encode(message: ListMcpServerConfigsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.mcpServers) {
+      McpServerStatusEntry.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListMcpServerConfigsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListMcpServerConfigsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.mcpServers.push(McpServerStatusEntry.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListMcpServerConfigsResponse {
+    return {
+      mcpServers: globalThis.Array.isArray(object?.mcpServers)
+        ? object.mcpServers.map((e: any) => McpServerStatusEntry.fromJSON(e))
+        : globalThis.Array.isArray(object?.mcp_servers)
+        ? object.mcp_servers.map((e: any) => McpServerStatusEntry.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListMcpServerConfigsResponse): unknown {
+    const obj: any = {};
+    if (message.mcpServers?.length) {
+      obj.mcpServers = message.mcpServers.map((e) => McpServerStatusEntry.toJSON(e));
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ListMcpServerConfigsResponse>): ListMcpServerConfigsResponse {
+    return ListMcpServerConfigsResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ListMcpServerConfigsResponse>): ListMcpServerConfigsResponse {
+    const message = createBaseListMcpServerConfigsResponse();
+    message.mcpServers = object.mcpServers?.map((e) => McpServerStatusEntry.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseMcpServerStatusEntry(): McpServerStatusEntry {
+  return { id: "", transport: "", enabled: false, status: "", toolCount: 0, error: undefined };
+}
+
+export const McpServerStatusEntry: MessageFns<McpServerStatusEntry> = {
+  encode(message: McpServerStatusEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.transport !== "") {
+      writer.uint32(18).string(message.transport);
+    }
+    if (message.enabled !== false) {
+      writer.uint32(24).bool(message.enabled);
+    }
+    if (message.status !== "") {
+      writer.uint32(34).string(message.status);
+    }
+    if (message.toolCount !== 0) {
+      writer.uint32(40).int32(message.toolCount);
+    }
+    if (message.error !== undefined) {
+      writer.uint32(50).string(message.error);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): McpServerStatusEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMcpServerStatusEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.transport = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.enabled = reader.bool();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.status = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.toolCount = reader.int32();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.error = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): McpServerStatusEntry {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      transport: isSet(object.transport) ? globalThis.String(object.transport) : "",
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      toolCount: isSet(object.toolCount)
+        ? globalThis.Number(object.toolCount)
+        : isSet(object.tool_count)
+        ? globalThis.Number(object.tool_count)
+        : 0,
+      error: isSet(object.error) ? globalThis.String(object.error) : undefined,
+    };
+  },
+
+  toJSON(message: McpServerStatusEntry): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.transport !== "") {
+      obj.transport = message.transport;
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    if (message.toolCount !== 0) {
+      obj.toolCount = Math.round(message.toolCount);
+    }
+    if (message.error !== undefined) {
+      obj.error = message.error;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<McpServerStatusEntry>): McpServerStatusEntry {
+    return McpServerStatusEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<McpServerStatusEntry>): McpServerStatusEntry {
+    const message = createBaseMcpServerStatusEntry();
+    message.id = object.id ?? "";
+    message.transport = object.transport ?? "";
+    message.enabled = object.enabled ?? false;
+    message.status = object.status ?? "";
+    message.toolCount = object.toolCount ?? 0;
+    message.error = object.error ?? undefined;
+    return message;
+  },
+};
+
+function createBaseReconnectMcpServerRequest(): ReconnectMcpServerRequest {
+  return { serverId: "" };
+}
+
+export const ReconnectMcpServerRequest: MessageFns<ReconnectMcpServerRequest> = {
+  encode(message: ReconnectMcpServerRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.serverId !== "") {
+      writer.uint32(10).string(message.serverId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ReconnectMcpServerRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseReconnectMcpServerRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.serverId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ReconnectMcpServerRequest {
+    return {
+      serverId: isSet(object.serverId)
+        ? globalThis.String(object.serverId)
+        : isSet(object.server_id)
+        ? globalThis.String(object.server_id)
+        : "",
+    };
+  },
+
+  toJSON(message: ReconnectMcpServerRequest): unknown {
+    const obj: any = {};
+    if (message.serverId !== "") {
+      obj.serverId = message.serverId;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<ReconnectMcpServerRequest>): ReconnectMcpServerRequest {
+    return ReconnectMcpServerRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ReconnectMcpServerRequest>): ReconnectMcpServerRequest {
+    const message = createBaseReconnectMcpServerRequest();
+    message.serverId = object.serverId ?? "";
+    return message;
+  },
+};
+
+function createBaseCreatePolicyRequest(): CreatePolicyRequest {
+  return { name: "", config: undefined };
+}
+
+export const CreatePolicyRequest: MessageFns<CreatePolicyRequest> = {
+  encode(message: CreatePolicyRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.name !== "") {
+      writer.uint32(10).string(message.name);
+    }
+    if (message.config !== undefined) {
+      PolicyConfig.encode(message.config, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): CreatePolicyRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCreatePolicyRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.config = PolicyConfig.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): CreatePolicyRequest {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      config: isSet(object.config) ? PolicyConfig.fromJSON(object.config) : undefined,
+    };
+  },
+
+  toJSON(message: CreatePolicyRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.config !== undefined) {
+      obj.config = PolicyConfig.toJSON(message.config);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<CreatePolicyRequest>): CreatePolicyRequest {
+    return CreatePolicyRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<CreatePolicyRequest>): CreatePolicyRequest {
+    const message = createBaseCreatePolicyRequest();
+    message.name = object.name ?? "";
+    message.config = (object.config !== undefined && object.config !== null)
+      ? PolicyConfig.fromPartial(object.config)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseDeletePolicyRequest(): DeletePolicyRequest {
+  return { name: "" };
+}
+
+export const DeletePolicyRequest: MessageFns<DeletePolicyRequest> = {
+  encode(message: DeletePolicyRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.name !== "") {
+      writer.uint32(10).string(message.name);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DeletePolicyRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseDeletePolicyRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): DeletePolicyRequest {
+    return { name: isSet(object.name) ? globalThis.String(object.name) : "" };
+  },
+
+  toJSON(message: DeletePolicyRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<DeletePolicyRequest>): DeletePolicyRequest {
+    return DeletePolicyRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<DeletePolicyRequest>): DeletePolicyRequest {
+    const message = createBaseDeletePolicyRequest();
+    message.name = object.name ?? "";
     return message;
   },
 };
@@ -14812,7 +17600,7 @@ export const PolicyReliability: MessageFns<PolicyReliability> = {
 };
 
 function createBaseRegisterMcpServerRequest(): RegisterMcpServerRequest {
-  return { serverId: "", transport: "", capabilities: [] };
+  return { serverId: "", transport: undefined, sessionId: undefined, toolFilter: [], maxResponseSize: undefined };
 }
 
 export const RegisterMcpServerRequest: MessageFns<RegisterMcpServerRequest> = {
@@ -14820,11 +17608,17 @@ export const RegisterMcpServerRequest: MessageFns<RegisterMcpServerRequest> = {
     if (message.serverId !== "") {
       writer.uint32(10).string(message.serverId);
     }
-    if (message.transport !== "") {
-      writer.uint32(18).string(message.transport);
+    if (message.transport !== undefined) {
+      McpTransport.encode(message.transport, writer.uint32(18).fork()).join();
     }
-    for (const v of message.capabilities) {
-      writer.uint32(26).string(v!);
+    if (message.sessionId !== undefined) {
+      writer.uint32(26).string(message.sessionId);
+    }
+    for (const v of message.toolFilter) {
+      writer.uint32(34).string(v!);
+    }
+    if (message.maxResponseSize !== undefined) {
+      writer.uint32(40).int32(message.maxResponseSize);
     }
     return writer;
   },
@@ -14849,7 +17643,7 @@ export const RegisterMcpServerRequest: MessageFns<RegisterMcpServerRequest> = {
             break;
           }
 
-          message.transport = reader.string();
+          message.transport = McpTransport.decode(reader, reader.uint32());
           continue;
         }
         case 3: {
@@ -14857,7 +17651,23 @@ export const RegisterMcpServerRequest: MessageFns<RegisterMcpServerRequest> = {
             break;
           }
 
-          message.capabilities.push(reader.string());
+          message.sessionId = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.toolFilter.push(reader.string());
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.maxResponseSize = reader.int32();
           continue;
         }
       }
@@ -14876,10 +17686,22 @@ export const RegisterMcpServerRequest: MessageFns<RegisterMcpServerRequest> = {
         : isSet(object.server_id)
         ? globalThis.String(object.server_id)
         : "",
-      transport: isSet(object.transport) ? globalThis.String(object.transport) : "",
-      capabilities: globalThis.Array.isArray(object?.capabilities)
-        ? object.capabilities.map((e: any) => globalThis.String(e))
+      transport: isSet(object.transport) ? McpTransport.fromJSON(object.transport) : undefined,
+      sessionId: isSet(object.sessionId)
+        ? globalThis.String(object.sessionId)
+        : isSet(object.session_id)
+        ? globalThis.String(object.session_id)
+        : undefined,
+      toolFilter: globalThis.Array.isArray(object?.toolFilter)
+        ? object.toolFilter.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.tool_filter)
+        ? object.tool_filter.map((e: any) => globalThis.String(e))
         : [],
+      maxResponseSize: isSet(object.maxResponseSize)
+        ? globalThis.Number(object.maxResponseSize)
+        : isSet(object.max_response_size)
+        ? globalThis.Number(object.max_response_size)
+        : undefined,
     };
   },
 
@@ -14888,11 +17710,17 @@ export const RegisterMcpServerRequest: MessageFns<RegisterMcpServerRequest> = {
     if (message.serverId !== "") {
       obj.serverId = message.serverId;
     }
-    if (message.transport !== "") {
-      obj.transport = message.transport;
+    if (message.transport !== undefined) {
+      obj.transport = McpTransport.toJSON(message.transport);
     }
-    if (message.capabilities?.length) {
-      obj.capabilities = message.capabilities;
+    if (message.sessionId !== undefined) {
+      obj.sessionId = message.sessionId;
+    }
+    if (message.toolFilter?.length) {
+      obj.toolFilter = message.toolFilter;
+    }
+    if (message.maxResponseSize !== undefined) {
+      obj.maxResponseSize = Math.round(message.maxResponseSize);
     }
     return obj;
   },
@@ -14903,8 +17731,450 @@ export const RegisterMcpServerRequest: MessageFns<RegisterMcpServerRequest> = {
   fromPartial(object: DeepPartial<RegisterMcpServerRequest>): RegisterMcpServerRequest {
     const message = createBaseRegisterMcpServerRequest();
     message.serverId = object.serverId ?? "";
-    message.transport = object.transport ?? "";
-    message.capabilities = object.capabilities?.map((e) => e) || [];
+    message.transport = (object.transport !== undefined && object.transport !== null)
+      ? McpTransport.fromPartial(object.transport)
+      : undefined;
+    message.sessionId = object.sessionId ?? undefined;
+    message.toolFilter = object.toolFilter?.map((e) => e) || [];
+    message.maxResponseSize = object.maxResponseSize ?? undefined;
+    return message;
+  },
+};
+
+function createBaseMcpTransport(): McpTransport {
+  return { type: "", command: undefined, args: [], url: undefined, headers: {}, env: {} };
+}
+
+export const McpTransport: MessageFns<McpTransport> = {
+  encode(message: McpTransport, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.type !== "") {
+      writer.uint32(10).string(message.type);
+    }
+    if (message.command !== undefined) {
+      writer.uint32(18).string(message.command);
+    }
+    for (const v of message.args) {
+      writer.uint32(26).string(v!);
+    }
+    if (message.url !== undefined) {
+      writer.uint32(34).string(message.url);
+    }
+    globalThis.Object.entries(message.headers).forEach(([key, value]: [string, string]) => {
+      McpTransport_HeadersEntry.encode({ key: key as any, value }, writer.uint32(42).fork()).join();
+    });
+    globalThis.Object.entries(message.env).forEach(([key, value]: [string, string]) => {
+      McpTransport_EnvEntry.encode({ key: key as any, value }, writer.uint32(50).fork()).join();
+    });
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): McpTransport {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMcpTransport();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.type = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.command = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.args.push(reader.string());
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.url = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          const entry5 = McpTransport_HeadersEntry.decode(reader, reader.uint32());
+          if (entry5.value !== undefined) {
+            message.headers[entry5.key] = entry5.value;
+          }
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          const entry6 = McpTransport_EnvEntry.decode(reader, reader.uint32());
+          if (entry6.value !== undefined) {
+            message.env[entry6.key] = entry6.value;
+          }
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): McpTransport {
+    return {
+      type: isSet(object.type) ? globalThis.String(object.type) : "",
+      command: isSet(object.command) ? globalThis.String(object.command) : undefined,
+      args: globalThis.Array.isArray(object?.args) ? object.args.map((e: any) => globalThis.String(e)) : [],
+      url: isSet(object.url) ? globalThis.String(object.url) : undefined,
+      headers: isObject(object.headers)
+        ? (globalThis.Object.entries(object.headers) as [string, any][]).reduce(
+          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
+            acc[key] = globalThis.String(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
+      env: isObject(object.env)
+        ? (globalThis.Object.entries(object.env) as [string, any][]).reduce(
+          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
+            acc[key] = globalThis.String(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
+    };
+  },
+
+  toJSON(message: McpTransport): unknown {
+    const obj: any = {};
+    if (message.type !== "") {
+      obj.type = message.type;
+    }
+    if (message.command !== undefined) {
+      obj.command = message.command;
+    }
+    if (message.args?.length) {
+      obj.args = message.args;
+    }
+    if (message.url !== undefined) {
+      obj.url = message.url;
+    }
+    if (message.headers) {
+      const entries = globalThis.Object.entries(message.headers) as [string, string][];
+      if (entries.length > 0) {
+        obj.headers = {};
+        entries.forEach(([k, v]) => {
+          obj.headers[k] = v;
+        });
+      }
+    }
+    if (message.env) {
+      const entries = globalThis.Object.entries(message.env) as [string, string][];
+      if (entries.length > 0) {
+        obj.env = {};
+        entries.forEach(([k, v]) => {
+          obj.env[k] = v;
+        });
+      }
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<McpTransport>): McpTransport {
+    return McpTransport.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<McpTransport>): McpTransport {
+    const message = createBaseMcpTransport();
+    message.type = object.type ?? "";
+    message.command = object.command ?? undefined;
+    message.args = object.args?.map((e) => e) || [];
+    message.url = object.url ?? undefined;
+    message.headers = (globalThis.Object.entries(object.headers ?? {}) as [string, string][]).reduce(
+      (acc: { [key: string]: string }, [key, value]: [string, string]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.env = (globalThis.Object.entries(object.env ?? {}) as [string, string][]).reduce(
+      (acc: { [key: string]: string }, [key, value]: [string, string]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    return message;
+  },
+};
+
+function createBaseMcpTransport_HeadersEntry(): McpTransport_HeadersEntry {
+  return { key: "", value: "" };
+}
+
+export const McpTransport_HeadersEntry: MessageFns<McpTransport_HeadersEntry> = {
+  encode(message: McpTransport_HeadersEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): McpTransport_HeadersEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMcpTransport_HeadersEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): McpTransport_HeadersEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.String(object.value) : "",
+    };
+  },
+
+  toJSON(message: McpTransport_HeadersEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== "") {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<McpTransport_HeadersEntry>): McpTransport_HeadersEntry {
+    return McpTransport_HeadersEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<McpTransport_HeadersEntry>): McpTransport_HeadersEntry {
+    const message = createBaseMcpTransport_HeadersEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
+    return message;
+  },
+};
+
+function createBaseMcpTransport_EnvEntry(): McpTransport_EnvEntry {
+  return { key: "", value: "" };
+}
+
+export const McpTransport_EnvEntry: MessageFns<McpTransport_EnvEntry> = {
+  encode(message: McpTransport_EnvEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): McpTransport_EnvEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMcpTransport_EnvEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): McpTransport_EnvEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.String(object.value) : "",
+    };
+  },
+
+  toJSON(message: McpTransport_EnvEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== "") {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<McpTransport_EnvEntry>): McpTransport_EnvEntry {
+    return McpTransport_EnvEntry.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<McpTransport_EnvEntry>): McpTransport_EnvEntry {
+    const message = createBaseMcpTransport_EnvEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
+    return message;
+  },
+};
+
+function createBaseRegisterMcpServerResponse(): RegisterMcpServerResponse {
+  return { success: false, error: "", discoveredTools: [] };
+}
+
+export const RegisterMcpServerResponse: MessageFns<RegisterMcpServerResponse> = {
+  encode(message: RegisterMcpServerResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.success !== false) {
+      writer.uint32(8).bool(message.success);
+    }
+    if (message.error !== "") {
+      writer.uint32(18).string(message.error);
+    }
+    for (const v of message.discoveredTools) {
+      writer.uint32(26).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RegisterMcpServerResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRegisterMcpServerResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.success = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.error = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.discoveredTools.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): RegisterMcpServerResponse {
+    return {
+      success: isSet(object.success) ? globalThis.Boolean(object.success) : false,
+      error: isSet(object.error) ? globalThis.String(object.error) : "",
+      discoveredTools: globalThis.Array.isArray(object?.discoveredTools)
+        ? object.discoveredTools.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.discovered_tools)
+        ? object.discovered_tools.map((e: any) => globalThis.String(e))
+        : [],
+    };
+  },
+
+  toJSON(message: RegisterMcpServerResponse): unknown {
+    const obj: any = {};
+    if (message.success !== false) {
+      obj.success = message.success;
+    }
+    if (message.error !== "") {
+      obj.error = message.error;
+    }
+    if (message.discoveredTools?.length) {
+      obj.discoveredTools = message.discoveredTools;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<RegisterMcpServerResponse>): RegisterMcpServerResponse {
+    return RegisterMcpServerResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<RegisterMcpServerResponse>): RegisterMcpServerResponse {
+    const message = createBaseRegisterMcpServerResponse();
+    message.success = object.success ?? false;
+    message.error = object.error ?? "";
+    message.discoveredTools = object.discoveredTools?.map((e) => e) || [];
     return message;
   },
 };
@@ -14969,6 +18239,64 @@ export const UnregisterMcpServerRequest: MessageFns<UnregisterMcpServerRequest> 
   fromPartial(object: DeepPartial<UnregisterMcpServerRequest>): UnregisterMcpServerRequest {
     const message = createBaseUnregisterMcpServerRequest();
     message.serverId = object.serverId ?? "";
+    return message;
+  },
+};
+
+function createBaseUnregisterMcpServerResponse(): UnregisterMcpServerResponse {
+  return { success: false };
+}
+
+export const UnregisterMcpServerResponse: MessageFns<UnregisterMcpServerResponse> = {
+  encode(message: UnregisterMcpServerResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.success !== false) {
+      writer.uint32(8).bool(message.success);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UnregisterMcpServerResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUnregisterMcpServerResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.success = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): UnregisterMcpServerResponse {
+    return { success: isSet(object.success) ? globalThis.Boolean(object.success) : false };
+  },
+
+  toJSON(message: UnregisterMcpServerResponse): unknown {
+    const obj: any = {};
+    if (message.success !== false) {
+      obj.success = message.success;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<UnregisterMcpServerResponse>): UnregisterMcpServerResponse {
+    return UnregisterMcpServerResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<UnregisterMcpServerResponse>): UnregisterMcpServerResponse {
+    const message = createBaseUnregisterMcpServerResponse();
+    message.success = object.success ?? false;
     return message;
   },
 };
@@ -15310,12 +18638,57 @@ export const AbbenayDefinition = {
       responseStream: false,
       options: {},
     },
+    /** Configure a provider (add or update, with optional API key storage) */
+    configureProvider: {
+      name: "ConfigureProvider",
+      requestType: ConfigureProviderRequest as typeof ConfigureProviderRequest,
+      requestStream: false,
+      responseType: ConfigureProviderResponse as typeof ConfigureProviderResponse,
+      responseStream: false,
+      options: {},
+    },
+    /** Remove a provider configuration */
+    removeProvider: {
+      name: "RemoveProvider",
+      requestType: RemoveProviderRequest as typeof RemoveProviderRequest,
+      requestStream: false,
+      responseType: Empty as typeof Empty,
+      responseStream: false,
+      options: {},
+    },
+    /** Get predefined provider templates for the add-provider wizard */
+    getProviderTemplates: {
+      name: "GetProviderTemplates",
+      requestType: GetProviderTemplatesRequest as typeof GetProviderTemplatesRequest,
+      requestStream: false,
+      responseType: GetProviderTemplatesResponse as typeof GetProviderTemplatesResponse,
+      responseStream: false,
+      options: {},
+    },
     /** List all policies (built-in + custom) */
     listPolicies: {
       name: "ListPolicies",
       requestType: ListPoliciesRequest as typeof ListPoliciesRequest,
       requestStream: false,
       responseType: ListPoliciesResponse as typeof ListPoliciesResponse,
+      responseStream: false,
+      options: {},
+    },
+    /** Create or update a custom policy */
+    createPolicy: {
+      name: "CreatePolicy",
+      requestType: CreatePolicyRequest as typeof CreatePolicyRequest,
+      requestStream: false,
+      responseType: Empty as typeof Empty,
+      responseStream: false,
+      options: {},
+    },
+    /** Delete a custom policy */
+    deletePolicy: {
+      name: "DeletePolicy",
+      requestType: DeletePolicyRequest as typeof DeletePolicyRequest,
+      requestStream: false,
+      responseType: Empty as typeof Empty,
       responseStream: false,
       options: {},
     },
@@ -15337,21 +18710,48 @@ export const AbbenayDefinition = {
       responseStream: false,
       options: {},
     },
-    /** Get current configuration */
+    /** Get current configuration (user or workspace level) */
     getConfig: {
       name: "GetConfig",
       requestType: GetConfigRequest as typeof GetConfigRequest,
       requestStream: false,
-      responseType: Config as typeof Config,
+      responseType: GetConfigResponse as typeof GetConfigResponse,
       responseStream: false,
       options: {},
     },
-    /** Update configuration */
+    /** Update configuration (user or workspace level) */
     updateConfig: {
       name: "UpdateConfig",
       requestType: UpdateConfigRequest as typeof UpdateConfigRequest,
       requestStream: false,
-      responseType: Config as typeof Config,
+      responseType: GetConfigResponse as typeof GetConfigResponse,
+      responseStream: false,
+      options: {},
+    },
+    /** Check if a specific key is available (keychain or env) */
+    getKeyStatus: {
+      name: "GetKeyStatus",
+      requestType: GetKeyStatusRequest as typeof GetKeyStatusRequest,
+      requestStream: false,
+      responseType: GetKeyStatusResponse as typeof GetKeyStatusResponse,
+      responseStream: false,
+      options: {},
+    },
+    /** List configured MCP servers with connection status */
+    listMcpServerConfigs: {
+      name: "ListMcpServerConfigs",
+      requestType: ListMcpServerConfigsRequest as typeof ListMcpServerConfigsRequest,
+      requestStream: false,
+      responseType: ListMcpServerConfigsResponse as typeof ListMcpServerConfigsResponse,
+      responseStream: false,
+      options: {},
+    },
+    /** Reconnect a failed MCP server */
+    reconnectMcpServer: {
+      name: "ReconnectMcpServer",
+      requestType: ReconnectMcpServerRequest as typeof ReconnectMcpServerRequest,
+      requestStream: false,
+      responseType: Empty as typeof Empty,
       responseStream: false,
       options: {},
     },
@@ -15463,21 +18863,21 @@ export const AbbenayDefinition = {
       responseStream: false,
       options: {},
     },
-    /** Register an MCP server */
+    /** Register an MCP server dynamically at runtime */
     registerMcpServer: {
       name: "RegisterMcpServer",
       requestType: RegisterMcpServerRequest as typeof RegisterMcpServerRequest,
       requestStream: false,
-      responseType: Empty as typeof Empty,
+      responseType: RegisterMcpServerResponse as typeof RegisterMcpServerResponse,
       responseStream: false,
       options: {},
     },
-    /** Unregister an MCP server */
+    /** Unregister a dynamically registered MCP server */
     unregisterMcpServer: {
       name: "UnregisterMcpServer",
       requestType: UnregisterMcpServerRequest as typeof UnregisterMcpServerRequest,
       requestStream: false,
-      responseType: Empty as typeof Empty,
+      responseType: UnregisterMcpServerResponse as typeof UnregisterMcpServerResponse,
       responseStream: false,
       options: {},
     },
@@ -15564,11 +18964,27 @@ export interface AbbenayServiceImplementation<CallContextExt = {}> {
     request: ListEnginesRequest,
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ListEnginesResponse>>;
+  /** Configure a provider (add or update, with optional API key storage) */
+  configureProvider(
+    request: ConfigureProviderRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<ConfigureProviderResponse>>;
+  /** Remove a provider configuration */
+  removeProvider(request: RemoveProviderRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
+  /** Get predefined provider templates for the add-provider wizard */
+  getProviderTemplates(
+    request: GetProviderTemplatesRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<GetProviderTemplatesResponse>>;
   /** List all policies (built-in + custom) */
   listPolicies(
     request: ListPoliciesRequest,
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ListPoliciesResponse>>;
+  /** Create or update a custom policy */
+  createPolicy(request: CreatePolicyRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
+  /** Delete a custom policy */
+  deletePolicy(request: DeletePolicyRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
   /** List available tools (from MCP servers) */
   listTools(request: ListToolsRequest, context: CallContext & CallContextExt): Promise<DeepPartial<ListToolsResponse>>;
   /** Execute a tool directly */
@@ -15576,10 +18992,28 @@ export interface AbbenayServiceImplementation<CallContextExt = {}> {
     request: ExecuteToolRequest,
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ExecuteToolResponse>>;
-  /** Get current configuration */
-  getConfig(request: GetConfigRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Config>>;
-  /** Update configuration */
-  updateConfig(request: UpdateConfigRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Config>>;
+  /** Get current configuration (user or workspace level) */
+  getConfig(request: GetConfigRequest, context: CallContext & CallContextExt): Promise<DeepPartial<GetConfigResponse>>;
+  /** Update configuration (user or workspace level) */
+  updateConfig(
+    request: UpdateConfigRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<GetConfigResponse>>;
+  /** Check if a specific key is available (keychain or env) */
+  getKeyStatus(
+    request: GetKeyStatusRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<GetKeyStatusResponse>>;
+  /** List configured MCP servers with connection status */
+  listMcpServerConfigs(
+    request: ListMcpServerConfigsRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<ListMcpServerConfigsResponse>>;
+  /** Reconnect a failed MCP server */
+  reconnectMcpServer(
+    request: ReconnectMcpServerRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<Empty>>;
   /** Get a secret (API key, etc.) */
   getSecret(request: GetSecretRequest, context: CallContext & CallContextExt): Promise<DeepPartial<GetSecretResponse>>;
   /** Set a secret */
@@ -15616,16 +19050,16 @@ export interface AbbenayServiceImplementation<CallContextExt = {}> {
   ): Promise<DeepPartial<StartWebServerResponse>>;
   /** Stop the embedded web server */
   stopWebServer(request: StopWebServerRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
-  /** Register an MCP server */
+  /** Register an MCP server dynamically at runtime */
   registerMcpServer(
     request: RegisterMcpServerRequest,
     context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<Empty>>;
-  /** Unregister an MCP server */
+  ): Promise<DeepPartial<RegisterMcpServerResponse>>;
+  /** Unregister a dynamically registered MCP server */
   unregisterMcpServer(
     request: UnregisterMcpServerRequest,
     context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<Empty>>;
+  ): Promise<DeepPartial<UnregisterMcpServerResponse>>;
   /** Bidirectional stream for daemon to call VS Code */
   vSCodeStream(
     request: AsyncIterable<VSCodeResponse>,
@@ -15701,11 +19135,27 @@ export interface AbbenayClient<CallOptionsExt = {}> {
     request: DeepPartial<ListEnginesRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<ListEnginesResponse>;
+  /** Configure a provider (add or update, with optional API key storage) */
+  configureProvider(
+    request: DeepPartial<ConfigureProviderRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<ConfigureProviderResponse>;
+  /** Remove a provider configuration */
+  removeProvider(request: DeepPartial<RemoveProviderRequest>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
+  /** Get predefined provider templates for the add-provider wizard */
+  getProviderTemplates(
+    request: DeepPartial<GetProviderTemplatesRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<GetProviderTemplatesResponse>;
   /** List all policies (built-in + custom) */
   listPolicies(
     request: DeepPartial<ListPoliciesRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<ListPoliciesResponse>;
+  /** Create or update a custom policy */
+  createPolicy(request: DeepPartial<CreatePolicyRequest>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
+  /** Delete a custom policy */
+  deletePolicy(request: DeepPartial<DeletePolicyRequest>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
   /** List available tools (from MCP servers) */
   listTools(request: DeepPartial<ListToolsRequest>, options?: CallOptions & CallOptionsExt): Promise<ListToolsResponse>;
   /** Execute a tool directly */
@@ -15713,10 +19163,28 @@ export interface AbbenayClient<CallOptionsExt = {}> {
     request: DeepPartial<ExecuteToolRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<ExecuteToolResponse>;
-  /** Get current configuration */
-  getConfig(request: DeepPartial<GetConfigRequest>, options?: CallOptions & CallOptionsExt): Promise<Config>;
-  /** Update configuration */
-  updateConfig(request: DeepPartial<UpdateConfigRequest>, options?: CallOptions & CallOptionsExt): Promise<Config>;
+  /** Get current configuration (user or workspace level) */
+  getConfig(request: DeepPartial<GetConfigRequest>, options?: CallOptions & CallOptionsExt): Promise<GetConfigResponse>;
+  /** Update configuration (user or workspace level) */
+  updateConfig(
+    request: DeepPartial<UpdateConfigRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<GetConfigResponse>;
+  /** Check if a specific key is available (keychain or env) */
+  getKeyStatus(
+    request: DeepPartial<GetKeyStatusRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<GetKeyStatusResponse>;
+  /** List configured MCP servers with connection status */
+  listMcpServerConfigs(
+    request: DeepPartial<ListMcpServerConfigsRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<ListMcpServerConfigsResponse>;
+  /** Reconnect a failed MCP server */
+  reconnectMcpServer(
+    request: DeepPartial<ReconnectMcpServerRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<Empty>;
   /** Get a secret (API key, etc.) */
   getSecret(request: DeepPartial<GetSecretRequest>, options?: CallOptions & CallOptionsExt): Promise<GetSecretResponse>;
   /** Set a secret */
@@ -15753,16 +19221,16 @@ export interface AbbenayClient<CallOptionsExt = {}> {
   ): Promise<StartWebServerResponse>;
   /** Stop the embedded web server */
   stopWebServer(request: DeepPartial<StopWebServerRequest>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
-  /** Register an MCP server */
+  /** Register an MCP server dynamically at runtime */
   registerMcpServer(
     request: DeepPartial<RegisterMcpServerRequest>,
     options?: CallOptions & CallOptionsExt,
-  ): Promise<Empty>;
-  /** Unregister an MCP server */
+  ): Promise<RegisterMcpServerResponse>;
+  /** Unregister a dynamically registered MCP server */
   unregisterMcpServer(
     request: DeepPartial<UnregisterMcpServerRequest>,
     options?: CallOptions & CallOptionsExt,
-  ): Promise<Empty>;
+  ): Promise<UnregisterMcpServerResponse>;
   /** Bidirectional stream for daemon to call VS Code */
   vSCodeStream(
     request: AsyncIterable<DeepPartial<VSCodeResponse>>,

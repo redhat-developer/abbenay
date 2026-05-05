@@ -366,3 +366,25 @@ small fetch wrapper for request sanitization and optional JSON→SSE adaptation,
 while keeping the integration aligned with SDK updates. The `base_url` config
 field carries the full URL prefix (including any proxy-specific path segments);
 the SDK appends `/<model>:streamRawPredict` automatically.
+
+---
+
+## DR-027: Full configuration support via gRPC
+
+**Date:** 2026-05-05
+**Decision:** Expand the gRPC `Abbenay` service to support full configuration
+management at parity with the daemon's REST API. The proto `Config` message is
+replaced with a richer structure matching the on-disk `ConfigFile` (providers
+with per-model params, MCP servers, tool policy, consumers). New RPCs are added
+for provider CRUD (`ConfigureProvider`, `RemoveProvider`, `GetProviderTemplates`),
+MCP server config (`ListMcpServerConfigs`, `ReconnectMcpServer`), policy CRUD
+(`CreatePolicy`, `DeletePolicy`), and key status checks (`GetKeyStatus`).
+`DiscoverModels` gains a `provider_id` field for daemon-side credential
+resolution. `GetConfig`/`UpdateConfig` become location-aware (user vs workspace).
+**Rationale:** The VS Code extension communicates exclusively via gRPC, but the
+config RPCs were stubbed — `UpdateConfig` was a no-op and `GetConfig` returned
+only partial data. Adding a native webview for configuration requires the
+extension to read and write the full config through the existing gRPC channel.
+Rather than adding HTTP calls to the extension (which would duplicate transport
+layers and complicate remote-dev scenarios), bringing gRPC to parity keeps the
+architecture clean and benefits all gRPC clients (CLI, Python, future editors).

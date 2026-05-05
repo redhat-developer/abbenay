@@ -539,10 +539,35 @@ class AbbenayStub(object):
                 request_serializer=abbenay_dot_v1_dot_service__pb2.ListEnginesRequest.SerializeToString,
                 response_deserializer=abbenay_dot_v1_dot_service__pb2.ListEnginesResponse.FromString,
                 _registered_method=True)
+        self.ConfigureProvider = channel.unary_unary(
+                '/abbenay.v1.Abbenay/ConfigureProvider',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.ConfigureProviderRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.ConfigureProviderResponse.FromString,
+                _registered_method=True)
+        self.RemoveProvider = channel.unary_unary(
+                '/abbenay.v1.Abbenay/RemoveProvider',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.RemoveProviderRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+                _registered_method=True)
+        self.GetProviderTemplates = channel.unary_unary(
+                '/abbenay.v1.Abbenay/GetProviderTemplates',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.GetProviderTemplatesRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.GetProviderTemplatesResponse.FromString,
+                _registered_method=True)
         self.ListPolicies = channel.unary_unary(
                 '/abbenay.v1.Abbenay/ListPolicies',
                 request_serializer=abbenay_dot_v1_dot_service__pb2.ListPoliciesRequest.SerializeToString,
                 response_deserializer=abbenay_dot_v1_dot_service__pb2.ListPoliciesResponse.FromString,
+                _registered_method=True)
+        self.CreatePolicy = channel.unary_unary(
+                '/abbenay.v1.Abbenay/CreatePolicy',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.CreatePolicyRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+                _registered_method=True)
+        self.DeletePolicy = channel.unary_unary(
+                '/abbenay.v1.Abbenay/DeletePolicy',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.DeletePolicyRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.Empty.FromString,
                 _registered_method=True)
         self.ListTools = channel.unary_unary(
                 '/abbenay.v1.Abbenay/ListTools',
@@ -557,12 +582,27 @@ class AbbenayStub(object):
         self.GetConfig = channel.unary_unary(
                 '/abbenay.v1.Abbenay/GetConfig',
                 request_serializer=abbenay_dot_v1_dot_service__pb2.GetConfigRequest.SerializeToString,
-                response_deserializer=abbenay_dot_v1_dot_service__pb2.Config.FromString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.GetConfigResponse.FromString,
                 _registered_method=True)
         self.UpdateConfig = channel.unary_unary(
                 '/abbenay.v1.Abbenay/UpdateConfig',
                 request_serializer=abbenay_dot_v1_dot_service__pb2.UpdateConfigRequest.SerializeToString,
-                response_deserializer=abbenay_dot_v1_dot_service__pb2.Config.FromString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.GetConfigResponse.FromString,
+                _registered_method=True)
+        self.GetKeyStatus = channel.unary_unary(
+                '/abbenay.v1.Abbenay/GetKeyStatus',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.GetKeyStatusRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.GetKeyStatusResponse.FromString,
+                _registered_method=True)
+        self.ListMcpServerConfigs = channel.unary_unary(
+                '/abbenay.v1.Abbenay/ListMcpServerConfigs',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.ListMcpServerConfigsRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.ListMcpServerConfigsResponse.FromString,
+                _registered_method=True)
+        self.ReconnectMcpServer = channel.unary_unary(
+                '/abbenay.v1.Abbenay/ReconnectMcpServer',
+                request_serializer=abbenay_dot_v1_dot_service__pb2.ReconnectMcpServerRequest.SerializeToString,
+                response_deserializer=abbenay_dot_v1_dot_service__pb2.Empty.FromString,
                 _registered_method=True)
         self.GetSecret = channel.unary_unary(
                 '/abbenay.v1.Abbenay/GetSecret',
@@ -778,12 +818,51 @@ class AbbenayServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ConfigureProvider(self, request, context):
+        """
+        Providers (CRUD)
+
+
+        Configure a provider (add or update, with optional API key storage)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveProvider(self, request, context):
+        """Remove a provider configuration
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetProviderTemplates(self, request, context):
+        """Get predefined provider templates for the add-provider wizard
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ListPolicies(self, request, context):
         """
         Policies
 
 
         List all policies (built-in + custom)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreatePolicy(self, request, context):
+        """Create or update a custom policy
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeletePolicy(self, request, context):
+        """Delete a custom policy
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -812,14 +891,35 @@ class AbbenayServicer(object):
         Configuration
 
 
-        Get current configuration
+        Get current configuration (user or workspace level)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def UpdateConfig(self, request, context):
-        """Update configuration
+        """Update configuration (user or workspace level)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetKeyStatus(self, request, context):
+        """Check if a specific key is available (keychain or env)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListMcpServerConfigs(self, request, context):
+        """List configured MCP servers with connection status
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReconnectMcpServer(self, request, context):
+        """Reconnect a failed MCP server
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -1042,10 +1142,35 @@ def add_AbbenayServicer_to_server(servicer, server):
                     request_deserializer=abbenay_dot_v1_dot_service__pb2.ListEnginesRequest.FromString,
                     response_serializer=abbenay_dot_v1_dot_service__pb2.ListEnginesResponse.SerializeToString,
             ),
+            'ConfigureProvider': grpc.unary_unary_rpc_method_handler(
+                    servicer.ConfigureProvider,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.ConfigureProviderRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.ConfigureProviderResponse.SerializeToString,
+            ),
+            'RemoveProvider': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveProvider,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.RemoveProviderRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.Empty.SerializeToString,
+            ),
+            'GetProviderTemplates': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetProviderTemplates,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.GetProviderTemplatesRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.GetProviderTemplatesResponse.SerializeToString,
+            ),
             'ListPolicies': grpc.unary_unary_rpc_method_handler(
                     servicer.ListPolicies,
                     request_deserializer=abbenay_dot_v1_dot_service__pb2.ListPoliciesRequest.FromString,
                     response_serializer=abbenay_dot_v1_dot_service__pb2.ListPoliciesResponse.SerializeToString,
+            ),
+            'CreatePolicy': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreatePolicy,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.CreatePolicyRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.Empty.SerializeToString,
+            ),
+            'DeletePolicy': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeletePolicy,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.DeletePolicyRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.Empty.SerializeToString,
             ),
             'ListTools': grpc.unary_unary_rpc_method_handler(
                     servicer.ListTools,
@@ -1060,12 +1185,27 @@ def add_AbbenayServicer_to_server(servicer, server):
             'GetConfig': grpc.unary_unary_rpc_method_handler(
                     servicer.GetConfig,
                     request_deserializer=abbenay_dot_v1_dot_service__pb2.GetConfigRequest.FromString,
-                    response_serializer=abbenay_dot_v1_dot_service__pb2.Config.SerializeToString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.GetConfigResponse.SerializeToString,
             ),
             'UpdateConfig': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateConfig,
                     request_deserializer=abbenay_dot_v1_dot_service__pb2.UpdateConfigRequest.FromString,
-                    response_serializer=abbenay_dot_v1_dot_service__pb2.Config.SerializeToString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.GetConfigResponse.SerializeToString,
+            ),
+            'GetKeyStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetKeyStatus,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.GetKeyStatusRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.GetKeyStatusResponse.SerializeToString,
+            ),
+            'ListMcpServerConfigs': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListMcpServerConfigs,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.ListMcpServerConfigsRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.ListMcpServerConfigsResponse.SerializeToString,
+            ),
+            'ReconnectMcpServer': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReconnectMcpServer,
+                    request_deserializer=abbenay_dot_v1_dot_service__pb2.ReconnectMcpServerRequest.FromString,
+                    response_serializer=abbenay_dot_v1_dot_service__pb2.Empty.SerializeToString,
             ),
             'GetSecret': grpc.unary_unary_rpc_method_handler(
                     servicer.GetSecret,
@@ -1620,6 +1760,87 @@ class Abbenay(object):
             _registered_method=True)
 
     @staticmethod
+    def ConfigureProvider(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/ConfigureProvider',
+            abbenay_dot_v1_dot_service__pb2.ConfigureProviderRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.ConfigureProviderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveProvider(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/RemoveProvider',
+            abbenay_dot_v1_dot_service__pb2.RemoveProviderRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetProviderTemplates(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/GetProviderTemplates',
+            abbenay_dot_v1_dot_service__pb2.GetProviderTemplatesRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.GetProviderTemplatesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def ListPolicies(request,
             target,
             options=(),
@@ -1636,6 +1857,60 @@ class Abbenay(object):
             '/abbenay.v1.Abbenay/ListPolicies',
             abbenay_dot_v1_dot_service__pb2.ListPoliciesRequest.SerializeToString,
             abbenay_dot_v1_dot_service__pb2.ListPoliciesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreatePolicy(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/CreatePolicy',
+            abbenay_dot_v1_dot_service__pb2.CreatePolicyRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeletePolicy(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/DeletePolicy',
+            abbenay_dot_v1_dot_service__pb2.DeletePolicyRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1716,7 +1991,7 @@ class Abbenay(object):
             target,
             '/abbenay.v1.Abbenay/GetConfig',
             abbenay_dot_v1_dot_service__pb2.GetConfigRequest.SerializeToString,
-            abbenay_dot_v1_dot_service__pb2.Config.FromString,
+            abbenay_dot_v1_dot_service__pb2.GetConfigResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1743,7 +2018,88 @@ class Abbenay(object):
             target,
             '/abbenay.v1.Abbenay/UpdateConfig',
             abbenay_dot_v1_dot_service__pb2.UpdateConfigRequest.SerializeToString,
-            abbenay_dot_v1_dot_service__pb2.Config.FromString,
+            abbenay_dot_v1_dot_service__pb2.GetConfigResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetKeyStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/GetKeyStatus',
+            abbenay_dot_v1_dot_service__pb2.GetKeyStatusRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.GetKeyStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListMcpServerConfigs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/ListMcpServerConfigs',
+            abbenay_dot_v1_dot_service__pb2.ListMcpServerConfigsRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.ListMcpServerConfigsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReconnectMcpServer(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/abbenay.v1.Abbenay/ReconnectMcpServer',
+            abbenay_dot_v1_dot_service__pb2.ReconnectMcpServerRequest.SerializeToString,
+            abbenay_dot_v1_dot_service__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,
