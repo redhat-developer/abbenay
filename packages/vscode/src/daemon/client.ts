@@ -370,6 +370,15 @@ export class DaemonClient {
     }
 
     /**
+     * List available engines (fixed set of API implementations)
+     */
+    async listEngines(): Promise<proto.Engine[]> {
+        const client = this.getClient();
+        const response = await client.listEngines({});
+        return response.engines;
+    }
+
+    /**
      * List available providers
      */
     async listProviders(): Promise<proto.Provider[]> {
@@ -447,8 +456,13 @@ export class DaemonClient {
         });
     }
 
-    // Note: Secret management (getSecret/setSecret) removed - secrets are now managed 
-    // by the daemon's keychain store or environment variables, configured via the web UI
+    /**
+     * Set a secret in the daemon's keychain store
+     */
+    async setSecret(key: string, value: string): Promise<void> {
+        const client = this.getClient();
+        await client.setSecret({ key, value });
+    }
 
     /**
      * Delete a secret

@@ -36,4 +36,4 @@ __pycache__/
 .venv/
 .build-venv/
 *.egg-info/
-.pytest_cache/
+.pytest_cache/.superpowers/
