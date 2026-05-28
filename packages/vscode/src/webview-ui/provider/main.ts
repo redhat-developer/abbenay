@@ -45,6 +45,7 @@ let section1Open = true;
 let section2Open = false;
 let selectedEngineId = '';
 
+let providerName = '';
 let apiKeyMethod: 'keychain' | 'env' = 'keychain';
 let isDiscovering = false;
 let discoverError: string | null = null;
@@ -98,6 +99,7 @@ function buildInitialDOM(): void {
   addBtn.addEventListener('click', () => {
     editingProviderId = null;
     selectedEngineId = '';
+    providerName = '';
     section1Open = true;
     section2Open = false;
     selectedModels.clear();
@@ -328,11 +330,14 @@ function renderAccordion(): void {
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.id = 'provider-name-input';
-  nameInput.value = editing ? editing.id : '';
+  nameInput.value = editing ? editing.id : providerName;
   nameInput.placeholder = 'e.g. openai-prod';
   if (editing) {
     nameInput.readOnly = true;
   }
+  nameInput.addEventListener('input', () => {
+    providerName = nameInput.value;
+  });
 
   const nameHint = document.createElement('div');
   nameHint.className = 'hint';
@@ -509,6 +514,7 @@ function renderAccordion(): void {
   cancelBtn.addEventListener('click', () => {
     editingProviderId = null;
     selectedEngineId = '';
+    providerName = '';
     section1Open = false;
     section2Open = false;
     selectedModels.clear();
@@ -785,6 +791,7 @@ window.addEventListener('message', (event) => {
         showNotification(`Provider ${msg.providerId} ${editingProviderId ? 'updated' : 'added'} successfully`);
         editingProviderId = null;
         selectedEngineId = '';
+        providerName = '';
         section1Open = false;
         section2Open = false;
         selectedModels.clear();
