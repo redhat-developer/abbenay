@@ -134,7 +134,6 @@ function init(): void {
   root.innerHTML = `
     <div class="chat-header">
       <div class="chat-header-left">
-        <span class="chat-header-title">Abbenay</span>
         <select id="modelSelect">
           <option value="">Select model...</option>
         </select>

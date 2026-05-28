@@ -50,17 +50,10 @@ body {
   min-width: 0;
 }
 
-.chat-header-title {
-  font-weight: 600;
-  font-size: 0.9em;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 .chat-header select {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
+  padding: 5px 8px;
   border: 1px solid var(--vscode-input-border);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
@@ -82,7 +75,7 @@ body {
 }
 
 .chat-header-actions button {
-  padding: 4px 8px;
+  padding: 5px 10px;
   border: none;
   cursor: pointer;
   font: inherit;
