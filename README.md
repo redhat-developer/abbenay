@@ -2,7 +2,11 @@
 
 [![CI](https://github.com/redhat-developer/abbenay/actions/workflows/ci.yml/badge.svg)](https://github.com/redhat-developer/abbenay/actions/workflows/ci.yml)
 
+<img src="logos/abbenay-logo-sq.png" width="100" height="100" style="float: left; margin-right: 15px;">
+
 A unified AI daemon and library for OpenAI, Anthropic, Google Gemini, Mistral, Ollama, and 10+ more providers.
+
+<p style="clear: left;">
 
 ## Packages
 
