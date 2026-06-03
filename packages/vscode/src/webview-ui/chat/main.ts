@@ -132,17 +132,6 @@ function init(): void {
   const root = document.getElementById('root')!;
 
   root.innerHTML = `
-    <div class="chat-header">
-      <div class="chat-header-left">
-        <select id="modelSelect">
-          <option value="">Select model...</option>
-        </select>
-      </div>
-      <div class="chat-header-actions">
-        <button id="newSessionBtn" title="New session">+ New</button>
-        <button id="deleteSessionBtn" class="icon-btn" title="Delete session">&times;</button>
-      </div>
-    </div>
     <div id="messageList" class="message-list">
       <div class="welcome">
         <div class="welcome-icon">
@@ -159,7 +148,12 @@ function init(): void {
       <div class="input-box">
         <textarea id="msgInput" placeholder="Ask Abbenay..." rows="1"></textarea>
         <div class="input-toolbar">
+          <select id="modelSelect">
+            <option value="">Select model...</option>
+          </select>
           <div class="input-toolbar-spacer"></div>
+          <button id="newSessionBtn" class="session-btn" title="New session">+ New</button>
+          <button id="deleteSessionBtn" class="session-btn icon-btn" title="Delete session">&times;</button>
           <button id="sendBtn" class="send-btn" disabled title="Send (Enter)">&#9650;</button>
           <button id="cancelBtn" class="cancel-btn" style="display: none;" title="Cancel">&#9632;</button>
         </div>
@@ -400,24 +394,17 @@ function appendMsg(msg: MessageInfo): void {
   const el = document.createElement('div');
   el.className = `message message-${msg.role}`;
 
-  // Create avatar
-  const avatar = document.createElement('span');
-  avatar.className = `msg-avatar ${msg.role}`;
-  if (msg.role === 'user') {
-    avatar.textContent = 'U';
-  } else if (msg.role === 'assistant') {
-    avatar.textContent = '✨';
-  }
-
   // Create content container
   const content = document.createElement('div');
   content.className = 'msg-content';
 
-  // Add role label
-  const role = document.createElement('div');
-  role.className = 'msg-role';
-  role.textContent = msg.role === 'user' ? 'You' : 'Abbenay';
-  content.appendChild(role);
+  // Add role label (assistant only)
+  if (msg.role === 'assistant') {
+    const role = document.createElement('div');
+    role.className = 'msg-role';
+    role.textContent = 'Abbenay';
+    content.appendChild(role);
+  }
 
   // Add body
   const body = document.createElement('div');
@@ -441,7 +428,6 @@ function appendMsg(msg: MessageInfo): void {
     });
   }
 
-  el.appendChild(avatar);
   el.appendChild(content);
   $messageList.appendChild(el);
 }
@@ -458,10 +444,6 @@ function updateStreamingMsg(): void {
     el = document.createElement('div');
     el.className = 'message message-assistant streaming';
 
-    const avatar = document.createElement('span');
-    avatar.className = 'msg-avatar assistant';
-    avatar.textContent = '✨';
-
     const content = document.createElement('div');
     content.className = 'msg-content';
 
@@ -474,7 +456,6 @@ function updateStreamingMsg(): void {
 
     content.appendChild(role);
     content.appendChild(body);
-    el.appendChild(avatar);
     el.appendChild(content);
     $messageList.appendChild(el);
   }
@@ -512,10 +493,6 @@ function showThinkingIndicator(): void {
   el.className = 'message thinking-indicator';
   el.id = 'thinkingIndicator';
 
-  const avatar = document.createElement('span');
-  avatar.className = 'msg-avatar assistant';
-  avatar.textContent = '✨';
-
   const content = document.createElement('div');
   content.className = 'msg-content';
 
@@ -529,7 +506,6 @@ function showThinkingIndicator(): void {
 
   content.appendChild(role);
   content.appendChild(body);
-  el.appendChild(avatar);
   el.appendChild(content);
   $messageList.appendChild(el);
 
@@ -783,10 +759,6 @@ function showError(message: string, context?: string): void {
   const el = document.createElement('div');
   el.className = 'message message-error';
 
-  const avatar = document.createElement('span');
-  avatar.className = 'msg-avatar assistant';
-  avatar.textContent = '✗';
-
   const content = document.createElement('div');
   content.className = 'msg-content';
 
@@ -795,7 +767,6 @@ function showError(message: string, context?: string): void {
   body.textContent = context ? `${context}: ${message}` : message;
 
   content.appendChild(body);
-  el.appendChild(avatar);
   el.appendChild(content);
   $messageList.appendChild(el);
 

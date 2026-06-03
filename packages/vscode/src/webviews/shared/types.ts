@@ -9,7 +9,7 @@ export type ProviderToHostMessage =
   | { type: 'getProviderTemplates' }
   | { type: 'getEngines' }
   | { type: 'getConfig'; location?: string }
-  | { type: 'configureProvider'; providerId: string; engine?: string; apiKey?: string; envVarName?: string; baseUrl?: string; target?: string; models?: string[] }
+  | { type: 'configureProvider'; providerId: string; engine?: string; apiKey?: string; envVarName?: string; baseUrl?: string; target?: string; models?: Record<string, { model_id: string }> }
   | { type: 'removeProvider'; providerId: string; target?: string }
   | { type: 'setSecret'; key: string; value: string }
   | { type: 'deleteSecret'; key: string }

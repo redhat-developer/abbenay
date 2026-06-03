@@ -25,83 +25,6 @@ body {
   height: 100vh;
 }
 
-/* ── Header ────────────────────────────────────────────────────────────────── */
-
-.chat-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--vscode-widget-border);
-  background: var(--vscode-sideBar-background);
-  flex-shrink: 0;
-}
-
-.chat-header-left {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-
-.chat-header select {
-  flex: 1;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--vscode-input-border);
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  font: inherit;
-  font-size: 0.85em;
-  border-radius: 4px;
-}
-
-.chat-header select:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-}
-
-.chat-header-actions {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.chat-header-actions button {
-  padding: 5px 10px;
-  border: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.85em;
-  border-radius: 4px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  white-space: nowrap;
-}
-
-.chat-header-actions button:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-
-.chat-header-actions .icon-btn {
-  padding: 4px 6px;
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  font-size: 1.1em;
-}
-
-.chat-header-actions .icon-btn:hover {
-  color: var(--vscode-foreground);
-  background: var(--vscode-toolbar-hoverBackground);
-}
-
 /* ── Message List ──────────────────────────────────────────────────────────── */
 
 .message-list {
@@ -143,39 +66,41 @@ body {
   flex-direction: row;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--vscode-widget-border);
 }
 
-.message:last-child {
-  border-bottom: none;
+.message-user {
+  flex-direction: row-reverse;
 }
 
-.msg-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7em;
-  font-weight: 700;
-  flex-shrink: 0;
+.message-user .msg-content {
+  align-items: flex-end;
 }
 
-.msg-avatar.user {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-.msg-avatar.assistant {
+.message-user .msg-body {
   background: var(--vscode-editor-background);
   border: 1px solid var(--vscode-widget-border);
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-foreground);
+  padding: 8px 12px;
+  border-radius: 12px 12px 0 12px;
+  display: inline-block;
+}
+
+.message-user .msg-role {
+  text-align: right;
+}
+
+.message-assistant .msg-body {
+  background: var(--vscode-editor-background);
+  padding: 8px 12px;
+  border-radius: 12px 12px 12px 0;
+  border: 1px solid var(--vscode-widget-border);
 }
 
 .msg-content {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .msg-role {
@@ -724,8 +649,53 @@ body {
   gap: 6px;
 }
 
+.input-toolbar select {
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  border-radius: 4px;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.input-toolbar select:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.input-toolbar select:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
 .input-toolbar-spacer {
   flex: 1;
+}
+
+.session-btn {
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.session-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+.session-btn.icon-btn {
+  padding: 2px 4px;
+  font-size: 1em;
 }
 
 .send-btn,

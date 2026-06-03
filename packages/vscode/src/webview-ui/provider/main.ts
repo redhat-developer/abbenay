@@ -38,7 +38,9 @@ let providers: ProviderInfo[] = [];
 let engines: EngineInfo[] = [];
 let discoveredModels: ModelInfo[] = [];
 
-const selectedModels: Set<string> = new Set();
+const selectedModels: Map<string, string> = new Map();
+const leftSelected: Set<string> = new Set();
+const rightSelected: Set<string> = new Set();
 let editingProviderId: string | null = null;
 
 let section1Open = true;
@@ -50,6 +52,7 @@ let apiKeyMethod: 'keychain' | 'env' = 'keychain';
 let isDiscovering = false;
 let discoverError: string | null = null;
 let modelFilter = '';
+let pendingEditModels: Record<string, { model_id?: string }> | null = null;
 
 // ─── Notification ────────────────────────────────────────────────────
 
@@ -103,6 +106,8 @@ function buildInitialDOM(): void {
     section1Open = true;
     section2Open = false;
     selectedModels.clear();
+    leftSelected.clear();
+    rightSelected.clear();
     discoveredModels = [];
     discoverError = null;
     isDiscovering = false;
@@ -204,10 +209,15 @@ function startEdit(p: ProviderInfo): void {
   section1Open = true;
   section2Open = false;
   selectedModels.clear();
+  leftSelected.clear();
+  rightSelected.clear();
   discoveredModels = [];
   discoverError = null;
   isDiscovering = false;
   modelFilter = '';
+  pendingEditModels = null;
+
+  vsCodeApi.postMessage({ type: 'getConfig' });
 
   renderAccordion();
 
@@ -294,7 +304,7 @@ function renderAccordion(): void {
   engineDefaultOption.textContent = 'Choose an engine...';
   engineSelect.appendChild(engineDefaultOption);
 
-  engines.forEach((e) => {
+  [...engines].sort((a, b) => a.id.localeCompare(b.id)).forEach((e) => {
     const option = document.createElement('option');
     option.value = e.id;
     option.textContent = e.id;
@@ -308,6 +318,8 @@ function renderAccordion(): void {
     selectedEngineId = engineSelect.value;
     discoveredModels = [];
     selectedModels.clear();
+    leftSelected.clear();
+    rightSelected.clear();
     discoverError = null;
     isDiscovering = false;
     renderAccordion();
@@ -518,6 +530,8 @@ function renderAccordion(): void {
     section1Open = false;
     section2Open = false;
     selectedModels.clear();
+    leftSelected.clear();
+    rightSelected.clear();
     discoveredModels = [];
     discoverError = null;
     isDiscovering = false;
@@ -543,137 +557,203 @@ function renderModelSection(): void {
   const container = document.getElementById('model-section-content');
   if (!container) {return;}
 
-  container.innerHTML = '';
+  // For early-exit states (loading/error/empty), clear everything
+  if (isDiscovering || discoverError || discoveredModels.length === 0) {
+    container.innerHTML = '';
 
-  if (isDiscovering) {
-    const loading = document.createElement('div');
-    loading.className = 'loading-state';
+    if (isDiscovering) {
+      const loading = document.createElement('div');
+      loading.className = 'loading-state';
 
-    const spinner = document.createElement('span');
-    spinner.className = 'spinner';
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
 
-    const loadingText = document.createElement('span');
-    loadingText.textContent = 'Discovering models...';
+      const loadingText = document.createElement('span');
+      loadingText.textContent = 'Discovering models...';
 
-    loading.appendChild(spinner);
-    loading.appendChild(loadingText);
-    container.appendChild(loading);
+      loading.appendChild(spinner);
+      loading.appendChild(loadingText);
+      container.appendChild(loading);
+    } else if (discoverError) {
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'inline-error';
+
+      const errorText = document.createElement('span');
+      errorText.textContent = discoverError;
+
+      const retryLink = document.createElement('button');
+      retryLink.className = 'link';
+      retryLink.textContent = 'Retry';
+      retryLink.style.marginLeft = '8px';
+      retryLink.addEventListener('click', () => {
+        discoverError = null;
+        triggerModelDiscovery();
+      });
+
+      errorDiv.appendChild(errorText);
+      errorDiv.appendChild(retryLink);
+      container.appendChild(errorDiv);
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Select an engine and provider to discover models';
+      container.appendChild(empty);
+    }
     return;
   }
 
-  if (discoverError) {
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'inline-error';
-
-    const errorText = document.createElement('span');
-    errorText.textContent = discoverError;
-
-    const retryLink = document.createElement('button');
-    retryLink.className = 'link';
-    retryLink.textContent = 'Retry';
-    retryLink.style.marginLeft = '8px';
-    retryLink.addEventListener('click', () => {
-      discoverError = null;
-      triggerModelDiscovery();
-    });
-
-    errorDiv.appendChild(errorText);
-    errorDiv.appendChild(retryLink);
-    container.appendChild(errorDiv);
-    return;
-  }
-
-  if (discoveredModels.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.textContent = 'Select an engine and provider to discover models';
-    container.appendChild(empty);
-    return;
-  }
-
-  // Filter models
-  const filteredModels = discoveredModels.filter((m) => {
+  // Available: all discovered models matching search (always shown, even if already enabled)
+  const availableModels = discoveredModels.filter((m) => {
     if (modelFilter === '') {return true;}
     const display = (m.name || m.id).toLowerCase();
     return display.includes(modelFilter.toLowerCase());
   });
 
-  const searchInput = document.createElement('input');
-  searchInput.type = 'text';
-  searchInput.className = 'model-search';
-  searchInput.id = 'model-search-input';
-  searchInput.placeholder = 'Search models...';
-  searchInput.value = modelFilter;
-  searchInput.addEventListener('input', (e) => {
-    modelFilter = (e.target as HTMLInputElement).value;
-    renderModelSection();
-  });
+  // Enabled: entries from the selectedModels map (name → model_id)
+  const enabledEntries = Array.from(selectedModels.entries());
 
-  const modelActions = document.createElement('div');
-  modelActions.className = 'model-actions';
+  // Create search input only once; on subsequent renders it stays in the DOM untouched
+  if (!document.getElementById('model-search-input')) {
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'model-search';
+    searchInput.id = 'model-search-input';
+    searchInput.placeholder = 'Search models...';
+    searchInput.value = modelFilter;
+    searchInput.addEventListener('input', (e) => {
+      modelFilter = (e.target as HTMLInputElement).value;
+      leftSelected.clear();
+      renderModelSection();
+    });
+    container.appendChild(searchInput);
+  }
 
-  const selectAllLink = document.createElement('button');
-  selectAllLink.className = 'link';
-  selectAllLink.id = 'select-all-link';
-  selectAllLink.textContent = 'Select all';
-  selectAllLink.addEventListener('click', () => {
-    filteredModels.forEach((m) => selectedModels.add(m.id));
-    renderModelSection();
-    renderAccordion();
-  });
+  // Only rebuild the dual-list; remove the old one if present
+  const oldDualList = container.querySelector('.dual-list');
+  if (oldDualList) {
+    oldDualList.remove();
+  }
 
-  const deselectAllLink = document.createElement('button');
-  deselectAllLink.className = 'link';
-  deselectAllLink.id = 'deselect-all-link';
-  deselectAllLink.textContent = 'Deselect all';
-  deselectAllLink.addEventListener('click', () => {
-    selectedModels.clear();
-    renderModelSection();
-    renderAccordion();
-  });
+  // Dual-list grid container
+  const dualList = document.createElement('div');
+  dualList.className = 'dual-list';
 
-  modelActions.appendChild(selectAllLink);
-  modelActions.appendChild(deselectAllLink);
+  // --- Left panel: Available ---
+  const leftPanel = document.createElement('div');
+  leftPanel.className = 'dual-list-panel';
 
-  const modelCounter = document.createElement('div');
-  modelCounter.className = 'model-counter';
-  modelCounter.textContent = `${selectedModels.size} of ${filteredModels.length} selected`;
+  const leftHeader = document.createElement('div');
+  leftHeader.className = 'dual-list-panel-header';
+  leftHeader.textContent = `Available (${availableModels.length})`;
 
-  const modelList = document.createElement('div');
-  modelList.className = 'model-list';
-  modelList.id = 'model-list';
+  const leftItems = document.createElement('div');
+  leftItems.className = 'dual-list-items';
 
-  filteredModels.forEach((m) => {
+  availableModels.forEach((m) => {
     const item = document.createElement('div');
-    item.className = 'model-item';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.id = `model-${m.id}`;
-    checkbox.checked = selectedModels.has(m.id);
-    checkbox.addEventListener('change', (e) => {
-      if ((e.target as HTMLInputElement).checked) {
-        selectedModels.add(m.id);
+    item.className = `dual-list-item${leftSelected.has(m.id) ? ' selected' : ''}`;
+    item.textContent = m.name || m.id;
+    item.addEventListener('click', () => {
+      if (leftSelected.has(m.id)) {
+        leftSelected.delete(m.id);
       } else {
-        selectedModels.delete(m.id);
+        leftSelected.add(m.id);
       }
       renderModelSection();
-      renderAccordion();
     });
-
-    const label = document.createElement('label');
-    label.htmlFor = `model-${m.id}`;
-    label.textContent = m.name || m.id;
-
-    item.appendChild(checkbox);
-    item.appendChild(label);
-    modelList.appendChild(item);
+    leftItems.appendChild(item);
   });
 
-  container.appendChild(searchInput);
-  container.appendChild(modelActions);
-  container.appendChild(modelCounter);
-  container.appendChild(modelList);
+  leftPanel.appendChild(leftHeader);
+  leftPanel.appendChild(leftItems);
+
+  // --- Center: Action buttons ---
+  const center = document.createElement('div');
+  center.className = 'dual-list-center';
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'secondary';
+  addBtn.textContent = 'Add →';
+  addBtn.disabled = leftSelected.size === 0;
+  addBtn.addEventListener('click', () => {
+    for (const id of leftSelected) {
+      let name = id;
+      if (selectedModels.has(name)) {
+        let i = 1;
+        while (selectedModels.has(`${id}-${i}`)) {i++;}
+        name = `${id}-${i}`;
+      }
+      selectedModels.set(name, id);
+    }
+    leftSelected.clear();
+    renderModelSection();
+    renderAccordion();
+  });
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'secondary';
+  removeBtn.textContent = '← Remove';
+  removeBtn.disabled = rightSelected.size === 0;
+  removeBtn.addEventListener('click', () => {
+    for (const name of rightSelected) {
+      selectedModels.delete(name);
+    }
+    rightSelected.clear();
+    renderModelSection();
+    renderAccordion();
+  });
+
+  center.appendChild(addBtn);
+  center.appendChild(removeBtn);
+
+  // --- Right panel: Enabled ---
+  const rightPanel = document.createElement('div');
+  rightPanel.className = 'dual-list-panel';
+
+  const rightHeader = document.createElement('div');
+  rightHeader.className = 'dual-list-panel-header';
+  rightHeader.textContent = `Enabled (${enabledEntries.length})`;
+
+  const rightItems = document.createElement('div');
+  rightItems.className = 'dual-list-items';
+
+  enabledEntries.forEach(([name]) => {
+    const item = document.createElement('div');
+    item.className = `dual-list-item${rightSelected.has(name) ? ' selected' : ''}`;
+    item.textContent = name;
+    item.addEventListener('click', () => {
+      if (rightSelected.has(name)) {
+        rightSelected.delete(name);
+      } else {
+        rightSelected.add(name);
+      }
+      renderModelSection();
+    });
+    rightItems.appendChild(item);
+  });
+
+  rightPanel.appendChild(rightHeader);
+  rightPanel.appendChild(rightItems);
+
+  dualList.appendChild(leftPanel);
+  dualList.appendChild(center);
+  dualList.appendChild(rightPanel);
+
+  container.appendChild(dualList);
+}
+
+// ─── Apply Pending Models (edit flow) ────────────────────────────────
+
+function applyPendingModels(): void {
+  if (!pendingEditModels || discoveredModels.length === 0) {return;}
+
+  for (const [name, cfg] of Object.entries(pendingEditModels)) {
+    const modelId = cfg.model_id || name;
+    selectedModels.set(name, modelId);
+  }
+  pendingEditModels = null;
+  renderModelSection();
+  renderAccordion();
 }
 
 // ─── Trigger Model Discovery ─────────────────────────────────────────
@@ -729,7 +809,9 @@ function handleSave(): void {
     type: 'configureProvider',
     providerId,
     engine,
-    models: Array.from(selectedModels),
+    models: Object.fromEntries(
+      Array.from(selectedModels.entries()).map(([name, modelId]) => [name, { model_id: modelId }]),
+    ),
   };
 
   const baseUrl = baseUrlInput?.value.trim();
@@ -779,10 +861,23 @@ window.addEventListener('message', (event) => {
       }
       break;
 
+    case 'config':
+      if (editingProviderId && msg.config) {
+        const cfgProviders = (msg.config as Record<string, unknown>).providers as Record<string, Record<string, unknown>> | undefined;
+        const providerCfg = cfgProviders?.[editingProviderId];
+        const models = providerCfg?.models as Record<string, { model_id?: string }> | undefined;
+        if (models && Object.keys(models).length > 0) {
+          pendingEditModels = models;
+          applyPendingModels();
+        }
+      }
+      break;
+
     case 'discoveredModels':
       isDiscovering = false;
       discoveredModels = msg.models || [];
       discoverError = null;
+      applyPendingModels();
       renderModelSection();
       break;
 
@@ -795,6 +890,8 @@ window.addEventListener('message', (event) => {
         section1Open = false;
         section2Open = false;
         selectedModels.clear();
+        leftSelected.clear();
+        rightSelected.clear();
         discoveredModels = [];
         discoverError = null;
         isDiscovering = false;

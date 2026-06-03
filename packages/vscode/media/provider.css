@@ -273,7 +273,7 @@ button.link:hover {
   color: var(--vscode-button-foreground);
 }
 
-/* ─── Model Checklist ─────────────────────────────────────────────── */
+/* ─── Model Search ────────────────────────────────────────────────── */
 
 .model-search {
   width: 100%;
@@ -293,50 +293,80 @@ button.link:hover {
   border-color: var(--vscode-focusBorder);
 }
 
-.model-actions {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 8px;
+/* ─── Dual-List Model Selector ───────────────────────────────────── */
+
+.dual-list {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  min-height: 250px;
 }
 
-.model-counter {
-  font-size: 0.85em;
-  color: var(--vscode-descriptionForeground);
-  margin-bottom: 8px;
-}
-
-.model-list {
-  max-height: 240px;
-  overflow-y: auto;
+.dual-list-panel {
   border: 1px solid var(--vscode-widget-border);
   border-radius: 3px;
-  background-color: var(--vscode-input-background);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.model-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+.dual-list-panel-header {
+  padding: 8px 12px;
+  background: var(--vscode-editorWidget-background);
+  font-weight: 500;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
   border-bottom: 1px solid var(--vscode-widget-border);
 }
 
-.model-item:last-child {
+.dual-list-items {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 280px;
+  background-color: var(--vscode-input-background);
+}
+
+.dual-list-item {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  cursor: pointer;
+  font-size: 0.9em;
+  user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dual-list-item:last-child {
   border-bottom: none;
 }
 
-.model-item:hover {
+.dual-list-item:hover {
   background-color: var(--vscode-list-hoverBackground);
 }
 
-.model-item input[type="checkbox"] {
-  cursor: pointer;
+.dual-list-item.selected {
+  background-color: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
 }
 
-.model-item label {
-  cursor: pointer;
-  flex: 1;
-  font-size: 0.9em;
+.dual-list-center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.dual-list-center button {
+  padding: 6px 12px;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.dual-list-center button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ─── Form Elements ───────────────────────────────────────────────── */
