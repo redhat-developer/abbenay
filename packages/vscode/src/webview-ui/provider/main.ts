@@ -2,7 +2,6 @@ import '@vscode-elements/elements/dist/vscode-button/index.js';
 import '@vscode-elements/elements/dist/vscode-textfield/index.js';
 import '@vscode-elements/elements/dist/vscode-single-select/index.js';
 import '@vscode-elements/elements/dist/vscode-option/index.js';
-import '@vscode-elements/elements/dist/vscode-collapsible/index.js';
 import '@vscode-elements/elements/dist/vscode-form-group/index.js';
 import '@vscode-elements/elements/dist/vscode-label/index.js';
 import '@vscode-elements/elements/dist/vscode-form-helper/index.js';
@@ -264,19 +263,40 @@ function renderAccordion(): void {
   const wrapper = document.createElement('div');
 
   // ── Section 1: Provider Setup ──
-  const section1 = document.createElement('vscode-collapsible') as HTMLElement;
-  section1.setAttribute('heading', '1. Provider Setup');
-  if (section1Open) {section1.setAttribute('open', '');}
-  section1.addEventListener('vsc-collapsible-toggle', ((e: CustomEvent<{ open: boolean }>) => {
-    section1Open = e.detail.open;
-  }) as EventListener);
+  const section1 = document.createElement('div');
+  section1.className = `accordion-section ${section1Open ? 'open' : ''}`;
 
+  const header1 = document.createElement('div');
+  header1.className = 'accordion-header';
+  header1.addEventListener('click', () => {
+    section1Open = !section1Open;
+    renderAccordion();
+  });
+
+  const header1Left = document.createElement('div');
+  header1Left.className = 'accordion-header-left';
+
+  const chevron1 = document.createElement('span');
+  chevron1.className = 'accordion-chevron';
+
+  const title1 = document.createElement('span');
+  title1.className = 'accordion-title';
+  title1.textContent = '1. Provider Setup';
+
+  header1Left.appendChild(chevron1);
+  header1Left.appendChild(title1);
+
+  const status1 = document.createElement('span');
+  status1.className = `accordion-status ${section1Complete ? 'complete' : ''}`;
   if (section1Complete) {
-    const status1 = document.createElement('vscode-badge') as HTMLElement;
-    status1.slot = 'decorations';
-    status1.textContent = '✓ Complete';
-    section1.appendChild(status1);
+    status1.textContent = 'Complete';
   }
+
+  header1.appendChild(header1Left);
+  header1.appendChild(status1);
+
+  const body1 = document.createElement('div');
+  body1.className = 'accordion-body';
 
   // Engine dropdown
   const engineGroup = document.createElement('vscode-form-group') as HTMLElement;
@@ -441,30 +461,56 @@ function renderAccordion(): void {
   apiKeyGroupDiv.appendChild(keychainField);
   apiKeyGroupDiv.appendChild(envField);
 
-  section1.appendChild(engineGroup);
-  section1.appendChild(nameGroup);
-  section1.appendChild(baseUrlGroup);
-  section1.appendChild(apiKeyGroupDiv);
+  body1.appendChild(engineGroup);
+  body1.appendChild(nameGroup);
+  body1.appendChild(baseUrlGroup);
+  body1.appendChild(apiKeyGroupDiv);
+
+  section1.appendChild(header1);
+  section1.appendChild(body1);
 
   // ── Section 2: Select Models ──
-  const section2 = document.createElement('vscode-collapsible') as HTMLElement;
-  section2.setAttribute('heading', '2. Select Models');
-  if (section2Open) {section2.setAttribute('open', '');}
-  section2.addEventListener('vsc-collapsible-toggle', ((e: CustomEvent<{ open: boolean }>) => {
-    section2Open = e.detail.open;
-  }) as EventListener);
+  const section2 = document.createElement('div');
+  section2.className = `accordion-section ${section2Open ? 'open' : ''}`;
 
+  const header2 = document.createElement('div');
+  header2.className = 'accordion-header';
+  header2.addEventListener('click', () => {
+    section2Open = !section2Open;
+    renderAccordion();
+  });
+
+  const header2Left = document.createElement('div');
+  header2Left.className = 'accordion-header-left';
+
+  const chevron2 = document.createElement('span');
+  chevron2.className = 'accordion-chevron';
+
+  const title2 = document.createElement('span');
+  title2.className = 'accordion-title';
+  title2.textContent = '2. Select Models';
+
+  header2Left.appendChild(chevron2);
+  header2Left.appendChild(title2);
+
+  const status2 = document.createElement('span');
+  status2.className = `accordion-status ${section2Complete ? 'complete' : ''}`;
   if (section2Complete) {
-    const status2 = document.createElement('vscode-badge') as HTMLElement;
-    status2.slot = 'decorations';
     status2.textContent = `${selectedModels.size} selected`;
-    section2.appendChild(status2);
   }
+
+  header2.appendChild(header2Left);
+  header2.appendChild(status2);
+
+  const body2 = document.createElement('div');
+  body2.className = 'accordion-body';
 
   const modelSectionContent = document.createElement('div');
   modelSectionContent.id = 'model-section-content';
 
-  section2.appendChild(modelSectionContent);
+  body2.appendChild(modelSectionContent);
+  section2.appendChild(header2);
+  section2.appendChild(body2);
 
   // Form actions
   const formActions = document.createElement('div');
