@@ -477,6 +477,9 @@ function renderAccordion(): void {
   header2.className = 'accordion-header';
   header2.addEventListener('click', () => {
     section2Open = !section2Open;
+    if (section2Open && discoveredModels.length === 0 && !isDiscovering && selectedEngineId) {
+      triggerModelDiscovery();
+    }
     renderAccordion();
   });
 
@@ -754,6 +757,8 @@ function applyPendingModels(): void {
 function triggerModelDiscovery(): void {
   const engineSelect = document.getElementById('engine-select') as HTMLElement & { value: string } | null;
   const providerNameInput = document.getElementById('provider-name-input') as HTMLElement & { value: string } | null;
+  const apiKeyInput = document.getElementById('api-key-input') as HTMLElement & { value: string } | null;
+  const baseUrlInput = document.getElementById('base-url-input') as HTMLElement & { value: string } | null;
 
   const engineId = engineSelect?.value || '';
   const providerId = providerNameInput?.value.trim() || editingProviderId || '';
@@ -764,11 +769,19 @@ function triggerModelDiscovery(): void {
   discoverError = null;
   renderModelSection();
 
-  vsCodeApi.postMessage({
+  const msg: Record<string, unknown> = {
     type: 'discoverModels',
     engineId,
     providerId: providerId || undefined,
-  });
+  };
+
+  const apiKey = apiKeyInput?.value.trim();
+  if (apiKey) {msg.apiKey = apiKey;}
+
+  const baseUrl = baseUrlInput?.value.trim();
+  if (baseUrl) {msg.baseUrl = baseUrl;}
+
+  vsCodeApi.postMessage(msg);
 }
 
 // ─── Handle Save ─────────────────────────────────────────────────────

@@ -501,7 +501,7 @@ body {
 
 .input-area {
   flex-shrink: 0;
-  padding: 8px;
+  padding: 4px;
 }
 
 .input-box {
@@ -544,16 +544,14 @@ body {
 }
 
 .toolbar-select {
-  max-width: 45%;
+  flex: 1;
   min-width: 0;
 }
 
 .toolbar-btn {
   flex-shrink: 0;
-}
-
-.input-toolbar-spacer {
-  flex: 1;
+  --vscode-button-secondaryBackground: transparent;
+  --vscode-button-secondaryHoverBackground: var(--vscode-toolbar-hoverBackground);
 }
 
 .send-btn,

@@ -174,7 +174,11 @@ h2 {
 /* ─── Form Controls ───────────────────────────────────────────────── */
 
 vscode-form-group {
-  margin-bottom: 12px;
+  margin: 10px 0;
+}
+
+.accordion-body vscode-form-group:first-child {
+  margin-top: 0;
 }
 
 vscode-single-select {

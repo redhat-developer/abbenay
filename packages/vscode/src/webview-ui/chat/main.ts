@@ -155,10 +155,9 @@ function init(): void {
       <div class="input-box">
         <textarea id="msgInput" placeholder="Ask Abbenay..." rows="1"></textarea>
         <div class="input-toolbar">
-          <vscode-single-select id="modelSelect" class="toolbar-select">
+          <vscode-single-select id="modelSelect" class="toolbar-select" position="above">
             <vscode-option value="">Select model...</vscode-option>
           </vscode-single-select>
-          <div class="input-toolbar-spacer"></div>
           <vscode-button id="newSessionBtn" secondary class="toolbar-btn" title="New session">+ New</vscode-button>
           <vscode-button id="deleteSessionBtn" secondary class="toolbar-btn" title="Delete session">&times;</vscode-button>
           <button id="sendBtn" class="send-btn" disabled title="Send (Enter)">&#9650;</button>

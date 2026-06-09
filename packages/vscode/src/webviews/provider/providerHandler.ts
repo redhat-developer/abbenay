@@ -358,6 +358,8 @@ async function handleDiscoverModels(
 ): Promise<void> {
   const models = await client.discoverModels(message.engineId, {
     providerId: message.providerId,
+    apiKey: message.apiKey,
+    baseUrl: message.baseUrl,
   });
 
   const modelInfo: ModelInfo[] = models.map((m) => ({

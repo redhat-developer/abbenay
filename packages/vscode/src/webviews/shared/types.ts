@@ -15,7 +15,7 @@ export type ProviderToHostMessage =
   | { type: 'deleteSecret'; key: string }
   | { type: 'listSecrets' }
   | { type: 'getKeyStatus'; source: string; name: string }
-  | { type: 'discoverModels'; engineId: string; providerId?: string }
+  | { type: 'discoverModels'; engineId: string; providerId?: string; apiKey?: string; baseUrl?: string }
   | { type: 'updateConfig'; config: unknown; location?: string };
 
 export type HostToProviderMessage =
