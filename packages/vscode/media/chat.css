@@ -310,7 +310,7 @@ body {
   color: var(--vscode-symbolIcon-keywordForeground, #569cd6);
 }
 
-/* ── Tool Cards ────────────────────────────────────────────────────────────── */
+/* ── Tool Cards (vscode-collapsible) ──────────────────────────────────────── */
 
 .tool-card {
   margin: 8px 0;
@@ -319,48 +319,8 @@ body {
   overflow: hidden;
 }
 
-.tool-card.open .tool-card-body {
-  display: block;
-}
-
-.tool-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--vscode-editorWidget-background);
-  cursor: pointer;
-  user-select: none;
-}
-
-.tool-card-header:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.tool-card-chevron {
-  font-size: 0.8em;
-  color: var(--vscode-descriptionForeground);
-  transition: transform 0.2s ease;
-}
-
-.tool-card.open .tool-card-chevron {
-  transform: rotate(90deg);
-}
-
-.tool-card-label {
-  font-size: 0.75em;
-  color: var(--vscode-descriptionForeground);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.tool-card-name {
-  flex: 1;
-  font-weight: 600;
-  color: var(--vscode-symbolIcon-functionForeground, #dcdcaa);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.tool-card::part(header) {
+  text-transform: none;
 }
 
 .tool-card-status {
@@ -377,14 +337,7 @@ body {
 }
 
 .tool-card-status.running {
-  animation: spin 1s linear infinite;
   color: var(--vscode-descriptionForeground);
-}
-
-.tool-card-body {
-  display: none;
-  padding: 10px;
-  background: var(--vscode-editor-background);
 }
 
 .tool-card-section {
@@ -481,51 +434,8 @@ body {
   gap: 8px;
 }
 
-.approval-btn-allow {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.85em;
-  font-weight: 500;
-}
-
-.approval-btn-allow:hover {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.approval-btn-deny {
-  padding: 6px 12px;
-  border: 1px solid var(--vscode-button-border);
-  border-radius: 4px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.85em;
-}
-
-.approval-btn-deny:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-
 .approval-btn-abort {
-  padding: 6px 12px;
-  border: 1px solid var(--vscode-errorForeground, #f48771);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--vscode-errorForeground, #f48771);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.85em;
   margin-left: auto;
-}
-
-.approval-btn-abort:hover {
-  background: var(--vscode-inputValidation-errorBackground, rgba(244, 135, 113, 0.1));
 }
 
 .approval-resolved {
@@ -587,22 +497,6 @@ body {
   }
 }
 
-.cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  background: var(--vscode-foreground);
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-
 /* ── Input Area ────────────────────────────────────────────────────────────── */
 
 .input-area {
@@ -649,53 +543,17 @@ body {
   gap: 6px;
 }
 
-.input-toolbar select {
-  padding: 2px 6px;
-  border: none;
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  font: inherit;
-  font-size: 0.8em;
-  cursor: pointer;
-  border-radius: 4px;
-  min-width: 0;
+.toolbar-select {
   max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 
-.input-toolbar select:hover {
-  background: var(--vscode-toolbar-hoverBackground);
-}
-
-.input-toolbar select:focus {
-  outline: 1px solid var(--vscode-focusBorder);
+.toolbar-btn {
+  flex-shrink: 0;
 }
 
 .input-toolbar-spacer {
   flex: 1;
-}
-
-.session-btn {
-  padding: 2px 8px;
-  border: none;
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  font: inherit;
-  font-size: 0.8em;
-  cursor: pointer;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.session-btn:hover {
-  background: var(--vscode-toolbar-hoverBackground);
-  color: var(--vscode-foreground);
-}
-
-.session-btn.icon-btn {
-  padding: 2px 4px;
-  font-size: 1em;
 }
 
 .send-btn,
@@ -760,10 +618,3 @@ body {
   font-size: 0.9em;
 }
 
-/* ── Animations ────────────────────────────────────────────────────────────── */
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}

@@ -2,6 +2,13 @@
 // Abbenay Chat Sidebar UI — Copilot-style with markdown, tool cards, approvals
 // ══════════════════════════════════════════════════════════════════════════════
 
+import '@vscode-elements/elements/dist/vscode-button/index.js';
+import '@vscode-elements/elements/dist/vscode-single-select/index.js';
+import '@vscode-elements/elements/dist/vscode-option/index.js';
+import '@vscode-elements/elements/dist/vscode-collapsible/index.js';
+import '@vscode-elements/elements/dist/vscode-progress-ring/index.js';
+import '@vscode-elements/elements/dist/vscode-badge/index.js';
+
 import { marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 import typescript from 'highlight.js/lib/languages/typescript';
@@ -84,7 +91,7 @@ const state = {
 
 // ── DOM References ───────────────────────────────────────────────────────────
 
-let $modelSelect: HTMLSelectElement;
+let $modelSelect: HTMLElement & { value: string };
 let $messageList: HTMLElement;
 let $textarea: HTMLTextAreaElement;
 let $sendBtn: HTMLButtonElement;
@@ -148,12 +155,12 @@ function init(): void {
       <div class="input-box">
         <textarea id="msgInput" placeholder="Ask Abbenay..." rows="1"></textarea>
         <div class="input-toolbar">
-          <select id="modelSelect">
-            <option value="">Select model...</option>
-          </select>
+          <vscode-single-select id="modelSelect" class="toolbar-select">
+            <vscode-option value="">Select model...</vscode-option>
+          </vscode-single-select>
           <div class="input-toolbar-spacer"></div>
-          <button id="newSessionBtn" class="session-btn" title="New session">+ New</button>
-          <button id="deleteSessionBtn" class="session-btn icon-btn" title="Delete session">&times;</button>
+          <vscode-button id="newSessionBtn" secondary class="toolbar-btn" title="New session">+ New</vscode-button>
+          <vscode-button id="deleteSessionBtn" secondary class="toolbar-btn" title="Delete session">&times;</vscode-button>
           <button id="sendBtn" class="send-btn" disabled title="Send (Enter)">&#9650;</button>
           <button id="cancelBtn" class="cancel-btn" style="display: none;" title="Cancel">&#9632;</button>
         </div>
@@ -165,7 +172,7 @@ function init(): void {
     </div>
   `;
 
-  $modelSelect = document.getElementById('modelSelect') as HTMLSelectElement;
+  $modelSelect = document.getElementById('modelSelect') as HTMLElement & { value: string };
   $messageList = document.getElementById('messageList') as HTMLElement;
   $textarea = document.getElementById('msgInput') as HTMLTextAreaElement;
   $sendBtn = document.getElementById('sendBtn') as HTMLButtonElement;
@@ -348,15 +355,20 @@ function onMessage(event: MessageEvent): void {
 
 function renderModels(): void {
   const currentValue = $modelSelect.value;
-  while ($modelSelect.options.length > 1) {
-    $modelSelect.remove(1);
-  }
+
+  // Remove all options except the first placeholder
+  const existingOptions = $modelSelect.querySelectorAll('vscode-option');
+  existingOptions.forEach((opt, i) => {
+    if (i > 0) {opt.remove();}
+  });
+
   state.models.forEach((m) => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
+    const opt = document.createElement('vscode-option') as HTMLElement;
+    opt.setAttribute('value', m.id);
     opt.textContent = m.id;
     $modelSelect.appendChild(opt);
   });
+
   if (state.currentModel) {
     $modelSelect.value = state.currentModel;
   } else if (currentValue) {
@@ -533,36 +545,24 @@ function addToolCard(id: string, name: string, args: string, isRunning: boolean)
 }
 
 function createToolCard(id: string, name: string, args: string, isRunning: boolean): HTMLElement {
-  const card = document.createElement('div');
-  card.className = isRunning ? 'tool-card' : 'tool-card open';
+  const card = document.createElement('vscode-collapsible') as HTMLElement;
+  card.className = 'tool-card';
+  card.setAttribute('heading', name);
+  card.setAttribute('description', isRunning ? 'Running' : 'Used');
   card.dataset.toolId = id;
+  if (!isRunning) {card.setAttribute('open', '');}
 
-  const header = document.createElement('div');
-  header.className = 'tool-card-header';
-
-  const chevron = document.createElement('span');
-  chevron.className = 'tool-card-chevron';
-  chevron.textContent = '▶';
-
-  const label = document.createElement('span');
-  label.className = 'tool-card-label';
-  label.textContent = isRunning ? 'Running' : 'Used';
-
-  const toolName = document.createElement('span');
-  toolName.className = 'tool-card-name';
-  toolName.textContent = name;
-
+  // Status indicator in decorations slot
   const status = document.createElement('span');
+  status.slot = 'decorations';
   status.className = isRunning ? 'tool-card-status running' : 'tool-card-status';
-  status.innerHTML = isRunning ? '&#10227;' : '';
-
-  header.appendChild(chevron);
-  header.appendChild(label);
-  header.appendChild(toolName);
-  header.appendChild(status);
-
-  const body = document.createElement('div');
-  body.className = 'tool-card-body';
+  if (isRunning) {
+    const ring = document.createElement('vscode-progress-ring') as HTMLElement;
+    ring.style.width = '14px';
+    ring.style.height = '14px';
+    status.appendChild(ring);
+  }
+  card.appendChild(status);
 
   // Arguments section
   const argsSection = document.createElement('div');
@@ -581,15 +581,7 @@ function createToolCard(id: string, name: string, args: string, isRunning: boole
 
   argsSection.appendChild(argsLabel);
   argsSection.appendChild(argsPre);
-  body.appendChild(argsSection);
-
-  card.appendChild(header);
-  card.appendChild(body);
-
-  // Toggle open/close on header click
-  header.addEventListener('click', () => {
-    card.classList.toggle('open');
-  });
+  card.appendChild(argsSection);
 
   return card;
 }
@@ -604,39 +596,33 @@ function updateToolCard(callId: string, content: string, isError: boolean): void
   const card = document.querySelector(`[data-tool-id="${callId}"]`) as HTMLElement;
   if (!card) {return;}
 
-  // Update status icon
+  // Update status icon in decorations slot
   const status = card.querySelector('.tool-card-status') as HTMLElement;
   if (status) {
     status.className = `tool-card-status ${isError ? 'error' : 'success'}`;
     status.innerHTML = isError ? '✗' : '✓';
   }
 
-  // Update label
-  const label = card.querySelector('.tool-card-label') as HTMLElement;
-  if (label) {
-    label.textContent = 'Used';
-  }
+  // Update description
+  card.setAttribute('description', 'Used');
 
   // Add result section
-  const body = card.querySelector('.tool-card-body') as HTMLElement;
-  if (body) {
-    const resultSection = document.createElement('div');
-    resultSection.className = 'tool-card-section';
+  const resultSection = document.createElement('div');
+  resultSection.className = 'tool-card-section';
 
-    const resultLabel = document.createElement('div');
-    resultLabel.className = 'tool-card-section-label';
-    resultLabel.textContent = 'Result';
+  const resultLabel = document.createElement('div');
+  resultLabel.className = 'tool-card-section-label';
+  resultLabel.textContent = 'Result';
 
-    const resultPre = document.createElement('pre');
-    resultPre.textContent = content;
+  const resultPre = document.createElement('pre');
+  resultPre.textContent = content;
 
-    resultSection.appendChild(resultLabel);
-    resultSection.appendChild(resultPre);
-    body.appendChild(resultSection);
-  }
+  resultSection.appendChild(resultLabel);
+  resultSection.appendChild(resultPre);
+  card.appendChild(resultSection);
 
   // Collapse card
-  card.classList.remove('open');
+  card.removeAttribute('open');
 }
 
 // ── Approval Gates ───────────────────────────────────────────────────────────
@@ -663,9 +649,9 @@ function createApprovalGate(requestId: string, toolName: string, promptText: str
   const body = document.createElement('div');
   body.className = 'approval-gate-body';
 
-  const name = document.createElement('div');
-  name.className = 'approval-tool-name';
-  name.textContent = toolName;
+  const nameEl = document.createElement('div');
+  nameEl.className = 'approval-tool-name';
+  nameEl.textContent = toolName;
 
   const argsDiv = document.createElement('div');
   argsDiv.className = 'approval-args';
@@ -682,23 +668,23 @@ function createApprovalGate(requestId: string, toolName: string, promptText: str
   const buttons = document.createElement('div');
   buttons.className = 'approval-buttons';
 
-  const allowBtn = document.createElement('button');
-  allowBtn.className = 'approval-btn-allow';
+  const allowBtn = document.createElement('vscode-button') as HTMLElement;
   allowBtn.textContent = 'Allow';
   allowBtn.addEventListener('click', () => {
     api.postMessage({ type: 'approveToolCall', requestId, decision: 'allow' });
     resolveApprovalGate(requestId, 'allow');
   });
 
-  const denyBtn = document.createElement('button');
-  denyBtn.className = 'approval-btn-deny';
+  const denyBtn = document.createElement('vscode-button') as HTMLElement;
+  denyBtn.setAttribute('secondary', '');
   denyBtn.textContent = 'Deny';
   denyBtn.addEventListener('click', () => {
     api.postMessage({ type: 'approveToolCall', requestId, decision: 'deny' });
     resolveApprovalGate(requestId, 'deny');
   });
 
-  const abortBtn = document.createElement('button');
+  const abortBtn = document.createElement('vscode-button') as HTMLElement;
+  abortBtn.setAttribute('secondary', '');
   abortBtn.className = 'approval-btn-abort';
   abortBtn.textContent = 'Abort';
   abortBtn.addEventListener('click', () => {
@@ -710,7 +696,7 @@ function createApprovalGate(requestId: string, toolName: string, promptText: str
   buttons.appendChild(denyBtn);
   buttons.appendChild(abortBtn);
 
-  body.appendChild(name);
+  body.appendChild(nameEl);
   body.appendChild(argsDiv);
   body.appendChild(buttons);
 

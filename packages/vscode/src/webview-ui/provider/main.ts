@@ -1,3 +1,16 @@
+import '@vscode-elements/elements/dist/vscode-button/index.js';
+import '@vscode-elements/elements/dist/vscode-textfield/index.js';
+import '@vscode-elements/elements/dist/vscode-single-select/index.js';
+import '@vscode-elements/elements/dist/vscode-option/index.js';
+import '@vscode-elements/elements/dist/vscode-collapsible/index.js';
+import '@vscode-elements/elements/dist/vscode-form-group/index.js';
+import '@vscode-elements/elements/dist/vscode-label/index.js';
+import '@vscode-elements/elements/dist/vscode-form-helper/index.js';
+import '@vscode-elements/elements/dist/vscode-radio-group/index.js';
+import '@vscode-elements/elements/dist/vscode-radio/index.js';
+import '@vscode-elements/elements/dist/vscode-badge/index.js';
+import '@vscode-elements/elements/dist/vscode-progress-ring/index.js';
+
 declare function acquireVsCodeApi(): {
   postMessage(msg: unknown): void;
   getState(): unknown;
@@ -95,9 +108,8 @@ function buildInitialDOM(): void {
   const buttonContainer = document.createElement('div');
   buttonContainer.style.margin = '12px 0';
 
-  const addBtn = document.createElement('button');
+  const addBtn = document.createElement('vscode-button') as HTMLElement;
   addBtn.id = 'add-provider-btn';
-  addBtn.className = 'primary';
   addBtn.textContent = '+ Add Provider';
   addBtn.addEventListener('click', () => {
     editingProviderId = null;
@@ -164,8 +176,7 @@ function renderProviders(): void {
     name.className = 'provider-name';
     name.textContent = p.id;
 
-    const engine = document.createElement('span');
-    engine.className = 'provider-engine';
+    const engine = document.createElement('vscode-badge') as HTMLElement;
     engine.textContent = p.engine;
 
     const modelCount = document.createElement('span');
@@ -180,12 +191,16 @@ function renderProviders(): void {
     const actions = document.createElement('div');
     actions.className = 'provider-actions';
 
-    const editBtn = document.createElement('button');
+    const editBtn = document.createElement('vscode-button') as HTMLElement;
+    editBtn.setAttribute('secondary', '');
+    editBtn.className = 'card-action';
     editBtn.textContent = '✎';
     editBtn.title = 'Edit provider';
     editBtn.addEventListener('click', () => startEdit(p));
 
-    const deleteBtn = document.createElement('button');
+    const deleteBtn = document.createElement('vscode-button') as HTMLElement;
+    deleteBtn.setAttribute('secondary', '');
+    deleteBtn.className = 'card-action';
     deleteBtn.textContent = '×';
     deleteBtn.title = 'Delete provider';
     deleteBtn.addEventListener('click', () => {
@@ -246,70 +261,45 @@ function renderAccordion(): void {
   const section1Complete = selectedEngine !== '';
   const section2Complete = selectedModels.size > 0;
 
-  // Create wrapper
   const wrapper = document.createElement('div');
 
-  // Section 1
-  const section1 = document.createElement('div');
-  section1.className = `accordion-section ${section1Open ? 'open' : ''}`;
-  section1.id = 'accordion-section-1';
+  // ── Section 1: Provider Setup ──
+  const section1 = document.createElement('vscode-collapsible') as HTMLElement;
+  section1.setAttribute('heading', '1. Provider Setup');
+  if (section1Open) {section1.setAttribute('open', '');}
+  section1.addEventListener('vsc-collapsible-toggle', ((e: CustomEvent<{ open: boolean }>) => {
+    section1Open = e.detail.open;
+  }) as EventListener);
 
-  const header1 = document.createElement('div');
-  header1.className = 'accordion-header';
-  header1.id = 'accordion-header-1';
-  header1.addEventListener('click', () => {
-    section1Open = !section1Open;
-    renderAccordion();
-  });
-
-  const header1Left = document.createElement('div');
-  header1Left.className = 'accordion-header-left';
-
-  const chevron1 = document.createElement('span');
-  chevron1.className = 'accordion-chevron';
-
-  const title1 = document.createElement('span');
-  title1.className = 'accordion-title';
-  title1.textContent = '1. Provider Setup';
-
-  header1Left.appendChild(chevron1);
-  header1Left.appendChild(title1);
-
-  const status1 = document.createElement('span');
-  status1.className = `accordion-status ${section1Complete ? 'complete' : ''}`;
   if (section1Complete) {
-    status1.textContent = 'Complete';
+    const status1 = document.createElement('vscode-badge') as HTMLElement;
+    status1.slot = 'decorations';
+    status1.textContent = '✓ Complete';
+    section1.appendChild(status1);
   }
 
-  header1.appendChild(header1Left);
-  header1.appendChild(status1);
-
-  const body1 = document.createElement('div');
-  body1.className = 'accordion-body';
-  body1.id = 'accordion-body-1';
-
   // Engine dropdown
-  const engineGroup = document.createElement('div');
-  engineGroup.className = 'form-group';
+  const engineGroup = document.createElement('vscode-form-group') as HTMLElement;
+  engineGroup.setAttribute('variant', 'vertical');
 
-  const engineLabel = document.createElement('label');
-  engineLabel.htmlFor = 'engine-select';
+  const engineLabel = document.createElement('vscode-label') as HTMLElement;
+  engineLabel.setAttribute('for', 'engine-select');
   engineLabel.textContent = 'Engine';
 
-  const engineSelect = document.createElement('select');
+  const engineSelect = document.createElement('vscode-single-select') as HTMLElement & { value: string };
   engineSelect.id = 'engine-select';
 
-  const engineDefaultOption = document.createElement('option');
-  engineDefaultOption.value = '';
+  const engineDefaultOption = document.createElement('vscode-option') as HTMLElement;
+  engineDefaultOption.setAttribute('value', '');
   engineDefaultOption.textContent = 'Choose an engine...';
   engineSelect.appendChild(engineDefaultOption);
 
   [...engines].sort((a, b) => a.id.localeCompare(b.id)).forEach((e) => {
-    const option = document.createElement('option');
-    option.value = e.id;
+    const option = document.createElement('vscode-option') as HTMLElement;
+    option.setAttribute('value', e.id);
     option.textContent = e.id;
     if (e.id === selectedEngine) {
-      option.selected = true;
+      option.setAttribute('selected', '');
     }
     engineSelect.appendChild(option);
   });
@@ -332,48 +322,45 @@ function renderAccordion(): void {
   engineGroup.appendChild(engineSelect);
 
   // Provider name
-  const nameGroup = document.createElement('div');
-  nameGroup.className = 'form-group';
+  const nameGroup = document.createElement('vscode-form-group') as HTMLElement;
+  nameGroup.setAttribute('variant', 'vertical');
 
-  const nameLabel = document.createElement('label');
-  nameLabel.htmlFor = 'provider-name-input';
+  const nameLabel = document.createElement('vscode-label') as HTMLElement;
+  nameLabel.setAttribute('for', 'provider-name-input');
   nameLabel.textContent = 'Provider Name';
 
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
+  const nameInput = document.createElement('vscode-textfield') as HTMLElement & { value: string };
   nameInput.id = 'provider-name-input';
-  nameInput.value = editing ? editing.id : providerName;
-  nameInput.placeholder = 'e.g. openai-prod';
+  nameInput.setAttribute('value', editing ? editing.id : providerName);
+  nameInput.setAttribute('placeholder', 'e.g. openai-prod');
   if (editing) {
-    nameInput.readOnly = true;
+    nameInput.setAttribute('readonly', '');
   }
   nameInput.addEventListener('input', () => {
     providerName = nameInput.value;
   });
 
-  const nameHint = document.createElement('div');
-  nameHint.className = 'hint';
-  nameHint.textContent = 'Letters, numbers, dots, underscores, and dashes only';
+  const nameHelper = document.createElement('vscode-form-helper') as HTMLElement;
+  nameHelper.innerHTML = '<p>Letters, numbers, dots, underscores, and dashes only</p>';
 
   nameGroup.appendChild(nameLabel);
   nameGroup.appendChild(nameInput);
-  nameGroup.appendChild(nameHint);
+  nameGroup.appendChild(nameHelper);
 
   // Base URL
-  const baseUrlGroup = document.createElement('div');
-  baseUrlGroup.className = 'form-group';
+  const baseUrlGroup = document.createElement('vscode-form-group') as HTMLElement;
+  baseUrlGroup.setAttribute('variant', 'vertical');
   baseUrlGroup.id = 'base-url-group';
   baseUrlGroup.style.display = engineInfo?.defaultBaseUrl ? 'block' : 'none';
 
-  const baseUrlLabel = document.createElement('label');
-  baseUrlLabel.htmlFor = 'base-url-input';
+  const baseUrlLabel = document.createElement('vscode-label') as HTMLElement;
+  baseUrlLabel.setAttribute('for', 'base-url-input');
   baseUrlLabel.textContent = 'Base URL';
 
-  const baseUrlInput = document.createElement('input');
-  baseUrlInput.type = 'text';
+  const baseUrlInput = document.createElement('vscode-textfield') as HTMLElement & { value: string };
   baseUrlInput.id = 'base-url-input';
-  baseUrlInput.value = editing?.baseUrl || engineInfo?.defaultBaseUrl || '';
-  baseUrlInput.placeholder = engineInfo?.defaultBaseUrl || '';
+  baseUrlInput.setAttribute('value', editing?.baseUrl || engineInfo?.defaultBaseUrl || '');
+  baseUrlInput.setAttribute('placeholder', engineInfo?.defaultBaseUrl || '');
 
   baseUrlGroup.appendChild(baseUrlLabel);
   baseUrlGroup.appendChild(baseUrlInput);
@@ -383,70 +370,69 @@ function renderAccordion(): void {
   apiKeyGroupDiv.id = 'api-key-group';
   apiKeyGroupDiv.style.display = requiresKey ? 'block' : 'none';
 
-  const toggleGroup = document.createElement('div');
-  toggleGroup.className = 'form-group';
+  const toggleGroup = document.createElement('vscode-form-group') as HTMLElement;
+  toggleGroup.setAttribute('variant', 'vertical');
 
-  const toggleLabel = document.createElement('label');
+  const toggleLabel = document.createElement('vscode-label') as HTMLElement;
   toggleLabel.textContent = 'API Key Storage';
 
-  const toggleButtons = document.createElement('div');
-  toggleButtons.className = 'toggle-group';
+  const radioGroup = document.createElement('vscode-radio-group') as HTMLElement & { value: string };
 
-  const toggleKeychain = document.createElement('button');
-  toggleKeychain.id = 'toggle-keychain';
-  toggleKeychain.textContent = 'Keychain';
-  toggleKeychain.className = apiKeyMethod === 'keychain' ? 'active' : '';
-  toggleKeychain.addEventListener('click', () => {
-    apiKeyMethod = 'keychain';
-    renderAccordion();
+  const keychainRadio = document.createElement('vscode-radio') as HTMLElement;
+  keychainRadio.setAttribute('label', 'Keychain');
+  keychainRadio.setAttribute('value', 'keychain');
+  if (apiKeyMethod === 'keychain') {keychainRadio.setAttribute('checked', '');}
+
+  const envRadio = document.createElement('vscode-radio') as HTMLElement;
+  envRadio.setAttribute('label', 'Environment Variable');
+  envRadio.setAttribute('value', 'env');
+  if (apiKeyMethod === 'env') {envRadio.setAttribute('checked', '');}
+
+  radioGroup.appendChild(keychainRadio);
+  radioGroup.appendChild(envRadio);
+
+  radioGroup.addEventListener('change', () => {
+    const checked = radioGroup.querySelector('vscode-radio[checked]') as HTMLElement | null;
+    const val = checked?.getAttribute('value');
+    if (val === 'keychain' || val === 'env') {
+      apiKeyMethod = val;
+      renderAccordion();
+    }
   });
-
-  const toggleEnv = document.createElement('button');
-  toggleEnv.id = 'toggle-env';
-  toggleEnv.textContent = 'Environment Variable';
-  toggleEnv.className = apiKeyMethod === 'env' ? 'active' : '';
-  toggleEnv.addEventListener('click', () => {
-    apiKeyMethod = 'env';
-    renderAccordion();
-  });
-
-  toggleButtons.appendChild(toggleKeychain);
-  toggleButtons.appendChild(toggleEnv);
 
   toggleGroup.appendChild(toggleLabel);
-  toggleGroup.appendChild(toggleButtons);
+  toggleGroup.appendChild(radioGroup);
 
-  const keychainField = document.createElement('div');
-  keychainField.className = 'form-group';
+  const keychainField = document.createElement('vscode-form-group') as HTMLElement;
+  keychainField.setAttribute('variant', 'vertical');
   keychainField.id = 'keychain-field';
   keychainField.style.display = apiKeyMethod === 'keychain' ? 'block' : 'none';
 
-  const apiKeyLabel = document.createElement('label');
-  apiKeyLabel.htmlFor = 'api-key-input';
+  const apiKeyLabel = document.createElement('vscode-label') as HTMLElement;
+  apiKeyLabel.setAttribute('for', 'api-key-input');
   apiKeyLabel.textContent = 'API Key';
 
-  const apiKeyInput = document.createElement('input');
-  apiKeyInput.type = 'password';
+  const apiKeyInput = document.createElement('vscode-textfield') as HTMLElement & { value: string };
   apiKeyInput.id = 'api-key-input';
-  apiKeyInput.placeholder = 'Stored securely in system keychain';
+  apiKeyInput.setAttribute('type', 'password');
+  apiKeyInput.setAttribute('placeholder', 'Stored securely in system keychain');
 
   keychainField.appendChild(apiKeyLabel);
   keychainField.appendChild(apiKeyInput);
 
-  const envField = document.createElement('div');
-  envField.className = 'form-group';
+  const envField = document.createElement('vscode-form-group') as HTMLElement;
+  envField.setAttribute('variant', 'vertical');
   envField.id = 'env-field';
   envField.style.display = apiKeyMethod === 'env' ? 'block' : 'none';
 
-  const envVarLabel = document.createElement('label');
-  envVarLabel.htmlFor = 'env-var-input';
+  const envVarLabel = document.createElement('vscode-label') as HTMLElement;
+  envVarLabel.setAttribute('for', 'env-var-input');
   envVarLabel.textContent = 'Variable Name';
 
-  const envVarInput = document.createElement('input');
-  envVarInput.type = 'text';
+  const envVarInput = document.createElement('vscode-textfield') as HTMLElement & { value: string };
   envVarInput.id = 'env-var-input';
-  envVarInput.value = engineInfo?.defaultEnvVar || '';
-  envVarInput.placeholder = 'e.g. OPENAI_API_KEY';
+  envVarInput.setAttribute('value', engineInfo?.defaultEnvVar || '');
+  envVarInput.setAttribute('placeholder', 'e.g. OPENAI_API_KEY');
 
   envField.appendChild(envVarLabel);
   envField.appendChild(envVarInput);
@@ -455,73 +441,43 @@ function renderAccordion(): void {
   apiKeyGroupDiv.appendChild(keychainField);
   apiKeyGroupDiv.appendChild(envField);
 
-  body1.appendChild(engineGroup);
-  body1.appendChild(nameGroup);
-  body1.appendChild(baseUrlGroup);
-  body1.appendChild(apiKeyGroupDiv);
+  section1.appendChild(engineGroup);
+  section1.appendChild(nameGroup);
+  section1.appendChild(baseUrlGroup);
+  section1.appendChild(apiKeyGroupDiv);
 
-  section1.appendChild(header1);
-  section1.appendChild(body1);
+  // ── Section 2: Select Models ──
+  const section2 = document.createElement('vscode-collapsible') as HTMLElement;
+  section2.setAttribute('heading', '2. Select Models');
+  if (section2Open) {section2.setAttribute('open', '');}
+  section2.addEventListener('vsc-collapsible-toggle', ((e: CustomEvent<{ open: boolean }>) => {
+    section2Open = e.detail.open;
+  }) as EventListener);
 
-  // Section 2
-  const section2 = document.createElement('div');
-  section2.className = `accordion-section ${section2Open ? 'open' : ''}`;
-  section2.id = 'accordion-section-2';
-
-  const header2 = document.createElement('div');
-  header2.className = 'accordion-header';
-  header2.id = 'accordion-header-2';
-  header2.addEventListener('click', () => {
-    section2Open = !section2Open;
-    renderAccordion();
-  });
-
-  const header2Left = document.createElement('div');
-  header2Left.className = 'accordion-header-left';
-
-  const chevron2 = document.createElement('span');
-  chevron2.className = 'accordion-chevron';
-
-  const title2 = document.createElement('span');
-  title2.className = 'accordion-title';
-  title2.textContent = '2. Select Models';
-
-  header2Left.appendChild(chevron2);
-  header2Left.appendChild(title2);
-
-  const status2 = document.createElement('span');
-  status2.className = `accordion-status ${section2Complete ? 'complete' : ''}`;
   if (section2Complete) {
+    const status2 = document.createElement('vscode-badge') as HTMLElement;
+    status2.slot = 'decorations';
     status2.textContent = `${selectedModels.size} selected`;
+    section2.appendChild(status2);
   }
-
-  header2.appendChild(header2Left);
-  header2.appendChild(status2);
-
-  const body2 = document.createElement('div');
-  body2.className = 'accordion-body';
-  body2.id = 'accordion-body-2';
 
   const modelSectionContent = document.createElement('div');
   modelSectionContent.id = 'model-section-content';
 
-  body2.appendChild(modelSectionContent);
-  section2.appendChild(header2);
-  section2.appendChild(body2);
+  section2.appendChild(modelSectionContent);
 
   // Form actions
   const formActions = document.createElement('div');
   formActions.className = 'form-actions';
 
-  const saveBtn = document.createElement('button');
+  const saveBtn = document.createElement('vscode-button') as HTMLElement;
   saveBtn.id = 'save-provider-btn';
-  saveBtn.className = 'primary';
   saveBtn.textContent = editing ? 'Update Provider' : 'Save Provider';
   saveBtn.addEventListener('click', handleSave);
 
-  const cancelBtn = document.createElement('button');
+  const cancelBtn = document.createElement('vscode-button') as HTMLElement;
   cancelBtn.id = 'cancel-btn';
-  cancelBtn.className = 'secondary';
+  cancelBtn.setAttribute('secondary', '');
   cancelBtn.textContent = 'Cancel';
   cancelBtn.addEventListener('click', () => {
     editingProviderId = null;
@@ -557,7 +513,6 @@ function renderModelSection(): void {
   const container = document.getElementById('model-section-content');
   if (!container) {return;}
 
-  // For early-exit states (loading/error/empty), clear everything
   if (isDiscovering || discoverError || discoveredModels.length === 0) {
     container.innerHTML = '';
 
@@ -565,8 +520,7 @@ function renderModelSection(): void {
       const loading = document.createElement('div');
       loading.className = 'loading-state';
 
-      const spinner = document.createElement('span');
-      spinner.className = 'spinner';
+      const spinner = document.createElement('vscode-progress-ring') as HTMLElement;
 
       const loadingText = document.createElement('span');
       loadingText.textContent = 'Discovering models...';
@@ -581,17 +535,17 @@ function renderModelSection(): void {
       const errorText = document.createElement('span');
       errorText.textContent = discoverError;
 
-      const retryLink = document.createElement('button');
-      retryLink.className = 'link';
-      retryLink.textContent = 'Retry';
-      retryLink.style.marginLeft = '8px';
-      retryLink.addEventListener('click', () => {
+      const retryBtn = document.createElement('vscode-button') as HTMLElement;
+      retryBtn.setAttribute('secondary', '');
+      retryBtn.textContent = 'Retry';
+      retryBtn.style.marginLeft = '8px';
+      retryBtn.addEventListener('click', () => {
         discoverError = null;
         triggerModelDiscovery();
       });
 
       errorDiv.appendChild(errorText);
-      errorDiv.appendChild(retryLink);
+      errorDiv.appendChild(retryBtn);
       container.appendChild(errorDiv);
     } else {
       const empty = document.createElement('div');
@@ -602,39 +556,32 @@ function renderModelSection(): void {
     return;
   }
 
-  // Available: all discovered models matching search (always shown, even if already enabled)
   const availableModels = discoveredModels.filter((m) => {
     if (modelFilter === '') {return true;}
     const display = (m.name || m.id).toLowerCase();
     return display.includes(modelFilter.toLowerCase());
   });
 
-  // Enabled: entries from the selectedModels map (name → model_id)
   const enabledEntries = Array.from(selectedModels.entries());
 
-  // Create search input only once; on subsequent renders it stays in the DOM untouched
   if (!document.getElementById('model-search-input')) {
-    const searchInput = document.createElement('input');
-    searchInput.type = 'text';
-    searchInput.className = 'model-search';
+    const searchInput = document.createElement('vscode-textfield') as HTMLElement & { value: string };
     searchInput.id = 'model-search-input';
-    searchInput.placeholder = 'Search models...';
-    searchInput.value = modelFilter;
-    searchInput.addEventListener('input', (e) => {
-      modelFilter = (e.target as HTMLInputElement).value;
+    searchInput.setAttribute('placeholder', 'Search models...');
+    searchInput.setAttribute('value', modelFilter);
+    searchInput.addEventListener('input', () => {
+      modelFilter = searchInput.value;
       leftSelected.clear();
       renderModelSection();
     });
     container.appendChild(searchInput);
   }
 
-  // Only rebuild the dual-list; remove the old one if present
   const oldDualList = container.querySelector('.dual-list');
   if (oldDualList) {
     oldDualList.remove();
   }
 
-  // Dual-list grid container
   const dualList = document.createElement('div');
   dualList.className = 'dual-list';
 
@@ -671,10 +618,10 @@ function renderModelSection(): void {
   const center = document.createElement('div');
   center.className = 'dual-list-center';
 
-  const addBtn = document.createElement('button');
-  addBtn.className = 'secondary';
+  const addBtn = document.createElement('vscode-button') as HTMLElement;
+  addBtn.setAttribute('secondary', '');
   addBtn.textContent = 'Add →';
-  addBtn.disabled = leftSelected.size === 0;
+  if (leftSelected.size === 0) {addBtn.setAttribute('disabled', '');}
   addBtn.addEventListener('click', () => {
     for (const id of leftSelected) {
       let name = id;
@@ -690,10 +637,10 @@ function renderModelSection(): void {
     renderAccordion();
   });
 
-  const removeBtn = document.createElement('button');
-  removeBtn.className = 'secondary';
+  const removeBtn = document.createElement('vscode-button') as HTMLElement;
+  removeBtn.setAttribute('secondary', '');
   removeBtn.textContent = '← Remove';
-  removeBtn.disabled = rightSelected.size === 0;
+  if (rightSelected.size === 0) {removeBtn.setAttribute('disabled', '');}
   removeBtn.addEventListener('click', () => {
     for (const name of rightSelected) {
       selectedModels.delete(name);
@@ -759,8 +706,8 @@ function applyPendingModels(): void {
 // ─── Trigger Model Discovery ─────────────────────────────────────────
 
 function triggerModelDiscovery(): void {
-  const engineSelect = document.getElementById('engine-select') as HTMLSelectElement;
-  const providerNameInput = document.getElementById('provider-name-input') as HTMLInputElement;
+  const engineSelect = document.getElementById('engine-select') as HTMLElement & { value: string } | null;
+  const providerNameInput = document.getElementById('provider-name-input') as HTMLElement & { value: string } | null;
 
   const engineId = engineSelect?.value || '';
   const providerId = providerNameInput?.value.trim() || editingProviderId || '';
@@ -781,11 +728,11 @@ function triggerModelDiscovery(): void {
 // ─── Handle Save ─────────────────────────────────────────────────────
 
 function handleSave(): void {
-  const providerNameInput = document.getElementById('provider-name-input') as HTMLInputElement;
-  const engineSelect = document.getElementById('engine-select') as HTMLSelectElement;
-  const baseUrlInput = document.getElementById('base-url-input') as HTMLInputElement;
-  const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
-  const envVarInput = document.getElementById('env-var-input') as HTMLInputElement;
+  const providerNameInput = document.getElementById('provider-name-input') as HTMLElement & { value: string } | null;
+  const engineSelect = document.getElementById('engine-select') as HTMLElement & { value: string } | null;
+  const baseUrlInput = document.getElementById('base-url-input') as HTMLElement & { value: string } | null;
+  const apiKeyInput = document.getElementById('api-key-input') as HTMLElement & { value: string } | null;
+  const envVarInput = document.getElementById('env-var-input') as HTMLElement & { value: string } | null;
 
   const providerId = providerNameInput?.value.trim() || '';
   const engine = engineSelect?.value || '';

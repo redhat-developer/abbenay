@@ -54,12 +54,6 @@
         "title": "Configure Providers",
         "category": "Abbenay",
         "icon": "$(gear)"
-      },
-      {
-        "command": "abbenay.openChat",
-        "title": "Open Chat",
-        "category": "Abbenay",
-        "icon": "$(comment-discussion)"
       }
     ],
     "viewsContainers": {
@@ -135,6 +129,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.5.1",
+    "@vscode-elements/elements": "^2.5.1",
     "highlight.js": "^11.11.1",
     "long": "^5.3.2",
     "marked": "^18.0.4",

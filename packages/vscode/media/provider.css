@@ -30,55 +30,6 @@ h2 {
   margin: 0 0 24px 0;
 }
 
-/* ─── Buttons ─────────────────────────────────────────────────────── */
-
-button {
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-  cursor: pointer;
-  border-radius: 3px;
-}
-
-button.primary {
-  padding: 6px 14px;
-  background-color: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border: none;
-}
-
-button.primary:hover:not(:disabled) {
-  background-color: var(--vscode-button-hoverBackground);
-}
-
-button.primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-button.secondary {
-  padding: 6px 14px;
-  background-color: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: none;
-}
-
-button.secondary:hover:not(:disabled) {
-  background-color: var(--vscode-button-secondaryHoverBackground);
-}
-
-button.link {
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--vscode-textLink-foreground);
-  text-decoration: underline;
-  font-size: 0.9em;
-}
-
-button.link:hover {
-  color: var(--vscode-textLink-activeForeground);
-}
-
 /* ─── Provider Cards ──────────────────────────────────────────────── */
 
 .provider-card {
@@ -105,14 +56,6 @@ button.link:hover {
 
 .provider-name {
   font-weight: 600;
-}
-
-.provider-engine {
-  font-size: 0.85em;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background-color: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
 }
 
 .provider-model-count {
@@ -145,152 +88,33 @@ button.link:hover {
   gap: 6px;
 }
 
-.provider-actions button {
-  padding: 4px 10px;
-  border: 1px solid var(--vscode-widget-border);
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  cursor: pointer;
-  border-radius: 3px;
-  font-size: 0.85em;
-  font-family: var(--vscode-font-family);
-}
+/* ─── Collapsible & Form ─────────────────────────────────────────── */
 
-.provider-actions button:hover {
-  color: var(--vscode-foreground);
-  border-color: var(--vscode-foreground);
-}
-
-/* ─── Accordion ───────────────────────────────────────────────────── */
-
-.accordion-section {
-  background-color: var(--vscode-editorWidget-background);
+vscode-collapsible {
+  margin-bottom: 8px;
   border: 1px solid var(--vscode-widget-border);
   border-radius: 4px;
-  margin-bottom: 8px;
 }
 
-.accordion-section.open {
-  border-color: var(--vscode-focusBorder);
+vscode-collapsible::part(header) {
+  text-transform: none;
 }
 
-.accordion-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  cursor: pointer;
-  user-select: none;
+vscode-form-group {
+  margin-bottom: 12px;
 }
 
-.accordion-header:hover {
-  background-color: var(--vscode-list-hoverBackground);
-}
-
-.accordion-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.accordion-chevron {
-  display: inline-block;
-  width: 0;
-  height: 0;
-  border-left: 5px solid var(--vscode-foreground);
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transition: transform 0.2s ease;
-  transform: rotate(0deg);
-}
-
-.accordion-section.open .accordion-chevron {
-  transform: rotate(90deg);
-}
-
-.accordion-title {
-  font-weight: 600;
-  font-size: 0.95em;
-}
-
-.accordion-status {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.85em;
-  color: var(--vscode-descriptionForeground);
-}
-
-.accordion-status.complete {
-  color: var(--vscode-testing-iconPassed);
-}
-
-.accordion-status.complete::before {
-  content: '✓';
-  font-weight: bold;
-}
-
-.accordion-body {
-  display: none;
-  padding: 0 14px 14px 14px;
-}
-
-.accordion-section.open .accordion-body {
-  display: block;
-}
-
-/* ─── Toggle Group ────────────────────────────────────────────────── */
-
-.toggle-group {
-  display: flex;
-  gap: 0;
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 3px;
-  overflow: hidden;
-  width: fit-content;
-}
-
-.toggle-group button {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 0;
-  background-color: var(--vscode-input-background);
-  color: var(--vscode-foreground);
-  cursor: pointer;
-  font-size: 0.9em;
-}
-
-.toggle-group button:not(:last-child) {
-  border-right: 1px solid var(--vscode-input-border);
-}
-
-.toggle-group button:hover:not(.active) {
-  background-color: var(--vscode-list-hoverBackground);
-}
-
-.toggle-group button.active {
-  background-color: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-/* ─── Model Search ────────────────────────────────────────────────── */
-
-.model-search {
+vscode-single-select {
   width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--vscode-input-border);
-  background-color: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-  border-radius: 3px;
-  box-sizing: border-box;
-  margin-bottom: 8px;
 }
 
-.model-search:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-  border-color: var(--vscode-focusBorder);
+vscode-textfield {
+  width: 100%;
+}
+
+vscode-button.card-action {
+  padding: 4px 8px;
+  min-width: auto;
 }
 
 /* ─── Dual-List Model Selector ───────────────────────────────────── */
@@ -358,56 +182,7 @@ button.link:hover {
   padding: 0 4px;
 }
 
-.dual-list-center button {
-  padding: 6px 12px;
-  font-size: 0.85em;
-  white-space: nowrap;
-}
-
-.dual-list-center button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* ─── Form Elements ───────────────────────────────────────────────── */
-
-.form-group {
-  margin-bottom: 12px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 0.9em;
-  color: var(--vscode-foreground);
-  font-weight: 500;
-}
-
-.form-group .hint {
-  font-size: 0.8em;
-  color: var(--vscode-descriptionForeground);
-  margin-top: 2px;
-}
-
-input[type="text"],
-input[type="password"],
-select {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--vscode-input-border);
-  background-color: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-  border-radius: 3px;
-  box-sizing: border-box;
-}
-
-input:focus,
-select:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-  border-color: var(--vscode-focusBorder);
-}
+/* ─── Form Actions ───────────────────────────────────────────────── */
 
 .form-actions {
   display: flex;
@@ -418,22 +193,6 @@ select:focus {
 }
 
 /* ─── Utility ─────────────────────────────────────────────────────── */
-
-.spinner {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--vscode-descriptionForeground);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 .loading-state {
   display: flex;

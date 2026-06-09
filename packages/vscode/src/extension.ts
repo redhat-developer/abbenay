@@ -226,10 +226,4 @@ function registerCommands(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Open chat command - reveals chat sidebar
-  context.subscriptions.push(
-    vscode.commands.registerCommand('abbenay.openChat', () => {
-      vscode.commands.executeCommand('abbenay.chatView.focus');
-    })
-  );
 }
