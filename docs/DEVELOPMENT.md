@@ -175,6 +175,28 @@ npm run daemon    # tsx runs directly, no build needed
 2. Press **F5** to launch Extension Development Host
 3. Check Output panel -> "Abbenay Provider" for logs
 
+#### Webview architecture
+
+The extension has two webviews built with `@vscode-elements/elements` (Lit-based web components for native VS Code look):
+
+| Webview | Type | Entry point | Handler |
+|---------|------|-------------|---------|
+| Provider Configuration | Editor panel | `src/webview-ui/provider/main.ts` | `src/webviews/provider/providerHandler.ts` |
+| Chat Sidebar | Activity bar view | `src/webview-ui/chat/main.ts` | `src/webviews/chat/chatHandler.ts` |
+
+Webview UI lives in `src/webview-ui/` (bundled by esbuild, excluded from tsc). Extension host handlers live in `src/webviews/`.
+
+#### Building webviews
+
+```bash
+cd packages/vscode
+node esbuild.js                 # dev build (sourcemaps)
+node esbuild.js --production    # production build (minified)
+node esbuild.js --watch         # watch mode
+```
+
+This builds both the extension host (`out/extension.js`) and webview bundles (`out/webview-ui/*/main.js`).
+
 ### Web dashboard
 
 1. Edit `packages/daemon/static/index.html`

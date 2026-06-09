@@ -97,7 +97,62 @@ curl -X POST http://localhost:8787/api/chat \
   -d '{"model":"mock/echo","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
+## VS Code Extension Tests
+
+The extension uses `@vscode/test-cli` with Mocha to run tests inside a real VS Code instance.
+
+```bash
+cd packages/vscode
+npm test
+```
+
+On headless Linux: `xvfb-run -a npm test`
+
+### Test Structure
+
+```
+packages/vscode/
+├── src/test/
+│   ├── extension.test.ts               <- Smoke tests (activation, commands, config)
+│   ├── helpers/
+│   │   ├── mockDaemonClient.ts         <- Stub DaemonClient with test data
+│   │   └── mockWebview.ts              <- Stub vscode.Webview with message recorder
+│   └── webviews/
+│       ├── getNonce.test.ts            <- Pure function (nonce generation)
+│       ├── getWebviewContent.test.ts   <- HTML template generation
+│       ├── providerHandler.test.ts     <- Provider message handler
+│       └── chatHandler.test.ts         <- Chat message handler
+└── .vscode-test.mjs                    <- Test runner config
+```
+
+### Smoke Tests
+
+| Test | What it covers |
+|------|----------------|
+| `extension.test.ts` | Extension activation, command registration, chat view, config defaults |
+
+### Webview Handler Tests
+
+Handler tests mock the `DaemonClient` and `vscode.Webview` to test message routing, data transformation, and error handling without a running daemon.
+
+| Test | What it covers |
+|------|----------------|
+| `getNonce.test.ts` | Nonce format (32 hex chars), uniqueness |
+| `getWebviewContent.test.ts` | HTML structure, CSP headers, nonce injection, panel-specific assets |
+| `providerHandler.test.ts` | Ready message routing, engine listing, model discovery with credentials, config forwarding, error handling |
+| `chatHandler.test.ts` | Ready message routing, model listing, session create/delete, stream cancellation, error handling |
+
+### Mock Helpers
+
+- **`mockDaemonClient.ts`** — Creates a stub `DaemonClient` with empty default return values. Override individual methods per test.
+- **`mockWebview.ts`** — Creates a stub `vscode.Webview` that records all `postMessage()` calls in a `.messages` array for assertion.
+
 ## Adding Tests
 
+### Daemon tests
 New unit tests should be co-located with their source files (e.g., `src/core/foo.test.ts`).
 New integration tests should go in `packages/daemon/tests/integration/`.
+
+### VS Code extension tests
+New webview handler tests go in `packages/vscode/src/test/webviews/`.
+New test helpers go in `packages/vscode/src/test/helpers/`.
