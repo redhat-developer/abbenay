@@ -51,10 +51,29 @@
       },
       {
         "command": "abbenay.configureProvider",
-        "title": "Configure Provider",
-        "category": "Abbenay"
+        "title": "Configure Providers",
+        "category": "Abbenay",
+        "icon": "$(gear)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "abbenay",
+          "title": "Abbenay",
+          "icon": "images/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "abbenay": [
+        {
+          "type": "webview",
+          "id": "abbenay.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
     "configuration": {
       "title": "Abbenay Provider",
       "properties": {
@@ -95,10 +114,10 @@
     "package:all-platforms": "npm run bundle && vsce package --no-dependencies"
   },
   "devDependencies": {
+    "@eslint/js": "^9",
     "@types/mocha": "^10.0.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.99.0",
-    "@eslint/js": "^9",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.0",
     "@vscode/vsce": "^3.7.0",
@@ -110,7 +129,10 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.5.1",
+    "@vscode-elements/elements": "^2.5.1",
+    "highlight.js": "^11.11.1",
     "long": "^5.3.2",
+    "marked": "^18.0.4",
     "nice-grpc": "^2.1.14",
     "nice-grpc-common": "^2.0.2"
   }

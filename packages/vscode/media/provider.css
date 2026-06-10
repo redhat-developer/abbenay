@@ -1,0 +1,332 @@
+/* ─── Base Styles ─────────────────────────────────────────────────── */
+
+body {
+  padding: 20px 24px;
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  max-width: 720px;
+}
+
+h1 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+
+h2 {
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+  margin: 28px 0 12px 0;
+}
+
+.subtitle {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  margin: 0 0 24px 0;
+}
+
+/* ─── Provider Cards ──────────────────────────────────────────────── */
+
+.provider-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  background-color: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.provider-card:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.provider-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.provider-name {
+  font-weight: 600;
+}
+
+.provider-model-count {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.provider-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 2px;
+}
+
+.provider-status.ready {
+  background-color: #73c991;
+}
+
+.provider-status.error {
+  background-color: #f48771;
+}
+
+.provider-status.unconfigured {
+  background-color: var(--vscode-descriptionForeground);
+}
+
+.provider-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.provider-actions vscode-button.card-action {
+  --vscode-button-secondaryBackground: transparent;
+  --vscode-button-secondaryHoverBackground: var(--vscode-toolbar-hoverBackground);
+}
+
+/* ─── Accordion ───────────────────────────────────────────────────── */
+
+.accordion-section {
+  background-color: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.accordion-section.open {
+  border-color: var(--vscode-focusBorder);
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.accordion-header:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.accordion-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accordion-chevron {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--vscode-foreground);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.2s ease;
+  transform: rotate(0deg);
+}
+
+.accordion-section.open .accordion-chevron {
+  transform: rotate(90deg);
+}
+
+.accordion-title {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.accordion-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.accordion-status.complete {
+  color: var(--vscode-testing-iconPassed);
+}
+
+.accordion-status.complete::before {
+  content: '✓';
+  font-weight: bold;
+}
+
+.accordion-body {
+  display: none;
+  padding: 0 14px 14px 14px;
+}
+
+.accordion-section.open .accordion-body {
+  display: block;
+}
+
+/* ─── Form Controls ───────────────────────────────────────────────── */
+
+vscode-form-group {
+  margin: 10px 0;
+}
+
+.accordion-body vscode-form-group:first-child {
+  margin-top: 0;
+}
+
+vscode-single-select {
+  width: 100%;
+}
+
+vscode-textfield {
+  width: 100%;
+}
+
+/* ─── Dual-List Model Selector ───────────────────────────────────── */
+
+.dual-list {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  min-height: 250px;
+}
+
+.dual-list-panel {
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dual-list-panel-header {
+  padding: 8px 12px;
+  background: var(--vscode-editorWidget-background);
+  font-weight: 500;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.dual-list-items {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 280px;
+  background-color: var(--vscode-input-background);
+}
+
+.dual-list-item {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  cursor: pointer;
+  font-size: 0.9em;
+  user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dual-list-item:last-child {
+  border-bottom: none;
+}
+
+.dual-list-item:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.dual-list-item.selected {
+  background-color: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.dual-list-center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+/* ─── Form Actions ───────────────────────────────────────────────── */
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vscode-widget-border);
+}
+
+/* ─── Utility ─────────────────────────────────────────────────────── */
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.inline-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  background-color: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  border-radius: 3px;
+  color: var(--vscode-errorForeground);
+  font-size: 0.9em;
+  margin: 8px 0;
+}
+
+.inline-error::before {
+  content: '⚠';
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  padding: 10px 16px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  z-index: 1000;
+  transition: opacity 0.3s;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.toast.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toast.success {
+  background-color: var(--vscode-testing-iconPassed);
+  color: var(--vscode-editor-background);
+}
+
+.toast.error {
+  background-color: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  color: var(--vscode-errorForeground);
+}

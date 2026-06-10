@@ -8,6 +8,8 @@ import {
   BackchannelHandler
 } from './daemon';
 import { AbbenayLanguageModelProvider } from './providers';
+import { ChatViewProvider } from './webviews/chat/ChatViewProvider';
+import { ProviderPanel } from './webviews/provider/ProviderPanel';
 
 // Default dashboard URL - daemon serves web UI here
 const DASHBOARD_URL = 'http://localhost:8787';
@@ -76,6 +78,13 @@ export async function activate(context: vscode.ExtensionContext) {
       `Abbenay: Could not connect to daemon — ${msg}`
     );
   }
+
+  // Register chat sidebar webview
+  const client = getDaemonClient();
+  const chatViewProvider = new ChatViewProvider(context.extensionUri, client);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatViewProvider),
+  );
 
   // Register commands
   registerCommands(context);
@@ -208,11 +217,13 @@ function registerCommands(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Configure provider command - opens dashboard for API key configuration
+  // Configure provider command - opens provider webview panel
   context.subscriptions.push(
     vscode.commands.registerCommand('abbenay.configureProvider', () => {
       console.log('[Abbenay] configureProvider command');
-      vscode.env.openExternal(vscode.Uri.parse(DASHBOARD_URL));
+      const client = getDaemonClient();
+      ProviderPanel.createOrShow(context.extensionUri, client);
     })
   );
+
 }

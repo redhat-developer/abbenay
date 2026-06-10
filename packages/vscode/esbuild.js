@@ -23,6 +23,7 @@ const esbuildProblemMatcherPlugin = {
 };
 
 async function main() {
+  // Extension host bundle (Node.js, CJS)
   const ctx = await esbuild.context({
     entryPoints: ['src/extension.ts'],
     bundle: true,
@@ -39,11 +40,30 @@ async function main() {
     ],
   });
 
+  // Webview UI bundles (browser context, IIFE to avoid exports issue)
+  const webviewCtx = await esbuild.context({
+    entryPoints: [
+      'src/webview-ui/provider/main.ts',
+      'src/webview-ui/chat/main.ts',
+    ],
+    bundle: true,
+    format: 'iife',
+    minify: production,
+    sourcemap: !production,
+    sourcesContent: false,
+    platform: 'browser',
+    outdir: 'out/webview-ui',
+    logLevel: 'info',
+    plugins: [
+      ...(watch ? [esbuildProblemMatcherPlugin] : []),
+    ],
+  });
+
   if (watch) {
-    await ctx.watch();
+    await Promise.all([ctx.watch(), webviewCtx.watch()]);
   } else {
-    await ctx.rebuild();
-    await ctx.dispose();
+    await Promise.all([ctx.rebuild(), webviewCtx.rebuild()]);
+    await Promise.all([ctx.dispose(), webviewCtx.dispose()]);
   }
 }
 

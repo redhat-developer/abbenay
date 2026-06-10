@@ -42,6 +42,14 @@ suite('Extension Smoke Tests', () => {
     }
   });
 
+  test('Chat view should be registered', async () => {
+    const allCommands = await vscode.commands.getCommands(true);
+    assert.ok(
+      allCommands.includes('abbenay.chatView.focus'),
+      'Expected chat view focus command to be auto-registered',
+    );
+  });
+
   test('Configuration section should exist', () => {
     const config = vscode.workspace.getConfiguration('abbenay');
     const logLevel = config.get<string>('logLevel');
