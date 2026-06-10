@@ -199,7 +199,7 @@ async function handleConfigureProvider(
     });
 
     // Step 2: Save selected models into the config file (same approach as dashboard)
-    if (message.models && Object.keys(message.models).length > 0) {
+    if (message.models !== undefined) {
       const location = (message.target === 'workspace' && workspacePath) ? workspacePath : 'user';
       const configResponse = await client.getConfig(location);
       const config = (configResponse.config ?? {}) as Record<string, unknown>;

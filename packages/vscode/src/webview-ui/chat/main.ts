@@ -128,6 +128,10 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string }): stri
   `;
 };
 
+renderer.html = function ({ text }: { text: string }): string {
+  return esc(text);
+};
+
 marked.setOptions({
   renderer,
   breaks: true,
@@ -333,8 +337,8 @@ function onMessage(event: MessageEvent): void {
       break;
 
     case 'toolApprovalRequest':
-      createApprovalGate(msg.requestId, msg.toolName, msg.prompt);
-      state.pendingApprovals.set(msg.requestId, { toolName: msg.toolName, args: msg.prompt });
+      createApprovalGate(msg.requestId, msg.toolName, msg.promptText);
+      state.pendingApprovals.set(msg.requestId, { toolName: msg.toolName, args: msg.promptText });
       state.approvalWaiting = true;
       updateInputState();
       state.userScrolledUp = false;
@@ -537,7 +541,7 @@ function removeThinkingIndicator(): void {
 function addToolCard(id: string, name: string, args: string, isRunning: boolean): void {
   state.pendingToolCalls.set(id, { name, args });
 
-  const lastMsg = $messageList.querySelector('.streaming, .message:last-child .msg-content') as HTMLElement;
+  const lastMsg = $messageList.querySelector('.streaming .msg-content, .message:last-child .msg-content') as HTMLElement;
   if (lastMsg) {
     lastMsg.appendChild(createToolCard(id, name, args, isRunning));
   }
@@ -702,8 +706,7 @@ function createApprovalGate(requestId: string, toolName: string, promptText: str
   gate.appendChild(header);
   gate.appendChild(body);
 
-  // Find last message or streaming indicator
-  const lastMsg = $messageList.querySelector('.streaming, .message:last-child .msg-content') as HTMLElement;
+  const lastMsg = $messageList.querySelector('.streaming .msg-content, .message:last-child .msg-content') as HTMLElement;
   if (lastMsg) {
     lastMsg.appendChild(gate);
   } else {

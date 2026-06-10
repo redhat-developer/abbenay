@@ -30,11 +30,17 @@ const pendingApprovals = new Map<string, {
  * Cancel the currently active stream.
  */
 export function cancelActiveStream(): void {
+  // Resolve any pending approval promises before clearing, otherwise the
+  // awaiting handleSendMessage will never continue and the stream handler leaks.
+  for (const pending of pendingApprovals.values()) {
+    pending.resolve('abort');
+  }
+  pendingApprovals.clear();
+
   if (activeStreamAbort) {
     activeStreamAbort();
     activeStreamAbort = null;
   }
-  pendingApprovals.clear();
 }
 
 /**
