@@ -161,7 +161,6 @@ export function sanitizeVertexRequestBody(bodyStr: string): { body: string; remo
   }
   const removed: string[] = [];
   if ('stream_options' in body) { delete body.stream_options; removed.push('stream_options'); }
-  if ('stream' in body) { delete body.stream; removed.push('stream'); }
 
   // Filter empty/whitespace text content blocks from messages — Vertex Anthropic rejects them.
   // This handles both string content (e.g. content: ' ') and array content
@@ -930,10 +929,7 @@ export async function* streamChat(
       aiTools = toolRecord;
     }
 
-    const streamOptions = {
-      model,
-      messages: aiMessages,
-      ...(aiTools ? { tools: aiTools, maxSteps } : {}),
+    const baseParams = {
       ...(params?.temperature != null ? { temperature: params.temperature } : {}),
       ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
@@ -942,58 +938,105 @@ export async function* streamChat(
       ...(jsonMode ? { responseFormat: { type: 'json' as const } } : {}),
     };
 
-    const result = streamText(streamOptions);
+    let currentMessages = aiMessages;
+    let stepsRemaining = maxSteps;
 
-    // Iterate over the full stream and yield our ChatChunk format
-    let gotContent = false;
-    for await (const part of result.fullStream) {
-      switch (part.type) {
-        case 'text-delta':
-          if (part.text) {
-            yield { type: 'text', text: part.text };
-            gotContent = true;
+    while (stepsRemaining > 0) {
+      stepsRemaining--;
+      debug(`[Adapter] streamChat step: messages=${currentMessages.length}, stepsRemaining=${stepsRemaining}`);
+
+      const result = streamText({
+        model,
+        messages: currentMessages,
+        ...(aiTools ? { tools: aiTools } : {}),
+        ...baseParams,
+      });
+
+      let finishReason = '';
+      const pendingToolCalls: Array<{ toolCallId: string; toolName: string; args: Record<string, unknown>; result: unknown }> = [];
+
+      for await (const part of result.fullStream) {
+        switch (part.type) {
+          case 'text-delta':
+            if (part.text) {
+              yield { type: 'text', text: part.text };
+            }
+            break;
+
+          case 'tool-call':
+            yield {
+              type: 'tool',
+              name: part.toolName,
+              state: 'running',
+              call: { params: part.input, result: undefined },
+              done: false,
+            };
+            break;
+
+          case 'tool-result':
+            pendingToolCalls.push({
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              args: part.input as Record<string, unknown>,
+              result: part.output,
+            });
+            yield {
+              type: 'tool',
+              name: part.toolName,
+              state: 'completed',
+              call: { params: part.input, result: part.output },
+              done: true,
+            };
+            break;
+
+          case 'error': {
+            console.error(`[Adapter] Stream error for ${engineId}/${engineModelId}:`, part.error);
+            const errMsg = part.error instanceof Error ? part.error.message
+              : typeof part.error === 'string' ? part.error
+              : JSON.stringify(part.error);
+            yield { type: 'error', error: errMsg };
+            break;
           }
-          break;
 
-        case 'tool-call':
-          yield {
-            type: 'tool',
-            name: part.toolName,
-            state: 'running',
-            call: { params: part.input, result: undefined },
-            done: false,
-          };
-          break;
-
-        case 'tool-result':
-          yield {
-            type: 'tool',
-            name: part.toolName,
-            state: 'completed',
-            call: { params: part.input, result: part.output },
-            done: true,
-          };
-          break;
-
-        case 'error': {
-          console.error(`[Adapter] Stream error for ${engineId}/${engineModelId}:`, part.error);
-          const errMsg = part.error instanceof Error ? part.error.message
-            : typeof part.error === 'string' ? part.error
-            : JSON.stringify(part.error);
-          yield { type: 'error', error: errMsg };
-          break;
+          case 'finish':
+            finishReason = part.finishReason || 'stop';
+            break;
         }
-
-        case 'finish':
-          yield { type: 'done', finishReason: part.finishReason || 'stop' };
-          return;
       }
+
+      if (finishReason !== 'tool-calls' || pendingToolCalls.length === 0) {
+        yield { type: 'done', finishReason: finishReason || 'stop' };
+        return;
+      }
+
+      debug(`[Adapter] tool-calls complete (${pendingToolCalls.length} calls), continuing to next step`);
+
+      // Build updated messages with assistant tool_calls and tool results for next round
+      currentMessages = [
+        ...currentMessages,
+        {
+          role: 'assistant' as const,
+          content: pendingToolCalls.map(tc => ({
+            type: 'tool-call' as const,
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            input: tc.args,
+          })),
+        },
+        ...pendingToolCalls.map(tc => ({
+          role: 'tool' as const,
+          content: [{
+            type: 'tool-result' as const,
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            output: { type: 'text' as const, value: typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result ?? '') },
+          }],
+        })),
+      ] as ModelMessage[];
     }
 
-    // If we got content but no explicit finish event, emit done
-    if (gotContent) {
-      yield { type: 'done', finishReason: 'stop' };
-    }
+    // Exhausted maxSteps
+    yield { type: 'done', finishReason: 'stop' };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[Adapter] Chat error for ${engineId}/${engineModelId}:`, errorMessage);

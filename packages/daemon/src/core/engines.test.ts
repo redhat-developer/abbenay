@@ -60,7 +60,7 @@ describe('PROVIDER_LOADERS coverage', () => {
 });
 
 describe('sanitizeVertexRequestBody', () => {
-  it('should strip stream_options and stream fields', () => {
+  it('should strip stream_options but preserve stream field', () => {
     const input = JSON.stringify({
       messages: [{ role: 'user', content: 'hi' }],
       stream: true,
@@ -69,9 +69,9 @@ describe('sanitizeVertexRequestBody', () => {
     });
     const result = sanitizeVertexRequestBody(input);
     expect(result).not.toBeNull();
-    expect(result!.removed).toEqual(['stream_options', 'stream']);
+    expect(result!.removed).toEqual(['stream_options']);
     const parsed = JSON.parse(result!.body);
-    expect(parsed).not.toHaveProperty('stream');
+    expect(parsed).toHaveProperty('stream', true);
     expect(parsed).not.toHaveProperty('stream_options');
     expect(parsed).toHaveProperty('messages');
     expect(parsed).toHaveProperty('anthropic_version');
@@ -86,11 +86,10 @@ describe('sanitizeVertexRequestBody', () => {
     expect(sanitizeVertexRequestBody('not json')).toBeNull();
   });
 
-  it('should strip only stream when stream_options is absent', () => {
+  it('should return null when only stream is present (nothing to strip)', () => {
     const input = JSON.stringify({ messages: [], stream: true });
     const result = sanitizeVertexRequestBody(input);
-    expect(result).not.toBeNull();
-    expect(result!.removed).toEqual(['stream']);
+    expect(result).toBeNull();
   });
 });
 
