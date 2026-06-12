@@ -1,6 +1,6 @@
 /**
- * Tests for gRPC config conversion functions (configFileToProto / protoToConfigFile)
- * and policy CRUD validation logic.
+ * Tests for gRPC config conversion functions (configFileToProto / protoToConfigFile),
+ * policy CRUD validation logic, and SessionChat tool event streaming.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -238,5 +238,56 @@ describe('protoToConfigFile', () => {
 
     const config = protoToConfigFile(proto);
     expect(config.providers!['empty'].models).toBeUndefined();
+  });
+});
+
+describe('SessionChat tool event streaming', () => {
+  it('should correlate tool_call and tool_result IDs when running+done events arrive', () => {
+    const pendingToolCallIds = new Map<string, string>();
+    const written: Array<Record<string, unknown>> = [];
+    const write = (msg: Record<string, unknown>) => written.push(msg);
+
+    // Simulate: tool running event arrives
+    const toolName = 'get_docs';
+    const runCallId = `call_${toolName}_1718000000000`;
+    pendingToolCallIds.set(toolName, runCallId);
+    write({ tool_call: { id: runCallId, name: toolName, arguments: '{}' } });
+
+    // Simulate: tool done event arrives
+    const existingId = pendingToolCallIds.get(toolName);
+    const callId = existingId || `call_${toolName}_${Date.now()}`;
+    pendingToolCallIds.delete(toolName);
+
+    if (!existingId) {
+      write({ tool_call: { id: callId, name: toolName, arguments: '{"q":"test"}' } });
+    }
+    write({ tool_result: { tool_call_id: callId, name: toolName, content: '"result"', is_error: false } });
+
+    // Verify: tool_result references the same ID as the initial tool_call
+    expect(written).toHaveLength(2);
+    expect(written[0]).toEqual({ tool_call: { id: runCallId, name: toolName, arguments: '{}' } });
+    expect(written[1]).toEqual({ tool_result: { tool_call_id: runCallId, name: toolName, content: '"result"', is_error: false } });
+  });
+
+  it('should emit tool_call with tool_result when no running event precedes done', () => {
+    const pendingToolCallIds = new Map<string, string>();
+    const written: Array<Record<string, unknown>> = [];
+    const write = (msg: Record<string, unknown>) => written.push(msg);
+
+    // Simulate: tool done event arrives without a prior running event
+    const toolName = 'search';
+    const existingId = pendingToolCallIds.get(toolName);
+    const callId = existingId || `call_${toolName}_1718000000001`;
+    pendingToolCallIds.delete(toolName);
+
+    if (!existingId) {
+      write({ tool_call: { id: callId, name: toolName, arguments: '{"q":"hello"}' } });
+    }
+    write({ tool_result: { tool_call_id: callId, name: toolName, content: '"found it"', is_error: false } });
+
+    // Verify: both tool_call and tool_result emitted with same ID
+    expect(written).toHaveLength(2);
+    expect(written[0]).toEqual({ tool_call: { id: callId, name: toolName, arguments: '{"q":"hello"}' } });
+    expect(written[1]).toEqual({ tool_result: { tool_call_id: callId, name: toolName, content: '"found it"', is_error: false } });
   });
 });

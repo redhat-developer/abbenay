@@ -1181,14 +1181,35 @@ export function createAbbenayService(state: DaemonState) {
           };
 
           let fullText = '';
+          const pendingToolCallIds = new Map<string, string>();
 
           for await (const chunk of state.chat(session.model, allMessages, hasParams ? requestParams : undefined, toolOptions, undefined, inlinePolicy)) {
             if (chunk.type === 'text' && chunk.text) {
               fullText += chunk.text;
               call.write({ text: { text: chunk.text } });
             } else if (chunk.type === 'tool') {
-              if (chunk.done && chunk.call) {
-                const callId = `call_${chunk.name}_${Date.now()}`;
+              if (chunk.call && chunk.done) {
+                const existingId = pendingToolCallIds.get(chunk.name);
+                const callId = existingId || `call_${chunk.name}_${Date.now()}`;
+                pendingToolCallIds.delete(chunk.name);
+
+                if (!existingId) {
+                  call.write({
+                    tool_call: {
+                      id: callId,
+                      name: chunk.name || '',
+                      arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}',
+                    },
+                  });
+                }
+                call.write({
+                  tool_result: {
+                    tool_call_id: callId,
+                    name: chunk.name || '',
+                    content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
+                    is_error: false,
+                  },
+                });
 
                 await state.sessionStore.appendMessage(sessionId, {
                   role: 'assistant',
@@ -1200,6 +1221,16 @@ export function createAbbenayService(state: DaemonState) {
                   name: chunk.name,
                   content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
                   tool_call_id: callId,
+                });
+              } else if (!chunk.done) {
+                const callId = `call_${chunk.name}_${Date.now()}`;
+                pendingToolCallIds.set(chunk.name, callId);
+                call.write({
+                  tool_call: {
+                    id: callId,
+                    name: chunk.name || '',
+                    arguments: chunk.call?.params ? JSON.stringify(chunk.call.params) : '{}',
+                  },
                 });
               }
             } else if (chunk.type === 'error') {
