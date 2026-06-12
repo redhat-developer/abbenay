@@ -12,7 +12,7 @@
  * the built-in step loop (stopWhen). No wrapper classes required.
  */
 
-import { streamText, jsonSchema, tool } from 'ai';
+import { streamText, jsonSchema, tool, stepCountIs } from 'ai';
 import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
 
 import { mockStreamChat, getMockModels } from './mock.js';
@@ -929,114 +929,61 @@ export async function* streamChat(
       aiTools = toolRecord;
     }
 
-    const baseParams = {
+    const result = streamText({
+      model,
+      messages: aiMessages,
+      ...(aiTools ? { tools: aiTools } : {}),
+      ...(maxSteps > 1 ? { stopWhen: stepCountIs(maxSteps) } : {}),
       ...(params?.temperature != null ? { temperature: params.temperature } : {}),
       ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
       ...(params?.top_k != null ? { topK: params.top_k } : {}),
       ...(params?.timeout != null ? { timeout: params.timeout } : {}),
       ...(jsonMode ? { responseFormat: { type: 'json' as const } } : {}),
-    };
+    });
 
-    let currentMessages = aiMessages;
-    let stepsRemaining = maxSteps;
-
-    while (stepsRemaining > 0) {
-      stepsRemaining--;
-      debug(`[Adapter] streamChat step: messages=${currentMessages.length}, stepsRemaining=${stepsRemaining}`);
-
-      const result = streamText({
-        model,
-        messages: currentMessages,
-        ...(aiTools ? { tools: aiTools } : {}),
-        ...baseParams,
-      });
-
-      let finishReason = '';
-      const pendingToolCalls: Array<{ toolCallId: string; toolName: string; args: Record<string, unknown>; result: unknown }> = [];
-
-      for await (const part of result.fullStream) {
-        switch (part.type) {
-          case 'text-delta':
-            if (part.text) {
-              yield { type: 'text', text: part.text };
-            }
-            break;
-
-          case 'tool-call':
-            yield {
-              type: 'tool',
-              name: part.toolName,
-              state: 'running',
-              call: { params: part.input, result: undefined },
-              done: false,
-            };
-            break;
-
-          case 'tool-result':
-            pendingToolCalls.push({
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              args: part.input as Record<string, unknown>,
-              result: part.output,
-            });
-            yield {
-              type: 'tool',
-              name: part.toolName,
-              state: 'completed',
-              call: { params: part.input, result: part.output },
-              done: true,
-            };
-            break;
-
-          case 'error': {
-            console.error(`[Adapter] Stream error for ${engineId}/${engineModelId}:`, part.error);
-            const errMsg = part.error instanceof Error ? part.error.message
-              : typeof part.error === 'string' ? part.error
-              : JSON.stringify(part.error);
-            yield { type: 'error', error: errMsg };
-            break;
+    for await (const part of result.fullStream) {
+      switch (part.type) {
+        case 'text-delta':
+          if (part.text) {
+            yield { type: 'text', text: part.text };
           }
+          break;
 
-          case 'finish':
-            finishReason = part.finishReason || 'stop';
-            break;
+        case 'tool-call':
+          yield {
+            type: 'tool',
+            name: part.toolName,
+            state: 'running',
+            call: { params: part.input, result: undefined },
+            done: false,
+          };
+          break;
+
+        case 'tool-result':
+          yield {
+            type: 'tool',
+            name: part.toolName,
+            state: 'completed',
+            call: { params: part.input, result: part.output },
+            done: true,
+          };
+          break;
+
+        case 'error': {
+          console.error(`[Adapter] Stream error for ${engineId}/${engineModelId}:`, part.error);
+          const errMsg = part.error instanceof Error ? part.error.message
+            : typeof part.error === 'string' ? part.error
+            : JSON.stringify(part.error);
+          yield { type: 'error', error: errMsg };
+          break;
         }
+
+        case 'finish':
+          yield { type: 'done', finishReason: part.finishReason || 'stop' };
+          break;
       }
-
-      if (finishReason !== 'tool-calls' || pendingToolCalls.length === 0) {
-        yield { type: 'done', finishReason: finishReason || 'stop' };
-        return;
-      }
-
-      debug(`[Adapter] tool-calls complete (${pendingToolCalls.length} calls), continuing to next step`);
-
-      // Build updated messages with assistant tool_calls and tool results for next round
-      currentMessages = [
-        ...currentMessages,
-        {
-          role: 'assistant' as const,
-          content: pendingToolCalls.map(tc => ({
-            type: 'tool-call' as const,
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            input: tc.args,
-          })),
-        },
-        ...pendingToolCalls.map(tc => ({
-          role: 'tool' as const,
-          content: [{
-            type: 'tool-result' as const,
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            output: { type: 'text' as const, value: typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result ?? '') },
-          }],
-        })),
-      ] as ModelMessage[];
     }
-
-    // Exhausted maxSteps
-    yield { type: 'done', finishReason: 'stop' };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[Adapter] Chat error for ${engineId}/${engineModelId}:`, errorMessage);
