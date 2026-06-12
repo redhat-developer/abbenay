@@ -1187,8 +1187,24 @@ export function createAbbenayService(state: DaemonState) {
               fullText += chunk.text;
               call.write({ text: { text: chunk.text } });
             } else if (chunk.type === 'tool') {
-              if (chunk.done && chunk.call) {
+              if (chunk.call && chunk.done) {
                 const callId = `call_${chunk.name}_${Date.now()}`;
+
+                call.write({
+                  tool_call: {
+                    id: callId,
+                    name: chunk.name || '',
+                    arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}',
+                  },
+                });
+                call.write({
+                  tool_result: {
+                    tool_call_id: callId,
+                    name: chunk.name || '',
+                    content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
+                    is_error: false,
+                  },
+                });
 
                 await state.sessionStore.appendMessage(sessionId, {
                   role: 'assistant',
@@ -1200,6 +1216,14 @@ export function createAbbenayService(state: DaemonState) {
                   name: chunk.name,
                   content: typeof chunk.call.result === 'string' ? chunk.call.result : JSON.stringify(chunk.call.result || {}),
                   tool_call_id: callId,
+                });
+              } else if (!chunk.done) {
+                call.write({
+                  tool_call: {
+                    id: `call_${chunk.name}_${Date.now()}`,
+                    name: chunk.name || '',
+                    arguments: chunk.call?.params ? JSON.stringify(chunk.call.params) : '{}',
+                  },
                 });
               }
             } else if (chunk.type === 'error') {
