@@ -1181,6 +1181,7 @@ export function createAbbenayService(state: DaemonState) {
           };
 
           let fullText = '';
+          const pendingToolCallIds = new Map<string, string>();
 
           for await (const chunk of state.chat(session.model, allMessages, hasParams ? requestParams : undefined, toolOptions, undefined, inlinePolicy)) {
             if (chunk.type === 'text' && chunk.text) {
@@ -1188,15 +1189,19 @@ export function createAbbenayService(state: DaemonState) {
               call.write({ text: { text: chunk.text } });
             } else if (chunk.type === 'tool') {
               if (chunk.call && chunk.done) {
-                const callId = `call_${chunk.name}_${Date.now()}`;
+                const existingId = pendingToolCallIds.get(chunk.name);
+                const callId = existingId || `call_${chunk.name}_${Date.now()}`;
+                pendingToolCallIds.delete(chunk.name);
 
-                call.write({
-                  tool_call: {
-                    id: callId,
-                    name: chunk.name || '',
-                    arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}',
-                  },
-                });
+                if (!existingId) {
+                  call.write({
+                    tool_call: {
+                      id: callId,
+                      name: chunk.name || '',
+                      arguments: chunk.call.params ? JSON.stringify(chunk.call.params) : '{}',
+                    },
+                  });
+                }
                 call.write({
                   tool_result: {
                     tool_call_id: callId,
@@ -1218,9 +1223,11 @@ export function createAbbenayService(state: DaemonState) {
                   tool_call_id: callId,
                 });
               } else if (!chunk.done) {
+                const callId = `call_${chunk.name}_${Date.now()}`;
+                pendingToolCallIds.set(chunk.name, callId);
                 call.write({
                   tool_call: {
-                    id: `call_${chunk.name}_${Date.now()}`,
+                    id: callId,
                     name: chunk.name || '',
                     arguments: chunk.call?.params ? JSON.stringify(chunk.call.params) : '{}',
                   },
