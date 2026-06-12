@@ -12,7 +12,7 @@
  * the built-in step loop (stopWhen). No wrapper classes required.
  */
 
-import { streamText, jsonSchema, tool } from 'ai';
+import { streamText, jsonSchema, tool, stepCountIs } from 'ai';
 import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
 
 import { mockStreamChat, getMockModels } from './mock.js';
@@ -161,7 +161,6 @@ export function sanitizeVertexRequestBody(bodyStr: string): { body: string; remo
   }
   const removed: string[] = [];
   if ('stream_options' in body) { delete body.stream_options; removed.push('stream_options'); }
-  if ('stream' in body) { delete body.stream; removed.push('stream'); }
 
   // Filter empty/whitespace text content blocks from messages — Vertex Anthropic rejects them.
   // This handles both string content (e.g. content: ' ') and array content
@@ -930,28 +929,24 @@ export async function* streamChat(
       aiTools = toolRecord;
     }
 
-    const streamOptions = {
+    const result = streamText({
       model,
       messages: aiMessages,
-      ...(aiTools ? { tools: aiTools, maxSteps } : {}),
+      ...(aiTools ? { tools: aiTools } : {}),
+      ...(maxSteps > 1 ? { stopWhen: stepCountIs(maxSteps) } : {}),
       ...(params?.temperature != null ? { temperature: params.temperature } : {}),
       ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
       ...(params?.top_k != null ? { topK: params.top_k } : {}),
       ...(params?.timeout != null ? { timeout: params.timeout } : {}),
       ...(jsonMode ? { responseFormat: { type: 'json' as const } } : {}),
-    };
+    });
 
-    const result = streamText(streamOptions);
-
-    // Iterate over the full stream and yield our ChatChunk format
-    let gotContent = false;
     for await (const part of result.fullStream) {
       switch (part.type) {
         case 'text-delta':
           if (part.text) {
             yield { type: 'text', text: part.text };
-            gotContent = true;
           }
           break;
 
@@ -986,13 +981,8 @@ export async function* streamChat(
 
         case 'finish':
           yield { type: 'done', finishReason: part.finishReason || 'stop' };
-          return;
+          break;
       }
-    }
-
-    // If we got content but no explicit finish event, emit done
-    if (gotContent) {
-      yield { type: 'done', finishReason: 'stop' };
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
