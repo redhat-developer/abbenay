@@ -19,7 +19,7 @@
     "audit:check": "node scripts/audit-check.js",
     "ci:build": "node build.js --skip-proto",
     "ci:package-python": "cd packages/python && uvx hatch build",
-    "ci:publish-vscode": "node scripts/publish-vscode.js",
+    "ci:publish-vscode": "node scripts/publish-vscode.js"
   },
   "devDependencies": {
     "typescript": "^5.3.3"
