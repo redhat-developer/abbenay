@@ -40,13 +40,26 @@ This VS Code extension connects to the Abbenay daemon and registers configured L
 
 ## Installation
 
-### From VSIX
+### From VS Code Marketplace (Recommended)
+
+Search for **"Abbenay"** in the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`)
+and click Install. Platform-specific builds are provided for Linux x64,
+Linux arm64, and macOS arm64.
+
+Or install from the command line:
 
 ```bash
-cd packages/vscode
-npm install
-npm run package
-code --install-extension abbenay-provider-0.1.0.vsix
+code --install-extension redhat.abbenay-provider
+```
+
+### From VSIX (Manual)
+
+Download the platform-specific `.vsix` from
+[GitHub Releases](https://github.com/redhat-developer/abbenay/releases)
+and install manually:
+
+```bash
+code --install-extension abbenay-provider-linux-x64-*.vsix
 ```
 
 ### Prerequisites

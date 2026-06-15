@@ -4,6 +4,8 @@ A Python gRPC client for the Abbenay daemon.
 
 ## Installation
 
+Install from [PyPI](https://pypi.org/project/abbenay-client/):
+
 ```bash
 pip install abbenay-client
 ```
@@ -14,6 +16,8 @@ pip install abbenay-client
 > ```python
 > from abbenay_grpc import AbbenayClient
 > ```
+
+Cross-platform: works on Linux, macOS, and Windows with Python 3.9+.
 
 ## Quick Start
 

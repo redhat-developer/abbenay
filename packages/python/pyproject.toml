@@ -37,9 +37,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/abbenay/abbenay"
-Documentation = "https://github.com/abbenay/abbenay#readme"
-Repository = "https://github.com/abbenay/abbenay"
+Homepage = "https://github.com/redhat-developer/abbenay"
+Documentation = "https://github.com/redhat-developer/abbenay/tree/main/packages/python#readme"
+Repository = "https://github.com/redhat-developer/abbenay"
+Changelog = "https://github.com/redhat-developer/abbenay/releases"
+Issues = "https://github.com/redhat-developer/abbenay/issues"
 
 [tool.hatch.build.targets.sdist]
 include = [

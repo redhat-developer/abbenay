@@ -388,3 +388,24 @@ extension to read and write the full config through the existing gRPC channel.
 Rather than adding HTTP calls to the extension (which would duplicate transport
 layers and complicate remote-dev scenarios), bringing gRPC to parity keeps the
 architecture clean and benefits all gRPC clients (CLI, Python, future editors).
+
+---
+
+## DR-028: Publish to VS Code Marketplace and PyPI
+
+**Date:** 2026-06-15
+**Decision:** Automate publishing to the VS Code Marketplace (extension) and
+PyPI (Python gRPC client) as part of the release workflow. VS Code publishing
+uses a Personal Access Token (`VSCE_PAT` secret) with `scripts/publish-vscode.js`.
+PyPI publishing uses OIDC trusted publishers via `pypa/gh-action-pypi-publish`
+(no secret rotation needed). Alpha releases are excluded from Marketplace
+publishing; beta/rc releases go as pre-release on the Marketplace. The extension
+publisher is changed from `abbenay` to `redhat` to match the Red Hat Marketplace
+presence.
+**Rationale:** GitHub Release assets require manual download and sideloading —
+fine for early adopters but a barrier to organic adoption. Standard package
+managers (Marketplace search/install, `pip install`) are the expected discovery
+channel for both audiences. OIDC trusted publishers for PyPI eliminate long-lived
+secret management; the `VSCE_PAT` is unavoidable since the Marketplace does not
+support OIDC. Gating alpha releases prevents incomplete builds from reaching
+end users while still allowing pre-release testing via beta/rc tags.

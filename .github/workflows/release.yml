@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -185,3 +186,60 @@ jobs:
               $prerelease_flag \
               "${assets[@]}"
           fi
+
+  publish-vscode:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, 'alpha') }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache build tools
+        uses: actions/cache@v4
+        with:
+          path: .build-tools
+          key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'bootstrap.sh') }}
+
+      - name: Bootstrap
+        run: ./bootstrap.sh
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download VSIX artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: abbenay-vsix-*
+          path: vsix-staging/
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npm run ci:publish-vscode -- vsix-staging
+
+  publish-pypi:
+    needs: [package-python, release]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download Python artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: abbenay-client-python
+          path: packages/python/dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/python/dist/
