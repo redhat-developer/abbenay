@@ -20,7 +20,6 @@
     "ci:build": "node build.js --skip-proto",
     "ci:package-python": "cd packages/python && uvx hatch build",
     "ci:publish-vscode": "node scripts/publish-vscode.js",
-    "ci:publish-pypi": "cd packages/python && uvx twine upload dist/*"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

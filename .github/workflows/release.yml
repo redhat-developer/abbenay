@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   build:
@@ -223,23 +222,3 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npm run ci:publish-vscode -- vsix-staging
-
-  publish-pypi:
-    needs: [package-python, release]
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Download Python artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: abbenay-client-python
-          path: packages/python/dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: packages/python/dist/

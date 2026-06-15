@@ -40,7 +40,6 @@ locally-runnable scripts; CI just calls them.
 | `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + tar.gz) | Build artifacts |
 | `npm run ci:package-python` | Build Python wheel via `uvx hatch build` | Python artifact |
 | `npm run ci:publish-vscode` | Publish VSIXes to Marketplace via `vsce` | Release only |
-| `npm run ci:publish-pypi` | Upload wheel/sdist to PyPI via `twine` | Release only |
 
 ## Workflow structure
 
@@ -109,24 +108,17 @@ public registries:
 | Job | Target | Trigger condition | Auth mechanism |
 |-----|--------|-------------------|----------------|
 | `publish-vscode` | VS Code Marketplace | All tags except `*alpha*` | `VSCE_PAT` secret |
-| `publish-pypi` | PyPI | All tags | OIDC trusted publisher (no secret) |
 
 - **VS Code Marketplace**: `scripts/publish-vscode.js` finds all `.vsix` files
   in the downloaded artifacts and publishes each with `vsce publish --packagePath`.
   Beta/RC tags are published with `--pre-release`. Alpha tags are excluded
   entirely (the `if` condition skips the job).
-- **PyPI**: Uses `pypa/gh-action-pypi-publish` with OIDC trusted publishers. The
-  `pypi` GitHub environment must be configured as a trusted publisher on PyPI
-  (see one-time setup below).
 
 ### One-time setup for publishing
 
 1. **VS Code Marketplace**: Create a PAT at
    `https://dev.azure.com/<org>/_usersSettings/tokens` with Marketplace > Manage
    scope. Store as `VSCE_PAT` repository secret.
-2. **PyPI**: On pypi.org, add a trusted publisher for the `abbenay-client`
-   project: owner `redhat-developer`, repo `abbenay`, workflow `release.yml`,
-   environment `pypi`.
 
 To create a release:
 
