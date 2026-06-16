@@ -3,7 +3,7 @@
   "displayName": "Abbenay Provider",
   "description": "Use any LLM with any VS Code extension - OpenAI, Anthropic, Google, Ollama & more. The open alternative to Copilot.",
   "version": "0.0.0-dev",
-  "publisher": "abbenay",
+  "publisher": "redhat",
   "license": "MIT",
   "icon": "images/icon.png",
   "engines": {
@@ -31,6 +31,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/redhat-developer/abbenay"
+  },
+  "homepage": "https://github.com/redhat-developer/abbenay#readme",
+  "bugs": {
+    "url": "https://github.com/redhat-developer/abbenay/issues"
   },
   "activationEvents": [
     "onStartupFinished"

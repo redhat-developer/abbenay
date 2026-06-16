@@ -39,6 +39,7 @@ locally-runnable scripts; CI just calls them.
 | `npm test` | Test all workspace packages | Quality gate |
 | `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + tar.gz) | Build artifacts |
 | `npm run ci:package-python` | Build Python wheel via `uvx hatch build` | Python artifact |
+| `npm run ci:publish-vscode` | Publish VSIXes to Marketplace + OpenVSX | Release only |
 
 ## Workflow structure
 
@@ -98,6 +99,29 @@ containing `alpha`, `beta`, or `rc` are automatically marked as prereleases.
 
 Release assets: platform-specific `.vsix` files, `.tar.gz` daemon archives
 (with version in filename), `@abbenay/core` npm tarball, and Python wheel.
+
+### Publishing
+
+After the GitHub Release is created, additional jobs publish artifacts to
+public registries (uses the `release` GitHub environment):
+
+| Job | Target | Trigger condition | Auth mechanism |
+|-----|--------|-------------------|----------------|
+| `publish-vscode` | VS Code Marketplace + OpenVSX | All tags except `*alpha*` | `VSCODE_MARKETPLACE_TOKEN`, `OVSX_MARKETPLACE_TOKEN` |
+
+- **VS Code Marketplace + OpenVSX**: `scripts/publish-vscode.js` finds all
+  `.vsix` files in the downloaded artifacts and publishes each with
+  `vsce publish -p <token>` and `ovsx publish -p <token>`. Beta/RC tags are
+  published with `--pre-release`. Alpha tags are excluded entirely.
+  Follows the Red Hat convention from `redhat-developer/vscode-yaml`.
+
+### One-time setup for publishing
+
+1. **VS Code Marketplace**: Create a PAT at
+   `https://dev.azure.com/<org>/_usersSettings/tokens` with Marketplace > Manage
+   scope. Store as `VSCODE_MARKETPLACE_TOKEN` in the `release` environment.
+2. **OpenVSX**: Create a token at `https://open-vsx.org/user-settings/tokens`.
+   Store as `OVSX_MARKETPLACE_TOKEN` in the `release` environment.
 
 To create a release:
 

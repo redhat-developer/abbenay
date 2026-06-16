@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 suite('Extension Smoke Tests', () => {
   suiteSetup(async function () {
     this.timeout(30000);
-    const ext = vscode.extensions.getExtension('abbenay.abbenay-provider');
+    const ext = vscode.extensions.getExtension('redhat.abbenay-provider');
     if (ext && !ext.isActive) {
       try {
         await ext.activate();
@@ -15,12 +15,12 @@ suite('Extension Smoke Tests', () => {
   });
 
   test('Extension should be present', () => {
-    const ext = vscode.extensions.getExtension('abbenay.abbenay-provider');
+    const ext = vscode.extensions.getExtension('redhat.abbenay-provider');
     assert.ok(ext, 'Extension not found in registry');
   });
 
   test('Extension should activate without crashing', () => {
-    const ext = vscode.extensions.getExtension('abbenay.abbenay-provider');
+    const ext = vscode.extensions.getExtension('redhat.abbenay-provider');
     assert.ok(ext);
     assert.strictEqual(ext.isActive, true, 'Extension should be active (even without daemon)');
   });

@@ -388,3 +388,22 @@ extension to read and write the full config through the existing gRPC channel.
 Rather than adding HTTP calls to the extension (which would duplicate transport
 layers and complicate remote-dev scenarios), bringing gRPC to parity keeps the
 architecture clean and benefits all gRPC clients (CLI, Python, future editors).
+
+---
+
+## DR-028: Publish to VS Code Marketplace and OpenVSX
+
+**Date:** 2026-06-15
+**Decision:** Automate publishing to the VS Code Marketplace and OpenVSX Registry
+as part of the release workflow. VS Code Marketplace uses
+`VSCODE_MARKETPLACE_TOKEN` and OpenVSX uses `OVSX_MARKETPLACE_TOKEN`, both
+passed to `scripts/publish-vscode.js` which handles multi-platform VSIX
+publishing. The publish job uses the `release` GitHub environment. Alpha releases
+are excluded from publishing; beta/rc go as pre-release. The extension publisher
+is changed from `abbenay` to `redhat`. This follows the Red Hat convention
+established by `redhat-developer/vscode-yaml`.
+**Rationale:** GitHub Release assets require manual download and sideloading —
+fine for early adopters but a barrier to organic adoption. Publishing to both
+VS Code Marketplace and OpenVSX ensures coverage for VS Code and compatible
+editors (Eclipse Theia, VSCodium, Gitpod). Gating alpha releases prevents
+incomplete builds from reaching end users.

@@ -324,14 +324,14 @@ function installExtension() {
 
     // Uninstall first to force a clean install (--force alone doesn't always replace files)
     try {
-        run('code --uninstall-extension abbenay.abbenay-provider 2>/dev/null || true');
+        run('code --uninstall-extension redhat.abbenay-provider 2>/dev/null || true');
     } catch { /* ignore if not installed */ }
 
     // Remove stale extension directories
     const extDir = path.join(process.env.HOME || '~', '.vscode', 'extensions');
     if (fs.existsSync(extDir)) {
         for (const entry of fs.readdirSync(extDir)) {
-            if (entry.startsWith('abbenay.abbenay-provider-')) {
+            if (entry.startsWith('redhat.abbenay-provider-')) {
                 const fullPath = path.join(extDir, entry);
                 console.log(`  Removing stale: ${entry}`);
                 fs.rmSync(fullPath, { recursive: true, force: true });
