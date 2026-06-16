@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * Publish platform-specific VSIXes to the VS Code Marketplace.
+ * Publish platform-specific VSIXes to the VS Code Marketplace and OpenVSX.
  *
  * Usage:  node scripts/publish-vscode.js <vsix-dir>
  *
- * Finds all .vsix files in <vsix-dir> (recursively) and publishes them using
- * vsce. Requires VSCE_PAT environment variable for authentication.
+ * Finds all .vsix files in <vsix-dir> (recursively) and publishes them.
  *
- * Pre-release versions (tags containing beta/rc) are published with the
- * --pre-release flag.
+ * Environment variables:
+ *   VSCODE_MARKETPLACE_TOKEN  — PAT for VS Code Marketplace (required)
+ *   OVSX_MARKETPLACE_TOKEN    — PAT for OpenVSX Registry (optional, skipped if unset)
+ *   GITHUB_REF_NAME           — used to detect pre-release tags (beta/rc)
+ *
+ * Pre-release versions (tags containing beta/rc) are published with --pre-release.
+ * Follows the Red Hat convention from redhat-developer/vscode-yaml.
  */
 
 import { execSync } from 'node:child_process';
@@ -22,8 +26,8 @@ if (!dir) {
   process.exit(1);
 }
 
-if (!process.env.VSCE_PAT) {
-  console.error('ERROR: VSCE_PAT environment variable is required');
+if (!process.env.VSCODE_MARKETPLACE_TOKEN) {
+  console.error('ERROR: VSCODE_MARKETPLACE_TOKEN environment variable is required');
   process.exit(1);
 }
 
@@ -48,6 +52,8 @@ if (vsixFiles.length === 0) {
 
 const isPreRelease = (process.env.GITHUB_REF_NAME || '').match(/(beta|rc)/);
 const preReleaseFlag = isPreRelease ? ' --pre-release' : '';
+const vsceToken = process.env.VSCODE_MARKETPLACE_TOKEN;
+const ovsxToken = process.env.OVSX_MARKETPLACE_TOKEN;
 
 console.log(
   `Publishing ${vsixFiles.length} VSIX file(s)${isPreRelease ? ' (pre-release)' : ''}:\n`,
@@ -55,11 +61,24 @@ console.log(
 
 for (const vsix of vsixFiles) {
   console.log(`  -> ${vsix}`);
-  execSync(`npx vsce publish --packagePath "${vsix}"${preReleaseFlag}`, {
-    stdio: 'inherit',
-    env: { ...process.env },
-  });
-  console.log('     published\n');
+
+  console.log('     VS Code Marketplace...');
+  execSync(
+    `npx vsce publish -p "${vsceToken}" --packagePath "${vsix}"${preReleaseFlag}`,
+    { stdio: 'inherit' },
+  );
+
+  if (ovsxToken) {
+    console.log('     OpenVSX Registry...');
+    execSync(
+      `npx ovsx publish -p "${ovsxToken}" --packagePath "${vsix}"${preReleaseFlag}`,
+      { stdio: 'inherit' },
+    );
+  } else {
+    console.log('     OpenVSX skipped (OVSX_MARKETPLACE_TOKEN not set)');
+  }
+
+  console.log('     done\n');
 }
 
-console.log('Done.');
+console.log('All published.');

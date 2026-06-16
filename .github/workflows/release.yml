@@ -189,6 +189,7 @@ jobs:
   publish-vscode:
     needs: [build, release]
     runs-on: ubuntu-latest
+    environment: release
     if: ${{ !contains(github.ref_name, 'alpha') }}
     steps:
       - uses: actions/checkout@v6
@@ -218,7 +219,8 @@ jobs:
           pattern: abbenay-vsix-*
           path: vsix-staging/
 
-      - name: Publish to VS Code Marketplace
+      - name: Publish to VS Code Marketplace and OpenVSX
         env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+          OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
         run: npm run ci:publish-vscode -- vsix-staging

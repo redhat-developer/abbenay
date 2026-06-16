@@ -391,18 +391,19 @@ architecture clean and benefits all gRPC clients (CLI, Python, future editors).
 
 ---
 
-## DR-028: Publish to VS Code Marketplace
+## DR-028: Publish to VS Code Marketplace and OpenVSX
 
 **Date:** 2026-06-15
-**Decision:** Automate publishing to the VS Code Marketplace as part of the
-release workflow. VS Code publishing uses a Personal Access Token (`VSCE_PAT`
-secret) with `scripts/publish-vscode.js`. Alpha releases are excluded from
-Marketplace publishing; beta/rc releases go as pre-release on the Marketplace.
-The extension publisher is changed from `abbenay` to `redhat` to match the
-Red Hat Marketplace presence.
-**Rationale:** GitHub Release assets require manual download and sideloading — 
-fine for early adopters but a barrier to organic adoption. Standard package
-managers (Marketplace search/install) are the expected discovery channel. The
-`VSCE_PAT` is required since the Marketplace does not support OIDC. Gating
-alpha releases prevents incomplete builds from reaching end users while still
-allowing pre-release testing via beta/rc tags.
+**Decision:** Automate publishing to the VS Code Marketplace and OpenVSX Registry
+as part of the release workflow. VS Code Marketplace uses
+`VSCODE_MARKETPLACE_TOKEN` and OpenVSX uses `OVSX_MARKETPLACE_TOKEN`, both
+passed to `scripts/publish-vscode.js` which handles multi-platform VSIX
+publishing. The publish job uses the `release` GitHub environment. Alpha releases
+are excluded from publishing; beta/rc go as pre-release. The extension publisher
+is changed from `abbenay` to `redhat`. This follows the Red Hat convention
+established by `redhat-developer/vscode-yaml`.
+**Rationale:** GitHub Release assets require manual download and sideloading —
+fine for early adopters but a barrier to organic adoption. Publishing to both
+VS Code Marketplace and OpenVSX ensures coverage for VS Code and compatible
+editors (Eclipse Theia, VSCodium, Gitpod). Gating alpha releases prevents
+incomplete builds from reaching end users.
