@@ -1,5 +1,5 @@
 # Accepted npm audit advisories (one GHSA URL per line)
-# These are dev-only dependencies with no upstream fix available.
+# Dependencies with no upstream fix available — dev-only or runtime with accepted risk.
 # Re-evaluate periodically and remove entries once fixes are released.
 
 # serialize-javascript via mocha via @vscode/test-cli (dev-only, no fix)
@@ -8,3 +8,9 @@ https://github.com/advisories/GHSA-5c6j-r48x-rmvq
 # serialize-javascript via mocha via @vscode/test-cli (dev-only, no fix)
 # Added 2026-04-06
 https://github.com/advisories/GHSA-qj8w-gfj5-8c6v
+# qs via express via @modelcontextprotocol/sdk (runtime, pinned by express — no fix available)
+# Added 2026-06-15
+https://github.com/advisories/GHSA-q8mj-m7cp-5q26
+# @ai-sdk/provider-utils via @ai-sdk/* (runtime, no upstream fix available)
+# Added 2026-06-15
+https://github.com/advisories/GHSA-866g-f22w-33x8
