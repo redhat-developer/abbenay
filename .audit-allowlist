@@ -1,5 +1,5 @@
 # Accepted npm audit advisories (one GHSA URL per line)
-# These are dev-only dependencies with no upstream fix available.
+# Dependencies with no upstream fix available — dev-only or runtime with accepted risk.
 # Re-evaluate periodically and remove entries once fixes are released.
 
 # serialize-javascript via mocha via @vscode/test-cli (dev-only, no fix)
