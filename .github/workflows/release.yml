@@ -117,9 +117,9 @@ jobs:
           path: packages/python/dist/
 
   publish-python:
-    needs: [package-python]
+    needs: [package-python, release]
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: release
     permissions:
       id-token: write
     steps:
