@@ -28,8 +28,8 @@ can be batched into a single PR; major updates get individual PRs.
 Fetch all open alerts and build a grouped summary. No user approval needed.
 
 ```bash
-gh api repos/redhat-developer/abbenay/dependabot/alerts \
-  --jq '[.[] | select(.state == "open")] | group_by(.security_vulnerability.package.name) | map({
+gh api repos/redhat-developer/abbenay/dependabot/alerts --paginate \
+  --jq '[.[] | select(.state == "open")] | sort_by(.security_vulnerability.package.name) | group_by(.security_vulnerability.package.name) | map({
     package: .[0].security_vulnerability.package.name,
     ecosystem: .[0].security_vulnerability.package.ecosystem,
     count: length,
@@ -162,7 +162,7 @@ Each step MUST pass before proceeding.
 ```bash
 npm run audit:check
 npm run lint
-xvfb-run -a npm test
+npm test              # on Linux with headless VS Code tests: xvfb-run -a npm test
 npm run ci:build
 ```
 
@@ -285,7 +285,7 @@ Offer two choices:
    package from the triage table.
 2. **Stop** -- the user will handle the remaining packages later.
 
-## Dismiss resolved alerts
+## Phase 7: Dismiss resolved alerts
 
 Dependabot does not auto-close alerts for allowlisted packages or when
 lockfile changes haven't been rescanned yet. After all PRs are merged:
