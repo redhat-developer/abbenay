@@ -116,6 +116,24 @@ jobs:
           name: abbenay-client-python
           path: packages/python/dist/
 
+  publish-python:
+    needs: [package-python]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download Python artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: abbenay-client-python
+          path: dist/
+
+      - name: Publish to pypi.org
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
   release:
     needs: [build, package-python]
     runs-on: ubuntu-latest
