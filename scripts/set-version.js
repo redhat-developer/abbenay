@@ -34,6 +34,13 @@ if (!version) {
 // Pre-release is indicated by the --pre-release flag to vsce, not the version.
 const vsceVersion = version.replace(/-.*$/, '');
 
+// PEP 440: convert e.g. "2026.6.5-alpha" -> "2026.6.5a0", "2026.6.5-beta" -> "2026.6.5b0",
+// "2026.6.5-rc.1" -> "2026.6.5rc1". Leave stable versions unchanged.
+const pep440Version = version
+  .replace(/-alpha(?:\.(\d+))?$/, (_, n) => `a${n ?? 0}`)
+  .replace(/-beta(?:\.(\d+))?$/, (_, n) => `b${n ?? 0}`)
+  .replace(/-rc(?:\.(\d+))?$/, (_, n) => `rc${n ?? 0}`);
+
 function updateJson(filePath, ver = version) {
   const pkg = JSON.parse(readFileSync(filePath, 'utf8'));
   const old = pkg.version;
@@ -42,16 +49,16 @@ function updateJson(filePath, ver = version) {
   console.log(`  ${filePath}: ${old} -> ${ver}`);
 }
 
-function updateToml(filePath) {
+function updateToml(filePath, ver = version) {
   const content = readFileSync(filePath, 'utf8');
   const regex = /^version\s*=\s*"[^"]*"/m;
   if (!regex.test(content)) {
     console.error(`  ERROR: no version field found in ${filePath}`);
     process.exit(1);
   }
-  const updated = content.replace(regex, `version = "${version}"`);
+  const updated = content.replace(regex, `version = "${ver}"`);
   writeFileSync(filePath, updated);
-  console.log(`  ${filePath}: -> ${version}`);
+  console.log(`  ${filePath}: -> ${ver}`);
 }
 
 function updateSourceConst(filePath, pattern, replacement) {
@@ -70,7 +77,7 @@ updateJson(join(root, 'package.json'));
 updateJson(join(root, 'packages', 'daemon', 'package.json'));
 updateJson(join(root, 'packages', 'vscode', 'package.json'), vsceVersion);
 updateJson(join(root, 'packages', 'proto-ts', 'package.json'));
-updateToml(join(root, 'packages', 'python', 'pyproject.toml'));
+updateToml(join(root, 'packages', 'python', 'pyproject.toml'), pep440Version);
 updateSourceConst(
   join(root, 'packages', 'daemon', 'src', 'version.ts'),
   /VERSION = '[^']*'/,
@@ -79,7 +86,7 @@ updateSourceConst(
 updateSourceConst(
   join(root, 'packages', 'python', 'src', 'abbenay_grpc', '__init__.py'),
   /__version__ = "[^"]*"/,
-  `__version__ = "${version}"`,
+  `__version__ = "${pep440Version}"`,
 );
 
 console.log('\nDone. These changes are build-time only -- do not commit them.');
