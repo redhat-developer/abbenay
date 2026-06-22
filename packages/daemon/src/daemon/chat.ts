@@ -19,13 +19,15 @@ import { SessionStore } from '../core/session-store.js';
 import { maybeSummarize } from '../core/session-summarizer.js';
 import type { ChatToolOptions } from '../core/state.js';
 
-interface ChatOptions {
+export interface ChatOptions {
   model?: string;
   session?: string;
   system?: string;
   policy?: string;
   tools?: boolean;
   json?: boolean;
+  /** Pre-initialized state from model picker — avoids a second daemon startup. */
+  state?: import('./state.js').DaemonState;
 }
 
 const RESET  = '\x1b[0m';
@@ -39,7 +41,9 @@ const RED    = '\x1b[31m';
 export async function runInteractiveChat(options: ChatOptions): Promise<void> {
   let state: DaemonState;
 
-  if (isDaemonRunningSync()) {
+  if (options.state) {
+    state = options.state;
+  } else if (isDaemonRunningSync()) {
     console.error(`${DIM}Daemon already running — using in-process state...${RESET}`);
     state = new DaemonState();
   } else {

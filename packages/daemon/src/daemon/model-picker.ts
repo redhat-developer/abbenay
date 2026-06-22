@@ -8,7 +8,16 @@ const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
 const YELLOW = '\x1b[33m';
 
-export async function selectModel(): Promise<string | null> {
+export interface ModelPickerResult {
+  model: string;
+  state: DaemonState;
+}
+
+/**
+ * Interactive model picker. Returns the chosen model AND the DaemonState
+ * so callers can reuse it without a second startup.
+ */
+export async function selectModel(): Promise<ModelPickerResult | null> {
   let state: DaemonState;
   if (isDaemonRunningSync()) {
     state = new DaemonState();
@@ -31,7 +40,9 @@ export async function selectModel(): Promise<string | null> {
   });
 
   try {
-    return await promptModelPicker(models, rl);
+    const model = await promptModelPicker(models, rl);
+    if (!model) return null;
+    return { model, state };
   } finally {
     rl.close();
   }

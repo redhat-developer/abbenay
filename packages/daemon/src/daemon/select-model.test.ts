@@ -46,7 +46,7 @@ describe('selectModel', () => {
     expect(output).toContain('web UI');
   });
 
-  it('returns selected model via picker when models exist', async () => {
+  it('returns model and state via picker when models exist', async () => {
     const models = [
       { id: 'openai/gpt-4o', name: 'gpt-4o', provider: 'openai' },
       { id: 'anthropic/claude-sonnet', name: 'claude-sonnet', provider: 'anthropic' },
@@ -62,7 +62,10 @@ describe('selectModel', () => {
     const { selectModel } = await import('./model-picker.js');
     const result = await selectModel();
 
-    expect(result).toBe('anthropic/claude-sonnet');
+    expect(result).not.toBeNull();
+    expect(result!.model).toBe('anthropic/claude-sonnet');
+    expect(result!.state).toBeDefined();
+    expect(result!.state.listModels).toBeDefined();
     expect(promptModelPicker).toHaveBeenCalledWith(models, expect.anything());
   });
 

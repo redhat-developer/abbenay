@@ -286,9 +286,10 @@ program
   .action(async (options) => {
     if (!options.model && !options.session) {
       const { selectModel } = await import('./model-picker.js');
-      const picked = await selectModel();
-      if (!picked) process.exit(1);
-      options.model = picked;
+      const result = await selectModel();
+      if (!result) process.exit(1);
+      options.model = result.model;
+      options.state = result.state;
     }
     const { runInteractiveChat } = await import('./chat.js');
     await runInteractiveChat(options);
