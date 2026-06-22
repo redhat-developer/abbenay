@@ -1,8 +1,10 @@
 /**
- * Interactive CLI chat — `aby chat -m <model>`
+ * Interactive CLI chat — `aby chat`
  *
  * Starts the daemon in-process if not already running, then enters a
  * readline-based REPL that streams responses to stdout.
+ *
+ * When --model is omitted, an interactive model picker is displayed.
  *
  * All tool calls require approval by default (secure-by-default, DR-019).
  * Users can choose "allow always" to session-approve a tool for the
@@ -17,13 +19,15 @@ import { SessionStore } from '../core/session-store.js';
 import { maybeSummarize } from '../core/session-summarizer.js';
 import type { ChatToolOptions } from '../core/state.js';
 
-interface ChatOptions {
+export interface ChatOptions {
   model?: string;
   session?: string;
   system?: string;
   policy?: string;
   tools?: boolean;
   json?: boolean;
+  /** Pre-initialized state from model picker — avoids a second daemon startup. */
+  state?: import('./state.js').DaemonState;
 }
 
 const RESET  = '\x1b[0m';
@@ -37,7 +41,9 @@ const RED    = '\x1b[31m';
 export async function runInteractiveChat(options: ChatOptions): Promise<void> {
   let state: DaemonState;
 
-  if (isDaemonRunningSync()) {
+  if (options.state) {
+    state = options.state;
+  } else if (isDaemonRunningSync()) {
     console.error(`${DIM}Daemon already running — using in-process state...${RESET}`);
     state = new DaemonState();
   } else {
@@ -287,5 +293,49 @@ function promptApproval(rl: readline.Interface): Promise<'allow' | 'allow-always
     };
 
     rl.once('line', handler);
+  });
+}
+
+// ── Model picker ──────────────────────────────────────────────────────
+
+export interface PickerModel {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+export function parseModelPickerInput(raw: string, count: number): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') return 1;
+  const num = Number(trimmed);
+  if (!Number.isInteger(num) || num < 1 || num > count) return null;
+  return num;
+}
+
+export function promptModelPicker(
+  models: PickerModel[],
+  rl: readline.Interface,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    process.stderr.write(`\n${BOLD}Available models:${RESET}\n`);
+    for (let i = 0; i < models.length; i++) {
+      const marker = i === 0 ? ` ${DIM}(default)${RESET}` : '';
+      process.stderr.write(`  ${CYAN}[${i + 1}]${RESET} ${models[i].id}${marker}\n`);
+    }
+    process.stderr.write(`\n${YELLOW}Select a model [1]:${RESET} `);
+
+    const handler = (line: string) => {
+      const choice = parseModelPickerInput(line, models.length);
+      if (choice !== null) {
+        resolve(models[choice - 1].id);
+      } else {
+        process.stderr.write(`${RED}Invalid choice. Enter 1–${models.length}.${RESET}\n`);
+        process.stderr.write(`${YELLOW}Select a model [1]:${RESET} `);
+        rl.once('line', handler);
+      }
+    };
+
+    rl.once('line', handler);
+    rl.once('close', () => resolve(null));
   });
 }
