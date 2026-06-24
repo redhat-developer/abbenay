@@ -285,8 +285,11 @@ program
   .option('--json', 'Output raw JSON chunks (for piping)')
   .action(async (options) => {
     if (!options.model && !options.session) {
-      console.error('Either --model or --session is required');
-      process.exit(1);
+      const { selectModel } = await import('./model-picker.js');
+      const result = await selectModel();
+      if (!result) process.exit(1);
+      options.model = result.model;
+      options.state = result.state;
     }
     const { runInteractiveChat } = await import('./chat.js');
     await runInteractiveChat(options);
