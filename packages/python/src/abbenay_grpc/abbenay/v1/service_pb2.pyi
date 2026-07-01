@@ -189,7 +189,7 @@ class ToolPartialResult(_message.Message):
     IS_FINAL_FIELD_NUMBER: _ClassVar[int]
     content_json: str
     is_final: bool
-    def __init__(self, content_json: _Optional[str] = ..., is_final: bool = ...) -> None: ...
+    def __init__(self, content_json: _Optional[str] = ..., is_final: _Optional[bool] = ...) -> None: ...
 
 class ToolFinalResult(_message.Message):
     __slots__ = ("content", "is_error")
@@ -197,7 +197,7 @@ class ToolFinalResult(_message.Message):
     IS_ERROR_FIELD_NUMBER: _ClassVar[int]
     content: _containers.RepeatedCompositeFieldContainer[ToolContent]
     is_error: bool
-    def __init__(self, content: _Optional[_Iterable[_Union[ToolContent, _Mapping]]] = ..., is_error: bool = ...) -> None: ...
+    def __init__(self, content: _Optional[_Iterable[_Union[ToolContent, _Mapping]]] = ..., is_error: _Optional[bool] = ...) -> None: ...
 
 class ToolContent(_message.Message):
     __slots__ = ("type", "text", "mime_type", "data", "uri")
@@ -267,7 +267,7 @@ class CallToolsBatchRequest(_message.Message):
     STOP_ON_ERROR_FIELD_NUMBER: _ClassVar[int]
     calls: _containers.RepeatedCompositeFieldContainer[CallToolRequest]
     stop_on_error: bool
-    def __init__(self, calls: _Optional[_Iterable[_Union[CallToolRequest, _Mapping]]] = ..., stop_on_error: bool = ...) -> None: ...
+    def __init__(self, calls: _Optional[_Iterable[_Union[CallToolRequest, _Mapping]]] = ..., stop_on_error: _Optional[bool] = ...) -> None: ...
 
 class ListResourcesRequest(_message.Message):
     __slots__ = ("server_filter", "uri_prefix")
@@ -337,7 +337,7 @@ class McpPromptArgument(_message.Message):
     name: str
     description: str
     required: bool
-    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., required: bool = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., required: _Optional[bool] = ...) -> None: ...
 
 class GetPromptRequest(_message.Message):
     __slots__ = ("name", "arguments")
@@ -418,7 +418,7 @@ class ChatOptions(_message.Message):
     top_k: int
     timeout: int
     tool_mode: str
-    def __init__(self, temperature: _Optional[float] = ..., max_tokens: _Optional[int] = ..., top_p: _Optional[float] = ..., stop: _Optional[_Iterable[str]] = ..., enable_tools: bool = ..., max_tool_iterations: _Optional[int] = ..., tool_filter: _Optional[_Iterable[str]] = ..., top_k: _Optional[int] = ..., timeout: _Optional[int] = ..., tool_mode: _Optional[str] = ...) -> None: ...
+    def __init__(self, temperature: _Optional[float] = ..., max_tokens: _Optional[int] = ..., top_p: _Optional[float] = ..., stop: _Optional[_Iterable[str]] = ..., enable_tools: _Optional[bool] = ..., max_tool_iterations: _Optional[int] = ..., tool_filter: _Optional[_Iterable[str]] = ..., top_k: _Optional[int] = ..., timeout: _Optional[int] = ..., tool_mode: _Optional[str] = ...) -> None: ...
 
 class ChatChunk(_message.Message):
     __slots__ = ("text", "tool_call", "tool_result", "prompt", "usage", "error", "done")
@@ -464,7 +464,7 @@ class ToolResultChunk(_message.Message):
     name: str
     content: str
     is_error: bool
-    def __init__(self, tool_call_id: _Optional[str] = ..., name: _Optional[str] = ..., content: _Optional[str] = ..., is_error: bool = ...) -> None: ...
+    def __init__(self, tool_call_id: _Optional[str] = ..., name: _Optional[str] = ..., content: _Optional[str] = ..., is_error: _Optional[bool] = ...) -> None: ...
 
 class PromptChunk(_message.Message):
     __slots__ = ("tool_call_id", "tool_name", "prompt_text", "options")
@@ -592,7 +592,7 @@ class GetSessionRequest(_message.Message):
     INCLUDE_MESSAGES_FIELD_NUMBER: _ClassVar[int]
     session_id: str
     include_messages: bool
-    def __init__(self, session_id: _Optional[str] = ..., include_messages: bool = ...) -> None: ...
+    def __init__(self, session_id: _Optional[str] = ..., include_messages: _Optional[bool] = ...) -> None: ...
 
 class ListSessionsRequest(_message.Message):
     __slots__ = ("limit", "offset", "source_filter", "model_filter")
@@ -706,7 +706,7 @@ class SummarizeSessionResponse(_message.Message):
     FROM_CACHE_FIELD_NUMBER: _ClassVar[int]
     summary: str
     from_cache: bool
-    def __init__(self, summary: _Optional[str] = ..., from_cache: bool = ...) -> None: ...
+    def __init__(self, summary: _Optional[str] = ..., from_cache: _Optional[bool] = ...) -> None: ...
 
 class ForkSessionRequest(_message.Message):
     __slots__ = ("session_id", "new_model", "fork_point")
@@ -726,7 +726,7 @@ class ExportSessionRequest(_message.Message):
     session_id: str
     include_tool_results: bool
     include_metadata: bool
-    def __init__(self, session_id: _Optional[str] = ..., include_tool_results: bool = ..., include_metadata: bool = ...) -> None: ...
+    def __init__(self, session_id: _Optional[str] = ..., include_tool_results: _Optional[bool] = ..., include_metadata: _Optional[bool] = ...) -> None: ...
 
 class ExportSessionResponse(_message.Message):
     __slots__ = ("json_content",)
@@ -740,7 +740,7 @@ class ImportSessionRequest(_message.Message):
     GENERATE_NEW_ID_FIELD_NUMBER: _ClassVar[int]
     json_content: str
     generate_new_id: bool
-    def __init__(self, json_content: _Optional[str] = ..., generate_new_id: bool = ...) -> None: ...
+    def __init__(self, json_content: _Optional[str] = ..., generate_new_id: _Optional[bool] = ...) -> None: ...
 
 class ListModelsRequest(_message.Message):
     __slots__ = ("provider_filter", "workspace_paths")
@@ -824,7 +824,7 @@ class ModelCapabilities(_message.Message):
     supports_tools: bool
     supports_vision: bool
     context_window: int
-    def __init__(self, supports_streaming: bool = ..., supports_tools: bool = ..., supports_vision: bool = ..., context_window: _Optional[int] = ...) -> None: ...
+    def __init__(self, supports_streaming: _Optional[bool] = ..., supports_tools: _Optional[bool] = ..., supports_vision: _Optional[bool] = ..., context_window: _Optional[int] = ...) -> None: ...
 
 class ListProvidersRequest(_message.Message):
     __slots__ = ("workspace_paths",)
@@ -856,7 +856,7 @@ class Provider(_message.Message):
     default_base_url: str
     engine: str
     base_url: str
-    def __init__(self, id: _Optional[str] = ..., configured: bool = ..., healthy: bool = ..., provider_type: _Optional[_Union[ProviderType, str]] = ..., requires_key: bool = ..., default_base_url: _Optional[str] = ..., engine: _Optional[str] = ..., base_url: _Optional[str] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., configured: _Optional[bool] = ..., healthy: _Optional[bool] = ..., provider_type: _Optional[_Union[ProviderType, str]] = ..., requires_key: _Optional[bool] = ..., default_base_url: _Optional[str] = ..., engine: _Optional[str] = ..., base_url: _Optional[str] = ...) -> None: ...
 
 class GetProviderStatusRequest(_message.Message):
     __slots__ = ("provider_id",)
@@ -876,7 +876,7 @@ class ProviderStatus(_message.Message):
     healthy: bool
     error: str
     last_check: Timestamp
-    def __init__(self, provider_id: _Optional[str] = ..., configured: bool = ..., healthy: bool = ..., error: _Optional[str] = ..., last_check: _Optional[_Union[Timestamp, _Mapping]] = ...) -> None: ...
+    def __init__(self, provider_id: _Optional[str] = ..., configured: _Optional[bool] = ..., healthy: _Optional[bool] = ..., error: _Optional[str] = ..., last_check: _Optional[_Union[Timestamp, _Mapping]] = ...) -> None: ...
 
 class ListEnginesRequest(_message.Message):
     __slots__ = ()
@@ -898,7 +898,7 @@ class Engine(_message.Message):
     requires_key: bool
     default_base_url: str
     default_env_var: str
-    def __init__(self, id: _Optional[str] = ..., requires_key: bool = ..., default_base_url: _Optional[str] = ..., default_env_var: _Optional[str] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., requires_key: _Optional[bool] = ..., default_base_url: _Optional[str] = ..., default_env_var: _Optional[str] = ...) -> None: ...
 
 class ListToolsRequest(_message.Message):
     __slots__ = ("server_filter",)
@@ -938,7 +938,7 @@ class ExecuteToolResponse(_message.Message):
     IS_ERROR_FIELD_NUMBER: _ClassVar[int]
     content: str
     is_error: bool
-    def __init__(self, content: _Optional[str] = ..., is_error: bool = ...) -> None: ...
+    def __init__(self, content: _Optional[str] = ..., is_error: _Optional[bool] = ...) -> None: ...
 
 class GetConfigRequest(_message.Message):
     __slots__ = ("location",)
@@ -1062,7 +1062,7 @@ class McpServerConfigMsg(_message.Message):
     headers: _containers.ScalarMap[str, str]
     env: _containers.ScalarMap[str, str]
     max_response_size: int
-    def __init__(self, command: _Optional[str] = ..., args: _Optional[_Iterable[str]] = ..., url: _Optional[str] = ..., transport: _Optional[str] = ..., enabled: bool = ..., headers: _Optional[_Mapping[str, str]] = ..., env: _Optional[_Mapping[str, str]] = ..., max_response_size: _Optional[int] = ...) -> None: ...
+    def __init__(self, command: _Optional[str] = ..., args: _Optional[_Iterable[str]] = ..., url: _Optional[str] = ..., transport: _Optional[str] = ..., enabled: _Optional[bool] = ..., headers: _Optional[_Mapping[str, str]] = ..., env: _Optional[_Mapping[str, str]] = ..., max_response_size: _Optional[int] = ...) -> None: ...
 
 class ToolPolicyConfigMsg(_message.Message):
     __slots__ = ("max_tool_iterations", "auto_approve", "require_approval", "disabled_tools", "aliases")
@@ -1101,7 +1101,7 @@ class ConsumerCapabilitiesMsg(_message.Message):
     MCP_REGISTER_FIELD_NUMBER: _ClassVar[int]
     inline_policy: bool
     mcp_register: bool
-    def __init__(self, inline_policy: bool = ..., mcp_register: bool = ...) -> None: ...
+    def __init__(self, inline_policy: _Optional[bool] = ..., mcp_register: _Optional[bool] = ...) -> None: ...
 
 class UpdateConfigRequest(_message.Message):
     __slots__ = ("config", "location")
@@ -1133,7 +1133,7 @@ class ConfigureProviderResponse(_message.Message):
     __slots__ = ("success",)
     SUCCESS_FIELD_NUMBER: _ClassVar[int]
     success: bool
-    def __init__(self, success: bool = ...) -> None: ...
+    def __init__(self, success: _Optional[bool] = ...) -> None: ...
 
 class RemoveProviderRequest(_message.Message):
     __slots__ = ("provider_id", "target", "workspace_path")
@@ -1165,7 +1165,7 @@ class ProviderTemplate(_message.Message):
     suggested_name: str
     default_base_url: str
     requires_key: bool
-    def __init__(self, engine: _Optional[str] = ..., suggested_name: _Optional[str] = ..., default_base_url: _Optional[str] = ..., requires_key: bool = ...) -> None: ...
+    def __init__(self, engine: _Optional[str] = ..., suggested_name: _Optional[str] = ..., default_base_url: _Optional[str] = ..., requires_key: _Optional[bool] = ...) -> None: ...
 
 class GetKeyStatusRequest(_message.Message):
     __slots__ = ("source", "name")
@@ -1179,7 +1179,7 @@ class GetKeyStatusResponse(_message.Message):
     __slots__ = ("exists",)
     EXISTS_FIELD_NUMBER: _ClassVar[int]
     exists: bool
-    def __init__(self, exists: bool = ...) -> None: ...
+    def __init__(self, exists: _Optional[bool] = ...) -> None: ...
 
 class ListMcpServerConfigsRequest(_message.Message):
     __slots__ = ()
@@ -1205,7 +1205,7 @@ class McpServerStatusEntry(_message.Message):
     status: str
     tool_count: int
     error: str
-    def __init__(self, id: _Optional[str] = ..., transport: _Optional[str] = ..., enabled: bool = ..., status: _Optional[str] = ..., tool_count: _Optional[int] = ..., error: _Optional[str] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., transport: _Optional[str] = ..., enabled: _Optional[bool] = ..., status: _Optional[str] = ..., tool_count: _Optional[int] = ..., error: _Optional[str] = ...) -> None: ...
 
 class ReconnectMcpServerRequest(_message.Message):
     __slots__ = ("server_id",)
@@ -1273,7 +1273,7 @@ class SecretInfo(_message.Message):
     key: str
     store: SecretStore
     has_value: bool
-    def __init__(self, key: _Optional[str] = ..., store: _Optional[_Union[SecretStore, str]] = ..., has_value: bool = ...) -> None: ...
+    def __init__(self, key: _Optional[str] = ..., store: _Optional[_Union[SecretStore, str]] = ..., has_value: _Optional[bool] = ...) -> None: ...
 
 class RegisterRequest(_message.Message):
     __slots__ = ("client", "is_spawner", "workspace_path", "workspace_paths")
@@ -1285,7 +1285,7 @@ class RegisterRequest(_message.Message):
     is_spawner: bool
     workspace_path: str
     workspace_paths: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, client: _Optional[_Union[ClientInfo, _Mapping]] = ..., is_spawner: bool = ..., workspace_path: _Optional[str] = ..., workspace_paths: _Optional[_Iterable[str]] = ...) -> None: ...
+    def __init__(self, client: _Optional[_Union[ClientInfo, _Mapping]] = ..., is_spawner: _Optional[bool] = ..., workspace_path: _Optional[str] = ..., workspace_paths: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class RegisterResponse(_message.Message):
     __slots__ = ("client_id", "connected_clients")
@@ -1343,7 +1343,7 @@ class ConnectedClient(_message.Message):
     connected_at: Timestamp
     is_spawner: bool
     workspace_path: str
-    def __init__(self, client_id: _Optional[str] = ..., client_type: _Optional[_Union[ClientType, str]] = ..., connected_at: _Optional[_Union[Timestamp, _Mapping]] = ..., is_spawner: bool = ..., workspace_path: _Optional[str] = ...) -> None: ...
+    def __init__(self, client_id: _Optional[str] = ..., client_type: _Optional[_Union[ClientType, str]] = ..., connected_at: _Optional[_Union[Timestamp, _Mapping]] = ..., is_spawner: _Optional[bool] = ..., workspace_path: _Optional[str] = ...) -> None: ...
 
 class ShutdownRequest(_message.Message):
     __slots__ = ("force", "grace_period_seconds")
@@ -1351,7 +1351,7 @@ class ShutdownRequest(_message.Message):
     GRACE_PERIOD_SECONDS_FIELD_NUMBER: _ClassVar[int]
     force: bool
     grace_period_seconds: int
-    def __init__(self, force: bool = ..., grace_period_seconds: _Optional[int] = ...) -> None: ...
+    def __init__(self, force: _Optional[bool] = ..., grace_period_seconds: _Optional[int] = ...) -> None: ...
 
 class HealthCheckRequest(_message.Message):
     __slots__ = ()
@@ -1363,7 +1363,7 @@ class HealthCheckResponse(_message.Message):
     VERSION_FIELD_NUMBER: _ClassVar[int]
     healthy: bool
     version: str
-    def __init__(self, healthy: bool = ..., version: _Optional[str] = ...) -> None: ...
+    def __init__(self, healthy: _Optional[bool] = ..., version: _Optional[str] = ...) -> None: ...
 
 class StartWebServerRequest(_message.Message):
     __slots__ = ("port",)
@@ -1381,7 +1381,7 @@ class StartWebServerResponse(_message.Message):
     already_running: bool
     port: int
     url: str
-    def __init__(self, started: bool = ..., already_running: bool = ..., port: _Optional[int] = ..., url: _Optional[str] = ...) -> None: ...
+    def __init__(self, started: _Optional[bool] = ..., already_running: _Optional[bool] = ..., port: _Optional[int] = ..., url: _Optional[str] = ...) -> None: ...
 
 class StopWebServerRequest(_message.Message):
     __slots__ = ()
@@ -1465,7 +1465,7 @@ class InvokeToolResponse(_message.Message):
     IS_ERROR_FIELD_NUMBER: _ClassVar[int]
     result_json: str
     is_error: bool
-    def __init__(self, result_json: _Optional[str] = ..., is_error: bool = ...) -> None: ...
+    def __init__(self, result_json: _Optional[str] = ..., is_error: _Optional[bool] = ...) -> None: ...
 
 class ListVSCodeToolsRequest(_message.Message):
     __slots__ = ()
@@ -1575,7 +1575,7 @@ class PolicyInfo(_message.Message):
     name: str
     builtin: bool
     config: PolicyConfig
-    def __init__(self, name: _Optional[str] = ..., builtin: bool = ..., config: _Optional[_Union[PolicyConfig, _Mapping]] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., builtin: _Optional[bool] = ..., config: _Optional[_Union[PolicyConfig, _Mapping]] = ...) -> None: ...
 
 class PolicyConfig(_message.Message):
     __slots__ = ("sampling", "output", "context", "tool", "reliability")
@@ -1637,7 +1637,7 @@ class PolicyReliability(_message.Message):
     TIMEOUT_FIELD_NUMBER: _ClassVar[int]
     retry_on_invalid_json: bool
     timeout: int
-    def __init__(self, retry_on_invalid_json: bool = ..., timeout: _Optional[int] = ...) -> None: ...
+    def __init__(self, retry_on_invalid_json: _Optional[bool] = ..., timeout: _Optional[int] = ...) -> None: ...
 
 class RegisterMcpServerRequest(_message.Message):
     __slots__ = ("server_id", "transport", "session_id", "tool_filter", "max_response_size")
@@ -1691,7 +1691,7 @@ class RegisterMcpServerResponse(_message.Message):
     success: bool
     error: str
     discovered_tools: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, success: bool = ..., error: _Optional[str] = ..., discovered_tools: _Optional[_Iterable[str]] = ...) -> None: ...
+    def __init__(self, success: _Optional[bool] = ..., error: _Optional[str] = ..., discovered_tools: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class UnregisterMcpServerRequest(_message.Message):
     __slots__ = ("server_id",)
@@ -1703,4 +1703,4 @@ class UnregisterMcpServerResponse(_message.Message):
     __slots__ = ("success",)
     SUCCESS_FIELD_NUMBER: _ClassVar[int]
     success: bool
-    def __init__(self, success: bool = ...) -> None: ...
+    def __init__(self, success: _Optional[bool] = ...) -> None: ...

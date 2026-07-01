@@ -19,7 +19,7 @@ Abbenay produces two packages from a single source tree:
 
 ## Features
 
-- **19 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
+- **20 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
 - **OpenAI-compatible API**: Drop-in `/v1/chat/completions` for Cursor, Continue, aider, etc.
 - **CLI chat**: Interactive terminal chat with tool approval and session persistence
 - **Session management**: Persistent conversations with periodic LLM-generated summaries
@@ -203,6 +203,7 @@ See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for a complete walkthroug
 | LM Studio | `lmstudio` | No | Yes | `@ai-sdk/openai-compatible` |
 | Cerebras | `cerebras` | Yes | Yes | `@ai-sdk/openai-compatible` |
 | Meta (Llama) | `meta` | Yes | Yes | `@ai-sdk/openai-compatible` |
+| RHEL AI | `rhel-ai` | No | Yes | `@ai-sdk/openai-compatible` |
 | Mock | `mock` | No | No | *(built-in)* |
 
 \* Amazon Bedrock uses AWS credential chain, not an API key.
@@ -286,6 +287,7 @@ abbenay/
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)
+- [RHEL AI Provider](docs/RHEL_AI.md)
 - [Product Overview](docs/PRODUCT_OVERVIEW.md)
 - [Landscape Comparison](docs/LANDSCAPE.md)
 

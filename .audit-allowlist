@@ -14,3 +14,18 @@ https://github.com/advisories/GHSA-q8mj-m7cp-5q26
 # @ai-sdk/provider-utils via @ai-sdk/* (runtime, no upstream fix available)
 # Added 2026-06-15
 https://github.com/advisories/GHSA-866g-f22w-33x8
+# brace-expansion via mocha, glob — dev-only transitive dep, no fix available
+# Added 2026-07-01
+https://github.com/advisories/GHSA-jxxr-4gwj-5jf2
+# undici (Node.js HTTP client) — transitive via multiple deps, no upstream fix
+# Added 2026-07-01
+https://github.com/advisories/GHSA-vmh5-mc38-953g
+https://github.com/advisories/GHSA-p88m-4jfj-68fv
+https://github.com/advisories/GHSA-vxpw-j846-p89q
+https://github.com/advisories/GHSA-hm92-r4w5-c3mj
+https://github.com/advisories/GHSA-35p6-xmwp-9g52
+https://github.com/advisories/GHSA-g8m3-5g58-fq7m
+https://github.com/advisories/GHSA-pr7r-676h-xcf6
+# uuid — transitive via @azure/msal-node, moderate severity, no fix available
+# Added 2026-07-01
+https://github.com/advisories/GHSA-w5hq-g745-h8pq

@@ -5,7 +5,7 @@ import warnings
 
 from abbenay_grpc.abbenay.v1 import service_pb2 as abbenay_dot_v1_dot_service__pb2
 
-GRPC_GENERATED_VERSION = '1.78.0'
+GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class McpBridgeStub(object):
+class McpBridgeStub:
     """
     MCP Bridge Service - High-performance tool execution
 
@@ -86,7 +86,7 @@ class McpBridgeStub(object):
                 _registered_method=True)
 
 
-class McpBridgeServicer(object):
+class McpBridgeServicer:
     """
     MCP Bridge Service - High-performance tool execution
 
@@ -208,7 +208,7 @@ def add_McpBridgeServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class McpBridge(object):
+class McpBridge:
     """
     MCP Bridge Service - High-performance tool execution
 
@@ -438,7 +438,7 @@ class McpBridge(object):
             _registered_method=True)
 
 
-class AbbenayStub(object):
+class AbbenayStub:
     """
     Main Service - Unified daemon API
 
@@ -681,7 +681,7 @@ class AbbenayStub(object):
                 _registered_method=True)
 
 
-class AbbenayServicer(object):
+class AbbenayServicer:
     """
     Main Service - Unified daemon API
 
@@ -1290,7 +1290,7 @@ def add_AbbenayServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class Abbenay(object):
+class Abbenay:
     """
     Main Service - Unified daemon API
 
