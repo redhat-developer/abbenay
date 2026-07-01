@@ -20,7 +20,7 @@
 > - TypeScript daemon (migrated from Rust) with gRPC on Unix socket
 > - Web dashboard with RHDS styling (embedded in daemon via Express)
 > - VS Code extension (gRPC client + Language Model API registration)
-> - 19 LLM engines via Vercel AI SDK
+> - 20 LLM engines via Vercel AI SDK
 > - Mock provider for testing (echo, fixed, error, empty, slow modes)
 > - Single Executable Application (SEA) binary packaging
 > - Keychain secret storage (via keytar)

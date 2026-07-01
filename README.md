@@ -4,7 +4,7 @@
 
 <img src="logos/abbenay-logo-sq.png" width="100" height="100" style="float: left; margin-right: 15px;">
 
-A unified AI daemon and library for OpenAI, Anthropic, Google Gemini, Mistral, Ollama, and 10+ more providers.
+A unified AI daemon and library for OpenAI, Anthropic, Google Gemini, Mistral, Red Hat AI, Ollama, and 10+ more providers.
 
 <p style="clear: left;">
 
@@ -19,7 +19,8 @@ Abbenay produces two packages from a single source tree:
 
 ## Features
 
-- **19 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
+- **20 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
+- **Red Hat AI** — Inference Server or OpenShift AI MaaS via dedicated `redhat` engine
 - **OpenAI-compatible API**: Drop-in `/v1/chat/completions` for Cursor, Continue, aider, etc.
 - **CLI chat**: Interactive terminal chat with tool approval and session persistence
 - **Session management**: Persistent conversations with periodic LLM-generated summaries
@@ -203,6 +204,7 @@ See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for a complete walkthroug
 | LM Studio | `lmstudio` | No | Yes | `@ai-sdk/openai-compatible` |
 | Cerebras | `cerebras` | Yes | Yes | `@ai-sdk/openai-compatible` |
 | Meta (Llama) | `meta` | Yes | Yes | `@ai-sdk/openai-compatible` |
+| Red Hat AI | `redhat` | No | Yes | `@ai-sdk/openai-compatible` |
 | Mock | `mock` | No | No | *(built-in)* |
 
 \* Amazon Bedrock uses AWS credential chain, not an API key.
@@ -286,6 +288,7 @@ abbenay/
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Red Hat AI Provider](docs/REDHAT_AI.md)
 - [Product Overview](docs/PRODUCT_OVERVIEW.md)
 - [Landscape Comparison](docs/LANDSCAPE.md)
 

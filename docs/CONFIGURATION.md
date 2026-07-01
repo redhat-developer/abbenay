@@ -104,6 +104,7 @@ If neither option is set, the engine's default environment variable is checked (
 | LM Studio | `lmstudio` | *(none needed)* | No |
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` | Yes |
 | Meta (Llama) | `meta` | `META_API_KEY` | Yes |
+| Red Hat AI | `redhat` | `REDHAT_AI_API_KEY` | No |
 | Mock (Testing) | `mock` | *(none needed)* | No |
 
 ## Per-Model Configuration
@@ -248,6 +249,29 @@ providers:
     models:
       claude-sonnet-4-20250514: {}
 ```
+
+### Red Hat AI (Inference Server / MaaS)
+
+```yaml
+# Profile A — Inference Server (local or OpenShift-hosted vLLM)
+providers:
+  redhat-inference:
+    engine: redhat
+    models:
+      RedHatAI/Llama-3.2-1B-Instruct-FP8: {}
+
+# Profile B — OpenShift AI MaaS (enterprise gateway)
+  redhat-maas:
+    engine: redhat
+    base_url: "https://maas.apps.cluster.example.com/v1"
+    api_key_env_var_name: "REDHAT_AI_API_KEY"
+    models:
+      llama-3.1-8b-instruct: {}
+```
+
+Inference Server auth is optional (depends on `--api-key` flag); MaaS
+typically requires an API key. Default endpoint: `http://127.0.0.1:8000/v1`.
+See [REDHAT_AI.md](REDHAT_AI.md) for full setup including both profiles.
 
 ### Vertex-Hosted Anthropic (Bearer Token Proxy)
 

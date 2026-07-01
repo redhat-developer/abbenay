@@ -127,6 +127,20 @@ providers:
 
 Ollama must be running at `http://localhost:11434` (the default).
 
+### Red Hat AI (Inference Server or MaaS)
+
+```yaml
+providers:
+  redhat-inference:
+    engine: redhat
+    models:
+      RedHatAI/Llama-3.2-1B-Instruct-FP8: {}
+```
+
+The Inference Server must be running at `http://127.0.0.1:8000/v1`. For
+OpenShift AI MaaS, set `base_url` and `api_key_env_var_name`. See
+[REDHAT_AI.md](REDHAT_AI.md) for both profiles.
+
 See [CONFIGURATION.md](CONFIGURATION.md) for all options.
 
 ---
