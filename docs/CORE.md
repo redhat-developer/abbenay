@@ -1,6 +1,6 @@
 # @abbenay/core
 
-A lightweight, transport-agnostic library for integrating LLM engines into your applications. Use it in agents, web apps, CLI tools, or any Node.js project that needs multi-provider LLM access.
+A lightweight, transport-agnostic library for integrating 20 LLM engines into your applications. Use it in agents, web apps, CLI tools, or any Node.js project that needs multi-provider LLM access.
 
 ## What is it?
 
@@ -291,6 +291,7 @@ The Vercel AI SDK handles the tool execution loop automatically (up to `maxSteps
 | LM Studio | `lmstudio` | No | `@ai-sdk/openai-compatible` | Local models |
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` | Fast inference |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` | Llama API |
+| RHEL AI | `rhel-ai` | No | `@ai-sdk/openai-compatible` | RHEL AI Inference Server (vLLM) |
 | Mock | `mock` | No | *(built-in)* | Testing only |
 
 ## Policies

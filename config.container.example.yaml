@@ -42,6 +42,17 @@ providers:
   #     gpt-4o: {}
   #     gpt-4o-mini: {}
 
+  # ── RHEL AI Inference Server ─────────────────────────────────────────
+  # For local or OpenShift-hosted RHEL AI endpoints.
+  # Omit api_key_env_var_name if the server has no --api-key set.
+
+  # rhel-ai-local:
+  #   engine: rhel-ai
+  #   base_url: "http://host.containers.internal:8000/v1"
+  #   api_key_env_var_name: "RHEL_AI_API_KEY"
+  #   models:
+  #     RedHatAI/Llama-3.2-1B-Instruct-FP8: {}
+
   # ── Local models (no API key required) ──────────────────────────────
   # To reach Ollama from inside the container, use the host network
   # address or run with --network=host.

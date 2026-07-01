@@ -518,6 +518,15 @@ const ENGINES: Record<string, EngineInfo> = {
     createModel: (modelId, config) =>
       openaiCompatibleProvider('meta', 'https://api.llama.com/compat/v1/', config, modelId),
   },
+  'rhel-ai': {
+    id: 'rhel-ai',
+    requiresKey: false,
+    defaultBaseUrl: 'http://127.0.0.1:8000/v1',
+    defaultEnvVar: 'RHEL_AI_API_KEY',
+    supportsTools: true,
+    createModel: (modelId, config) =>
+      openaiCompatibleProvider('rhel-ai', 'http://127.0.0.1:8000/v1', config, modelId),
+  },
 };
 
 /** Index for O(1) lookup by engine ID */

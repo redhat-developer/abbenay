@@ -19,7 +19,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 | Goal | Status | Implementation |
 |------|--------|----------------|
 | Decouple Provider Logic | ✅ Complete | TypeScript daemon handles all provider communication; clients use gRPC |
-| Enable BYOM | ✅ Complete | 19 providers supported including local (Ollama) and custom endpoints |
+| Enable BYOM | ✅ Complete | 20 providers supported including local (Ollama, RHEL AI) and custom endpoints |
 | Centralize Configuration | ✅ Complete | YAML config files at user/workspace level; web dashboard for easy editing |
 | Accelerate AI Infusion | ✅ Complete | Ready-made gRPC API; VS Code integration via Language Model API |
 
@@ -27,7 +27,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 
 ## Supported Engines
 
-19 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
+20 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
 
 | Engine | ID | Tool Calling | SDK Package |
 |--------|----|-------------|-------------|
@@ -49,6 +49,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 | LM Studio | `lmstudio` | Yes | `@ai-sdk/openai-compatible` |
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` |
+| RHEL AI | `rhel-ai` | Yes | `@ai-sdk/openai-compatible` |
 | Mock | `mock` | No | *(built-in)* |
 
 **Notes:** 
@@ -320,7 +321,11 @@ session sidebar, context window compression.
 - Single API key for all providers
 - Model IDs prefixed with provider
 
-### RHEL AI / vLLM / TGI
-- Use OpenAI-compatible provider
-- Set custom API base URL
+### RHEL AI
+- Dedicated `rhel-ai` engine — default endpoint `http://127.0.0.1:8000/v1`
+- API key optional (depends on server `--api-key` flag)
+- See [RHEL_AI.md](RHEL_AI.md) for setup, authentication, and OpenShift routes
+
+### vLLM / TGI
+- Use OpenAI-compatible provider (e.g. `azure` engine with custom `base_url`)
 - API key optional depending on server config

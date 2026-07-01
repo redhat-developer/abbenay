@@ -104,6 +104,7 @@ If neither option is set, the engine's default environment variable is checked (
 | LM Studio | `lmstudio` | *(none needed)* | No |
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` | Yes |
 | Meta (Llama) | `meta` | `META_API_KEY` | Yes |
+| RHEL AI | `rhel-ai` | `RHEL_AI_API_KEY` | No |
 | Mock (Testing) | `mock` | *(none needed)* | No |
 
 ## Per-Model Configuration
@@ -248,6 +249,22 @@ providers:
     models:
       claude-sonnet-4-20250514: {}
 ```
+
+### RHEL AI (Local Inference Server)
+
+```yaml
+providers:
+  rhel-ai-local:
+    engine: rhel-ai
+    models:
+      RedHatAI/Llama-3.2-1B-Instruct-FP8: {}
+```
+
+No API key is needed when the server runs without `--api-key`. If auth is
+enabled, add `api_key_env_var_name: "RHEL_AI_API_KEY"` and set the env var.
+
+Default endpoint: `http://127.0.0.1:8000/v1`. See [RHEL_AI.md](RHEL_AI.md)
+for full setup including OpenShift routes and TLS.
 
 ### Vertex-Hosted Anthropic (Bearer Token Proxy)
 
