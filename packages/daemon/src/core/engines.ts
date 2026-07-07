@@ -36,6 +36,8 @@ interface ProviderFactoryConfig {
 export interface EngineInfo {
   /** Engine type identifier (e.g., "openrouter", "openai") */
   id: string;
+  /** Human-friendly name for UI display (falls back to id if omitted) */
+  displayName?: string;
   /** Whether this engine requires an API key */
   requiresKey: boolean;
   /** Default base URL (undefined if user must set) */
@@ -520,6 +522,7 @@ const ENGINES: Record<string, EngineInfo> = {
   },
   redhat: {
     id: 'redhat',
+    displayName: 'Red Hat AI',
     requiresKey: false,
     defaultBaseUrl: 'http://127.0.0.1:8000/v1',
     defaultEnvVar: 'REDHAT_AI_API_KEY',

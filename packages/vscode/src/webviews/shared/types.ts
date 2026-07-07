@@ -77,6 +77,7 @@ export interface ProviderTemplateInfo {
 
 export interface EngineInfo {
   id: string;
+  displayName?: string;
   requiresKey: boolean;
   defaultBaseUrl?: string;
   defaultEnvVar?: string;

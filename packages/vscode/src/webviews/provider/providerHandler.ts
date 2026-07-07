@@ -160,6 +160,7 @@ async function handleGetEngines(webview: vscode.Webview, client: DaemonClient): 
 
   const engineInfo: EngineInfo[] = engines.map((e) => ({
     id: e.id,
+    displayName: (e as { displayName?: string }).displayName,
     requiresKey: e.requiresKey,
     defaultBaseUrl: e.defaultBaseUrl,
     defaultEnvVar: e.defaultEnvVar,
