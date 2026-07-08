@@ -394,6 +394,7 @@ program
     const engines = getEngines()
       .map((e) => ({
         id: e.id,
+        displayName: e.displayName || e.id,
         requiresKey: e.requiresKey,
         defaultBaseUrl: e.defaultBaseUrl,
         supportsTools: e.supportsTools,
@@ -405,11 +406,12 @@ program
     } else {
       const rows = engines.map(e => [
         e.id,
+        e.displayName !== e.id ? e.displayName : '',
         e.requiresKey ? 'key-required' : 'keyless',
         e.supportsTools ? 'yes' : 'no',
         e.defaultBaseUrl || '-',
       ]);
-      printTable(['Engine', 'Auth', 'Tools', 'Base URL'], rows);
+      printTable(['Engine', 'Display Name', 'Auth', 'Tools', 'Base URL'], rows);
     }
   });
 

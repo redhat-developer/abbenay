@@ -19,7 +19,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 | Goal | Status | Implementation |
 |------|--------|----------------|
 | Decouple Provider Logic | ✅ Complete | TypeScript daemon handles all provider communication; clients use gRPC |
-| Enable BYOM | ✅ Complete | 19 providers supported including local (Ollama) and custom endpoints |
+| Enable BYOM | ✅ Complete | 20 providers supported including local (Ollama, Red Hat AI) and custom endpoints |
 | Centralize Configuration | ✅ Complete | YAML config files at user/workspace level; web dashboard for easy editing |
 | Accelerate AI Infusion | ✅ Complete | Ready-made gRPC API; VS Code integration via Language Model API |
 
@@ -27,7 +27,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 
 ## Supported Engines
 
-19 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
+20 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
 
 | Engine | ID | Tool Calling | SDK Package |
 |--------|----|-------------|-------------|
@@ -49,6 +49,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 | LM Studio | `lmstudio` | Yes | `@ai-sdk/openai-compatible` |
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` |
+| Red Hat AI | `redhat` | Yes | `@ai-sdk/openai-compatible` |
 | Mock | `mock` | No | *(built-in)* |
 
 **Notes:** 
@@ -238,7 +239,7 @@ providers:
 | Criterion | Status | Notes |
 |-----------|--------|-------|
 | Discover/connect to Ollama | ✅ Complete | Auto-connects to localhost:11434 |
-| OpenAI-compatible endpoints | ✅ Complete | vLLM, RHEL AI, TGI all work |
+| OpenAI-compatible endpoints | ✅ Complete | vLLM, Red Hat AI, TGI all work |
 | Secure API key storage | ✅ Complete | System keychain + env var support |
 | Dynamic model discovery | ✅ Complete | Models fetched from provider APIs |
 
@@ -299,7 +300,7 @@ session sidebar, context window compression.
 1. **Public Repository** - Move to GitHub organization
 2. **Marketplace Publishing** - Submit VS Code extension
 3. **PyPI Publishing** - Publish Python gRPC client
-4. **RHEL AI Testing** - Validate with RHEL AI endpoints
+4. **Red Hat AI Testing** - Validate with Red Hat AI endpoints
 5. **Ansible Extension Integration** - Enable Ansible extension to use Abbenay
 
 ---
@@ -320,7 +321,12 @@ session sidebar, context window compression.
 - Single API key for all providers
 - Model IDs prefixed with provider
 
-### RHEL AI / vLLM / TGI
-- Use OpenAI-compatible provider
-- Set custom API base URL
+### Red Hat AI
+- Dedicated `redhat` engine — Inference Server or OpenShift AI MaaS
+- Default endpoint `http://127.0.0.1:8000/v1` (Inference Server); MaaS users override `base_url`
+- API key optional for Inference Server; typically required for MaaS
+- See [REDHAT_AI.md](REDHAT_AI.md) for full setup
+
+### vLLM / TGI
+- Use OpenAI-compatible provider (e.g. `azure` engine with custom `base_url`)
 - API key optional depending on server config

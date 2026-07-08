@@ -156,10 +156,10 @@ These tools are not mutually exclusive. Example combinations:
 
 ## Footnotes
 
-¹ Abbenay ships 19 pre-configured engines (OpenAI, Anthropic, Gemini,
+¹ Abbenay ships 20 pre-configured engines (OpenAI, Anthropic, Gemini,
 Mistral, xAI, DeepSeek, Groq, Cohere, Amazon Bedrock, Fireworks,
 Together AI, Perplexity, Azure, OpenRouter, Ollama, LM Studio, Cerebras,
-Meta, Mock). Any provider that exposes an OpenAI-compatible REST API can
+Meta, Red Hat AI, Mock). Any provider that exposes an OpenAI-compatible REST API can
 be used by pointing a configured engine's `base_url` at it — no code
 changes required.
 

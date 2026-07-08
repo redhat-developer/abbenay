@@ -800,6 +800,7 @@ message Engine {
   bool requires_key = 2;               // Whether this engine needs an API key
   optional string default_base_url = 3; // Default API base URL
   optional string default_env_var = 4;  // Default environment variable for API key
+  optional string display_name = 5;    // Human-friendly name for UI display
 }
 
 //

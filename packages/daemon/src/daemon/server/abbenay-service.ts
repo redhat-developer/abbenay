@@ -931,6 +931,7 @@ export function createAbbenayService(state: DaemonState) {
       callback(null, {
         engines: engines.map(e => ({
           id: e.id,
+          display_name: e.displayName,
           requires_key: e.requiresKey,
           default_base_url: e.defaultBaseUrl,
           default_env_var: e.defaultEnvVar,
