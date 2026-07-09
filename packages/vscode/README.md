@@ -174,7 +174,7 @@ The extension is a thin gRPC client with these responsibilities:
 | **Daemon Client** | Connects to the Abbenay daemon via Unix socket |
 | **Backchannel** | Provides workspace path to daemon for workspace-level config |
 | **LM Provider** | Implements `LanguageModelChatProvider` to register models with VS Code |
-| **Status Bar** | Shows connection status |
+| **Chat Sidebar** | Provides chat view in the activity bar |
 
 The extension does **not**:
 - Store secrets (secrets are in system keychain)

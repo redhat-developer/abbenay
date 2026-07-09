@@ -248,7 +248,6 @@ providers:
 | Criterion | Status | Notes |
 |-----------|--------|-------|
 | VS Code Language Model API | ✅ Complete | `vscode.lm.selectChatModels({ vendor: 'abbenay' })` |
-| Connection status | ✅ Complete | Status bar item + status panel |
 | Web-based configuration | ✅ Complete | Dashboard at localhost:8787 |
 
 ---
