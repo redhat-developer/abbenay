@@ -14,7 +14,6 @@ import { ProviderPanel } from './webviews/provider/ProviderPanel';
 // Default dashboard URL - daemon serves web UI here
 const DASHBOARD_URL = 'http://localhost:8787';
 
-let daemonConnected = false;
 let languageModelProvider: AbbenayLanguageModelProvider | null = null;
 let backchannelHandler: BackchannelHandler | null = null;
 let chatViewProvider: ChatViewProvider | null = null;
@@ -33,7 +32,6 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.info('[Daemon] Connecting to Abbenay daemon...');
     await initializeDaemon();
     logger.info('[Daemon] Connected and registered');
-    daemonConnected = true;
     
     // Check daemon health
     const client = getDaemonClient();
@@ -89,19 +87,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register commands
   registerCommands(context, chatViewProvider);
-
-  // Create status bar item
-  const statusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100
-  );
-  statusBarItem.text = daemonConnected ? '$(sparkle) Abbenay' : '$(warning) Abbenay';
-  statusBarItem.tooltip = daemonConnected 
-    ? 'Abbenay Daemon Connected - Click to open dashboard' 
-    : 'Abbenay Daemon Not Connected';
-  statusBarItem.command = 'abbenay.openDashboard';
-  statusBarItem.show();
-  context.subscriptions.push(statusBarItem);
 
   // Watch for configuration changes
   context.subscriptions.push(

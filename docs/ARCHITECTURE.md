@@ -129,7 +129,7 @@ The extension acts as a **thin gRPC client** to the daemon:
 4. Opens web dashboard on command
 
 **Key files:**
-- `extension.ts` - Activation, commands, status bar
+- `extension.ts` - Activation, commands
 - `daemon/client.ts` - gRPC client wrapper
 - `daemon/backchannel.ts` - Bidirectional stream handler
 - `providers/AbbenayLanguageModelProvider.ts` - VS Code LM API integration
