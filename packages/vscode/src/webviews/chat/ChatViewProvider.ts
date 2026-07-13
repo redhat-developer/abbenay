@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { DaemonClient } from '../../daemon/client';
 import { getWebviewContent } from '../shared/getWebviewContent';
-import { ChatToHostMessage } from '../shared/types';
+import { ChatToHostMessage, HostToChatMessage } from '../shared/types';
 import { handleChatMessage, cancelActiveStream } from './chatHandler';
 import { getLogger } from '../../utils/logger';
 
@@ -73,5 +73,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this._view.show(true);
     }
+  }
+
+  // Inject a prompt into the chat panel.
+  public async injectPrompt(message: string): Promise<void> {
+    if (!this._view) {
+      this._logger.info('[ChatView] View not resolved yet — focusing to trigger resolve');
+      await vscode.commands.executeCommand('abbenay.chatView.focus');
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (!this._view) {
+      this._logger.warn('[ChatView] Cannot inject prompt — view still not resolved after focus');
+      return;
+    }
+
+    this._view.show(true);
+    const msg: HostToChatMessage = { type: 'injectPrompt', message };
+    this._view.webview.postMessage(msg);
   }
 }
