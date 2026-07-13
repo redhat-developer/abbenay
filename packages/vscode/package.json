@@ -58,6 +58,11 @@
         "title": "Configure Providers",
         "category": "Abbenay",
         "icon": "$(gear)"
+      },
+      {
+        "command": "abbenay.chat.send",
+        "title": "Send Message to Chat",
+        "category": "Abbenay"
       }
     ],
     "viewsContainers": {

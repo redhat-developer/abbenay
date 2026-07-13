@@ -32,6 +32,7 @@ suite('Extension Smoke Tests', () => {
       'abbenay.daemonStatus',
       'abbenay.openDashboard',
       'abbenay.configureProvider',
+      'abbenay.chat.send',
     ];
 
     for (const cmd of expected) {
