@@ -52,6 +52,7 @@ export type HostToChatMessage =
   | { type: 'toolCall'; id: string; name: string; args: string }
   | { type: 'toolResult'; callId: string; name: string; content: string; isError: boolean }
   | { type: 'toolApprovalRequest'; requestId: string; toolName: string; promptText: string }
+  | { type: 'injectPrompt'; message: string }
   | { type: 'error'; message: string; context?: string };
 
 // ─── Shared view types (serializable subsets of proto types) ────────
