@@ -141,7 +141,7 @@ let baseUrl: string;
 
 beforeAll(async () => {
   const state = createMockState();
-  const app = createWebApp(state);
+  const app = createWebApp(state, { apiToken: 'test-integration-token', skipConfig: true });
   
   const port = await new Promise<number>((resolve) => {
     httpServer = app.listen(0, () => {
@@ -186,6 +186,7 @@ function postSSE(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': 'Bearer test-integration-token',
         'Content-Length': Buffer.byteLength(postData),
       },
     }, (res) => {
@@ -259,7 +260,7 @@ function httpRequest(
     const urlObj = new URL(url);
     const postData = body ? JSON.stringify(body) : '';
     
-    const headers: Record<string, string> = { 'Connection': 'close' };
+    const headers: Record<string, string> = { 'Connection': 'close', Authorization: 'Bearer test-integration-token' };
     if (body) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = String(Buffer.byteLength(postData));

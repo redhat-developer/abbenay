@@ -4,12 +4,73 @@
  * Each session is stored as `<id>.json` in the sessions directory.
  * An `index.json` file provides fast listing without reading every session file.
  *
+ * Sessions are owned by a principal string (e.g. "local", "http:<hash>",
+ * "consumer:apme"). Callers must filter/check ownership — see
+ * resolveSessionOwner / assertSessionOwner.
+ *
  * Core layer (no transport dependencies).
  */
 
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ChatMessage } from './engines.js';
+
+// ── Ownership ───────────────────────────────────────────────────────────
+
+/** Owner for CLI / local unix-socket / unauthenticated-local access. */
+export const LOCAL_SESSION_OWNER = 'local';
+
+/** Optional HTTP sub-owner header (scopes sessions under the API token). */
+export const SESSION_OWNER_HEADER = 'x-abbenay-session-owner';
+
+const OWNER_CLAIM_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/**
+ * Stable HTTP principal derived from the API token fingerprint.
+ * Different tokens get different owners; the same token always matches.
+ */
+export function ownerIdFromHttpToken(token: string): string {
+  const hash = crypto.createHash('sha256').update(token, 'utf8').digest('hex').slice(0, 16);
+  return `http:${hash}`;
+}
+
+/**
+ * Build the HTTP session owner from the API token and optional claim header.
+ */
+export function resolveHttpSessionOwner(
+  apiToken: string,
+  ownerClaim?: string | null,
+): string {
+  const base = ownerIdFromHttpToken(apiToken);
+  const claim = ownerClaim?.trim().toLowerCase();
+  if (claim && OWNER_CLAIM_RE.test(claim)) {
+    return `${base}:${claim}`;
+  }
+  return base;
+}
+
+/** Normalize owner for a session (legacy sessions without owner → local). */
+export function resolveSessionOwner(session: { owner?: string }): string {
+  return session.owner?.trim() || LOCAL_SESSION_OWNER;
+}
+
+/**
+ * Throw if the caller does not own the session.
+ * Uses "not found" wording to avoid leaking existence across owners.
+ */
+export function assertSessionOwner(
+  session: { id: string; owner?: string },
+  owner: string,
+): void {
+  if (resolveSessionOwner(session) !== owner) {
+    throw new Error(`Session not found: ${session.id}`);
+  }
+}
+
+export function isValidOwnerClaim(claim: string): boolean {
+  return OWNER_CLAIM_RE.test(claim.trim().toLowerCase());
+}
 
 // ── Data types ──────────────────────────────────────────────────────────
 
@@ -22,6 +83,11 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   metadata: Record<string, string>;
+  /**
+   * Principal that owns this session (e.g. "local", "http:<hash>").
+   * Missing on legacy sessions — treated as LOCAL_SESSION_OWNER.
+   */
+  owner?: string;
   parentSessionId?: string;
   forkPoint?: number;
   summary?: string;
@@ -37,12 +103,16 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   summary?: string;
+  /** Principal that owns this session (legacy entries omit → treated as local). */
+  owner?: string;
 }
 
 export interface SessionListOptions {
   model?: string;
   limit?: number;
   offset?: number;
+  /** When set, only return sessions owned by this principal. */
+  owner?: string;
 }
 
 export interface SessionListResult {
@@ -75,12 +145,14 @@ export class SessionStore {
     title?: string,
     policy?: string,
     metadata?: Record<string, string>,
+    owner: string = LOCAL_SESSION_OWNER,
   ): Promise<Session> {
     return this.withWriteLock(async () => {
       await this.ensureDir();
 
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const sessionOwner = owner.trim() || LOCAL_SESSION_OWNER;
 
       const session: Session = {
         id,
@@ -91,6 +163,7 @@ export class SessionStore {
         createdAt: now,
         updatedAt: now,
         metadata: metadata || {},
+        owner: sessionOwner,
       };
 
       await this.writeSession(session);
@@ -101,6 +174,7 @@ export class SessionStore {
         messageCount: 0,
         createdAt: now,
         updatedAt: now,
+        owner: sessionOwner,
       });
 
       return session;
@@ -123,12 +197,28 @@ export class SessionStore {
     return session;
   }
 
+  /**
+   * Get a session only if it belongs to `owner`.
+   * Throws Session not found when missing or owned by someone else.
+   */
+  async getOwned(id: string, owner: string, includeMessages = true): Promise<Session> {
+    const session = await this.get(id, includeMessages);
+    assertSessionOwner(session, owner);
+    return session;
+  }
+
   async list(options?: SessionListOptions): Promise<SessionListResult> {
     const index = await this.readIndex();
     let sessions = index.sessions;
 
     // Sort by updatedAt descending
     sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+    if (options?.owner !== undefined) {
+      sessions = sessions.filter(
+        (s) => resolveSessionOwner(s) === options.owner,
+      );
+    }
 
     if (options?.model) {
       sessions = sessions.filter((s) => s.model === options.model);
@@ -160,6 +250,13 @@ export class SessionStore {
       await fs.promises.unlink(filePath);
       await this.removeFromIndex(id);
     });
+  }
+
+  /** Delete only if owned by `owner`. */
+  async deleteOwned(id: string, owner: string): Promise<void> {
+    const session = await this.get(id, false);
+    assertSessionOwner(session, owner);
+    await this.delete(id);
   }
 
   async appendMessage(id: string, message: ChatMessage): Promise<Session> {

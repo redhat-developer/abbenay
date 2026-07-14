@@ -9,7 +9,7 @@
  * - Stopped via Ctrl+C, `abbenay web` exit, or gRPC StopWebServer
  */
 
-import express, { type Express } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import * as path from 'node:path';
@@ -22,8 +22,24 @@ import { maybeSummarize, generateSessionSummary } from '../../core/session-summa
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
 import { getEngines, getProviderTemplates } from '../../core/engines.js';
-import { DEFAULT_WEB_PORT } from '../../core/constants.js';
+import { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from '../../core/constants.js';
 import { registerOpenAIRoutes } from './openai-compat.js';
+import {
+  createAuthMiddleware,
+  createCorsMiddleware,
+  resolveHttpSecurity,
+  setAuthCookies,
+  getCookie,
+  API_TOKEN_COOKIE,
+  CSRF_COOKIE,
+  isLocalhostBind,
+  type WebSecurityOptions,
+  type ResolvedHttpSecurity,
+  type RequestWithOwner,
+} from './http-security.js';
+import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
+
+export type { WebSecurityOptions, ResolvedHttpSecurity } from './http-security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,27 +73,23 @@ const STATIC_PATH = resolveStaticPath();
 
 /**
  * Create the Express application with direct DaemonState access.
- * 
+ *
  * Used both for production (embedded in daemon) and testing.
+ * All /api/*, /v1/*, and /mcp routes require Bearer (or cookie) auth unless
+ * ABBENAY_HTTP_AUTH disables authentication for local development.
  */
-export function createWebApp(state: DaemonState): Express {
+export function createWebApp(state: DaemonState, options?: WebSecurityOptions): Express {
   const app = express();
-  
+  const port = options?.port ?? DEFAULT_WEB_PORT;
+  const security = resolveHttpSecurity(port, options?.host, options);
+  app.locals.httpSecurity = security;
+
   // Parse JSON bodies
   app.use(express.json());
-  
-  // CORS for local development
-  app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(200);
-      return;
-    }
-    next();
-  });
-  
+
+  // CORS — explicit allowlist only (never *)
+  app.use(createCorsMiddleware(security.corsOrigins));
+
   // Prevent browser caching of HTML so dashboard always serves fresh content
   app.use((req, res, next) => {
     if (req.path.endsWith('.html') || req.path === '/') {
@@ -86,15 +98,82 @@ export function createWebApp(state: DaemonState): Express {
     next();
   });
 
-  // Serve static files
-  if (fs.existsSync(STATIC_PATH)) {
-    app.use(express.static(STATIC_PATH));
-  }
-  
-  // ─── API Routes ────────────────────────────────────────────────────────
-  
+  const isLoopbackClient = (req: Request): boolean => {
+    const addr = req.socket.remoteAddress || '';
+    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+  };
+
   /**
-   * GET /api/health - Health check
+   * Serve dashboard HTML. Establishes SameSite auth cookies when auth is
+   * enabled and:
+   * - ?token=<apiToken> is present, or
+   * - the client is loopback (safe with default 127.0.0.1 bind)
+   *
+   * The API token is never embedded in HTML for remote clients; the dashboard
+   * authenticates via HttpOnly cookie + CSRF header (and API clients use Bearer).
+   */
+  const serveDashboardHtml = (req: Request, res: Response): void => {
+    const indexPath = path.join(STATIC_PATH, 'index.html');
+    if (!fs.existsSync(indexPath)) {
+      res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);
+      return;
+    }
+
+    if (!security.authEnabled) {
+      res.type('html').send(fs.readFileSync(indexPath, 'utf-8'));
+      return;
+    }
+
+    const q = typeof req.query.token === 'string' ? req.query.token : undefined;
+    if (q) {
+      if (q !== security.apiToken) {
+        res.status(401).send('Invalid token');
+        return;
+      }
+      setAuthCookies(res, security.apiToken);
+      res.redirect(302, '/');
+      return;
+    }
+
+    const hasAuthCookie = getCookie(req, API_TOKEN_COOKIE) === security.apiToken;
+    const mayEstablishSession = hasAuthCookie || isLoopbackClient(req) || isLocalhostBind(security.host);
+
+    let csrf = getCookie(req, CSRF_COOKIE);
+    if (mayEstablishSession && (!hasAuthCookie || !csrf)) {
+      csrf = setAuthCookies(res, security.apiToken);
+    }
+
+    let html = fs.readFileSync(indexPath, 'utf-8');
+    // Inject CSRF for dashboard mutating requests; never inject the API token.
+    const inject = `<script>window.__ABBENAY_CSRF__=${JSON.stringify(csrf || '')};</script>`;
+    html = html.includes('</head>')
+      ? html.replace('</head>', `${inject}</head>`)
+      : `${inject}${html}`;
+    res.type('html').send(html);
+  };
+
+  app.get('/', serveDashboardHtml);
+  app.get('/index.html', serveDashboardHtml);
+
+  // Serve other static files (CSS/JS assets next to index.html)
+  if (fs.existsSync(STATIC_PATH)) {
+    app.use(express.static(STATIC_PATH, { index: false }));
+  }
+
+  // Auth gate for all API / OpenAI-compat / MCP routes (no-op when auth disabled)
+  const requireAuth = createAuthMiddleware(
+    security.apiToken,
+    security.corsOrigins,
+    security.authEnabled,
+  );
+  app.use('/api', requireAuth);
+  app.use('/v1', requireAuth);
+  app.use('/mcp', requireAuth);
+
+  // ─── API Routes ────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/health - Health check (requires auth; pass Bearer for probes)
    */
   app.get('/api/health', (req, res) => {
     res.json({
@@ -896,6 +975,9 @@ export function createWebApp(state: DaemonState): Express {
 
   // ── Session Management ───────────────────────────────────────────────
 
+  const sessionOwner = (req: Request): string =>
+    (req as RequestWithOwner).abbenayOwner || LOCAL_SESSION_OWNER;
+
   app.post('/api/sessions', async (req, res) => {
     try {
       const { model, title, policy, metadata } = req.body;
@@ -903,7 +985,13 @@ export function createWebApp(state: DaemonState): Express {
         res.status(400).json({ error: 'model is required' });
         return;
       }
-      const session = await state.sessionStore.create(model, title, policy, metadata);
+      const session = await state.sessionStore.create(
+        model,
+        title,
+        policy,
+        metadata,
+        sessionOwner(req),
+      );
       res.json(session);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -934,7 +1022,12 @@ export function createWebApp(state: DaemonState): Express {
         }
       }
 
-      const result = await state.sessionStore.list({ model, limit, offset });
+      const result = await state.sessionStore.list({
+        model,
+        limit,
+        offset,
+        owner: sessionOwner(req),
+      });
       res.json(result);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -946,7 +1039,11 @@ export function createWebApp(state: DaemonState): Express {
   app.get('/api/sessions/:id', async (req, res) => {
     try {
       const includeMessages = req.query.includeMessages !== 'false';
-      const session = await state.sessionStore.get(req.params.id, includeMessages);
+      const session = await state.sessionStore.getOwned(
+        req.params.id,
+        sessionOwner(req),
+        includeMessages,
+      );
       res.json(session);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -961,7 +1058,7 @@ export function createWebApp(state: DaemonState): Express {
 
   app.delete('/api/sessions/:id', async (req, res) => {
     try {
-      await state.sessionStore.delete(req.params.id);
+      await state.sessionStore.deleteOwned(req.params.id, sessionOwner(req));
       res.json({ success: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -976,7 +1073,7 @@ export function createWebApp(state: DaemonState): Express {
 
   app.get('/api/sessions/:id/summary', async (req, res) => {
     try {
-      const session = await state.sessionStore.get(req.params.id, true);
+      const session = await state.sessionStore.getOwned(req.params.id, sessionOwner(req), true);
       const userCount = session.messages.filter((m) => m.role === 'user').length;
 
       if (session.summary && session.summaryMessageCount === userCount) {
@@ -1004,6 +1101,7 @@ export function createWebApp(state: DaemonState): Express {
   app.post('/api/sessions/:id/chat', async (req, res) => {
     const sessionId = req.params.id;
     const { message } = req.body;
+    const owner = sessionOwner(req);
 
     if (!message || !message.content) {
       res.status(400).json({ error: 'message with content is required' });
@@ -1017,7 +1115,7 @@ export function createWebApp(state: DaemonState): Express {
 
     let session;
     try {
-      session = await state.sessionStore.get(sessionId, true);
+      session = await state.sessionStore.getOwned(sessionId, owner, true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('not found') || msg.includes('Invalid session ID')) {
@@ -1124,44 +1222,123 @@ export function createWebApp(state: DaemonState): Express {
 
 let _httpServer: http.Server | null = null;
 let _webPort: number | null = null;
+let _webHost: string | null = null;
 let _lastApp: Express | null = null;
+let _lastSecurity: ResolvedHttpSecurity | null = null;
 
 /**
  * Start the embedded web server in the daemon process.
- * Returns the actual port and URL.
+ * Returns the actual port, URL, app, and resolved security settings.
+ *
+ * Binds to 127.0.0.1 by default. Non-localhost bind requires explicit opt-in
+ * via `host`, `ABBENAY_HTTP_HOST`, or `server.host` in config.yaml.
  */
 export async function startEmbeddedWebServer(
   state: DaemonState,
   port: number = DEFAULT_WEB_PORT,
-): Promise<{ port: number; url: string; app: Express }> {
+  host?: string,
+  options?: WebSecurityOptions,
+): Promise<{ port: number; url: string; app: Express; security: ResolvedHttpSecurity }> {
   if (_httpServer) {
-    return { port: _webPort!, url: `http://localhost:${_webPort}`, app: _lastApp! };
+    return {
+      port: _webPort!,
+      url: `http://${_webHost === '0.0.0.0' ? '127.0.0.1' : _webHost}:${_webPort}`,
+      app: _lastApp!,
+      security: _lastSecurity!,
+    };
   }
-  
-  const app = createWebApp(state);
-  
+
+  const security = resolveHttpSecurity(port, host, options);
+  const bindHost = security.host || DEFAULT_HTTP_HOST;
+  const app = createWebApp(state, {
+    ...options,
+    apiToken: security.apiToken,
+    port,
+    host: bindHost,
+    corsOrigins: security.corsOrigins,
+    skipConfig: true,
+  });
+
   // SPA fallback (serve index.html for non-API routes)
   app.get('*', (req, res) => {
     const indexPath = path.join(STATIC_PATH, 'index.html');
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
+    if (!fs.existsSync(indexPath)) {
       res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);
+      return;
     }
+    if (!security.authEnabled) {
+      res.type('html').send(fs.readFileSync(indexPath, 'utf-8'));
+      return;
+    }
+    const addr = req.socket.remoteAddress || '';
+    const loopback = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+    const hasAuthCookie = getCookie(req, API_TOKEN_COOKIE) === security.apiToken;
+    const mayEstablish = hasAuthCookie || loopback || isLocalhostBind(bindHost);
+    let csrf = getCookie(req, CSRF_COOKIE);
+    if (mayEstablish && (!hasAuthCookie || !csrf)) {
+      csrf = setAuthCookies(res, security.apiToken);
+    }
+    let html = fs.readFileSync(indexPath, 'utf-8');
+    const inject = `<script>window.__ABBENAY_CSRF__=${JSON.stringify(csrf || '')};</script>`;
+    html = html.includes('</head>')
+      ? html.replace('</head>', `${inject}</head>`)
+      : `${inject}${html}`;
+    res.type('html').send(html);
   });
-  
+
   _webPort = port;
-  
+  _webHost = bindHost;
+
+  if (!security.authEnabled) {
+    console.warn(
+      '[Web] WARNING: HTTP authentication is DISABLED (ABBENAY_HTTP_AUTH). ' +
+      'Any local process (and any site that can reach this bind address) can ' +
+      'read/write secrets, config, chat, MCP, and sessions. ' +
+      'Re-enable auth for anything beyond throwaway local development.',
+    );
+    if (!isLocalhostBind(bindHost)) {
+      console.warn(
+        '[Web] CRITICAL: auth is disabled AND HTTP is bound beyond loopback ' +
+        `(${bindHost}). This exposes an unauthenticated API on the network.`,
+      );
+    }
+  }
+
+  if (!isLocalhostBind(bindHost)) {
+    console.warn(
+      `[Web] WARNING: HTTP server is bound to ${bindHost} — accessible beyond loopback. ` +
+      'Ensure ABBENAY_API_TOKEN (or server.api_token) is set and CORS origins are restricted. ' +
+      'Prefer --host 127.0.0.1 unless you intentionally expose the API.',
+    );
+  }
+
   await new Promise<void>((resolve, reject) => {
-    _httpServer = app.listen(port, () => {
-      console.log(`[Web] Dashboard started: http://localhost:${port}`);
+    _httpServer = app.listen(port, bindHost, () => {
+      const displayHost = bindHost === '0.0.0.0' ? '127.0.0.1' : bindHost;
+      console.log(`[Web] Dashboard started: http://${displayHost}:${port} (bind ${bindHost})`);
+      if (security.authEnabled) {
+        if (security.generated) {
+          console.log(`[Web] Generated API token and saved to config dir (http-api-token).`);
+        }
+        console.log(`[Web] Authenticate with: Authorization: Bearer <token>`);
+        console.log(`[Web] Dashboard login URL: http://${displayHost}:${port}/?token=<token>`);
+      } else {
+        console.log(`[Web] HTTP auth disabled — requests are accepted without a Bearer token`);
+      }
       resolve();
     });
     _httpServer.on('error', reject);
   });
-  
+
   _lastApp = app;
-  return { port, url: `http://localhost:${port}`, app };
+  _lastSecurity = security;
+  const displayHost = bindHost === '0.0.0.0' ? '127.0.0.1' : bindHost;
+  return {
+    port,
+    url: `http://${displayHost}:${port}`,
+    app,
+    security,
+  };
 }
 
 /**
@@ -1179,6 +1356,9 @@ export async function stopEmbeddedWebServer(): Promise<void> {
   
   _httpServer = null;
   _webPort = null;
+  _webHost = null;
+  _lastApp = null;
+  _lastSecurity = null;
 }
 
 /**

@@ -407,3 +407,43 @@ fine for early adopters but a barrier to organic adoption. Publishing to both
 VS Code Marketplace and OpenVSX ensures coverage for VS Code and compatible
 editors (Eclipse Theia, VSCodium, Gitpod). Gating alpha releases prevents
 incomplete builds from reaching end users.
+
+---
+
+## DR-029: Secure-by-default HTTP API
+
+**Date:** 2026-07-14
+**Decision:** Require Bearer (or SameSite cookie) authentication on all HTTP
+routes (`/api/*`, `/v1/*`, `/mcp`) by default, restrict CORS to an explicit
+origin allowlist (never `*`), and bind the HTTP server to `127.0.0.1` by
+default. Non-localhost bind requires explicit opt-in (`--host`,
+`ABBENAY_HTTP_HOST`, or `server.host`). The API token resolves from
+`ABBENAY_API_TOKEN` / `server.api_token` / `server.api_token_env`, or is
+auto-generated and persisted as `http-api-token` in the config directory.
+The dashboard uses `SameSite=Strict` cookies plus a CSRF token for browser
+state-changing requests. For local development only, `ABBENAY_HTTP_AUTH=0`
+(or `false`/`off`/`no`/`disabled`) turns auth off and logs a loud warning;
+it must not be combined with a non-loopback bind.
+**Rationale:** The previous defaults (no auth, `Access-Control-Allow-Origin: *`,
+`app.listen(port)` → `0.0.0.0`) allowed any website the user visited to
+cross-origin call the daemon and read/write secrets, config, chat, MCP, and
+sessions. Secure-by-default closes that gap while keeping intentional network
+exposure possible for containers with an explicit opt-in and a strong token.
+An env-var escape hatch keeps local DX workable without baking an insecure
+default back into production paths.
+
+---
+
+## DR-030: Session ownership principals
+
+**Date:** 2026-07-14
+**Decision:** Stamp every session with an `owner` principal and enforce
+owner-scoped list/get/delete/chat on HTTP and gRPC. Principals are
+`local` (CLI / local gRPC), `http:<token-fingerprint>` (HTTP API token, with
+optional `X-Abbenay-Session-Owner` claim), or `consumer:<name>` (gRPC consumer
+token). Legacy sessions without `owner` are treated as `local`. Cross-owner
+access returns "not found".
+**Rationale:** Authentication alone (DR-029) blocks anonymous access but does
+not isolate sessions between authenticated principals sharing one daemon.
+Ownership closes H9: HTTP clients, CLI, and named consumers cannot enumerate
+or read each other's conversation history.

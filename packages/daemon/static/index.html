@@ -1303,6 +1303,14 @@
 </div>
 
 <script>
+/** Authenticated same-origin fetch: sends cookies + CSRF for mutating requests. */
+function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const csrf = typeof window.__ABBENAY_CSRF__ === 'string' ? window.__ABBENAY_CSRF__ : '';
+  if (csrf) headers.set('X-CSRF-Token', csrf);
+  return fetch(url, { ...options, credentials: 'same-origin', headers });
+}
+
 function dashboard() {
   return {
     loading: false,
@@ -1368,18 +1376,18 @@ function dashboard() {
     // ── Init ──
     async init() {
       try {
-        const resp = await fetch('/api/config?location=user');
+        const resp = await apiFetch('/api/config?location=user');
         const data = await resp.json();
         this.userConfigPath = data.path || '';
       } catch {}
       try {
-        const resp = await fetch('/api/engines');
+        const resp = await apiFetch('/api/engines');
         const data = await resp.json();
         this.engines = data.engines || [];
       } catch {}
       // Auto-detect connected workspaces and default to "all" if one exists
       try {
-        const wsResp = await fetch('/api/workspaces');
+        const wsResp = await apiFetch('/api/workspaces');
         this.connectedWorkspaces = (await wsResp.json()).workspaces || [];
         if (this.connectedWorkspaces.length > 0) {
           this.workspacePath = this.connectedWorkspaces[0];
@@ -1404,7 +1412,7 @@ function dashboard() {
       try {
         if (this.configLocation === 'all') {
           // Fetch both user and workspace configs, merge client-side with source tags
-          const userResp = await fetch('/api/config?location=user');
+          const userResp = await apiFetch('/api/config?location=user');
           const userData = await userResp.json();
           const userProviders = userData.config?.providers || {};
           
@@ -1416,7 +1424,7 @@ function dashboard() {
           
           // If workspace is selected, fetch and overlay workspace providers
           if (this.workspacePath) {
-            const wsResp = await fetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
+            const wsResp = await apiFetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
             const wsData = await wsResp.json();
             const wsProviders = wsData.config?.providers || {};
             for (const [id, cfg] of Object.entries(wsProviders)) {
@@ -1427,7 +1435,7 @@ function dashboard() {
           this.providerConfig = merged;
         } else {
           const loc = this.getConfigLocation();
-          const resp = await fetch(`/api/config?location=${encodeURIComponent(loc)}`);
+          const resp = await apiFetch(`/api/config?location=${encodeURIComponent(loc)}`);
           const data = await resp.json();
           this.providerConfig = data.config?.providers || {};
         }
@@ -1451,22 +1459,22 @@ function dashboard() {
             }
           }
           // Read-modify-write user config to preserve mcp_servers, tool_policy, etc.
-          const userExist = await fetch('/api/config?location=user');
+          const userExist = await apiFetch('/api/config?location=user');
           const userExistData = await userExist.json();
           const userConfig = userExistData.config || {};
           userConfig.providers = userProviders;
-          await fetch('/api/config', {
+          await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ location: 'user', config: userConfig }),
           });
           // Save workspace config if we have one
           if (this.workspacePath && Object.keys(wsProviders).length > 0) {
-            const wsExist = await fetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
+            const wsExist = await apiFetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
             const wsExistData = await wsExist.json();
             const wsConfig = wsExistData.config || {};
             wsConfig.providers = wsProviders;
-            await fetch('/api/config', {
+            await apiFetch('/api/config', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ location: this.workspacePath, config: wsConfig }),
@@ -1475,7 +1483,7 @@ function dashboard() {
         } else {
           const loc = this.getConfigLocation();
           // Read existing config first to preserve mcp_servers, tool_policy, etc.
-          const existResp = await fetch(`/api/config?location=${encodeURIComponent(loc)}`);
+          const existResp = await apiFetch(`/api/config?location=${encodeURIComponent(loc)}`);
           const existData = await existResp.json();
           const existConfig = existData.config || {};
           // Strip _source tags before saving
@@ -1486,7 +1494,7 @@ function dashboard() {
             clean[id] = c;
           }
           existConfig.providers = clean;
-          await fetch('/api/config', {
+          await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ location: loc, config: existConfig }),
@@ -1501,7 +1509,7 @@ function dashboard() {
         const loc = this.getConfigLocation();
         const wsParam = this.workspacePath ? `?workspace=${encodeURIComponent(this.workspacePath)}` : '';
         const modelsUrl = (loc === 'all' || loc !== 'user') ? `/api/models${wsParam}` : '/api/models';
-        const [statusRes, modelsRes] = await Promise.all([fetch('/api/status'), fetch(modelsUrl)]);
+        const [statusRes, modelsRes] = await Promise.all([apiFetch('/api/status'), fetch(modelsUrl)]);
         this.status = await statusRes.json();
         const modelsData = await modelsRes.json();
         this.models = modelsData.models || [];
@@ -1546,7 +1554,7 @@ function dashboard() {
     // ── Config location modal ──
     async openConfigModal() {
       try {
-        const resp = await fetch('/api/workspaces');
+        const resp = await apiFetch('/api/workspaces');
         this.connectedWorkspaces = (await resp.json()).workspaces || [];
       } catch { this.connectedWorkspaces = []; }
       this.showConfigModal = true;
@@ -1618,7 +1626,7 @@ function dashboard() {
         const params = new URLSearchParams();
         params.set('providerId', model.provider);
         const url = `/api/discover-models/${encodeURIComponent(model.engine)}?${params}`;
-        const resp = await fetch(url);
+        const resp = await apiFetch(url);
         const data = await resp.json();
         this.wizardDiscoveredModels = data.models || [];
       } catch (e) { console.error('Discovery failed:', e); }
@@ -1648,7 +1656,7 @@ function dashboard() {
             params.set('providerId', this.wizardEditId);
           }
           const url = `/api/discover-models/${encodeURIComponent(this.wizardEngine)}?${params}`;
-          const resp = await fetch(url);
+          const resp = await apiFetch(url);
           const data = await resp.json();
           this.wizardDiscoveredModels = data.models || [];
         } catch (e) { console.error('Discovery failed:', e); }
@@ -1678,7 +1686,7 @@ function dashboard() {
           // User entered a new key — save it
           const keychainName = existingCfg.api_key_keychain_name || `${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
           try {
-            await fetch(`/api/secrets/${keychainName}`, {
+            await apiFetch(`/api/secrets/${keychainName}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ value: this.wizardApiKey }),
@@ -1808,7 +1816,7 @@ function dashboard() {
       if (!confirm(`Delete provider "${provId}"?`)) return;
       const cfg = this.providerConfig[provId];
       if (cfg?.api_key_keychain_name) {
-        try { await fetch(`/api/secrets/${cfg.api_key_keychain_name}`, { method: 'DELETE' }); } catch {}
+        try { await apiFetch(`/api/secrets/${cfg.api_key_keychain_name}`, { method: 'DELETE' }); } catch {}
       }
       delete this.providerConfig[provId];
       this.providerConfig = { ...this.providerConfig };
@@ -1819,7 +1827,7 @@ function dashboard() {
     // ── MCP Servers ──
     async loadMcpServers() {
       try {
-        const resp = await fetch('/api/mcp-servers');
+        const resp = await apiFetch('/api/mcp-servers');
         const data = await resp.json();
         this.mcpServers = data.mcp_servers || [];
       } catch (e) { console.error('Failed to load MCP servers:', e); }
@@ -1827,7 +1835,7 @@ function dashboard() {
     
     async reconnectMcpServer(serverId) {
       try {
-        await fetch(`/api/mcp-servers/${encodeURIComponent(serverId)}/reconnect`, { method: 'POST' });
+        await apiFetch(`/api/mcp-servers/${encodeURIComponent(serverId)}/reconnect`, { method: 'POST' });
         await this.loadMcpServers();
       } catch (e) { console.error('Reconnect failed:', e); }
     },
@@ -1835,12 +1843,12 @@ function dashboard() {
     async toggleMcpServer(serverId, enabled) {
       try {
         // Load current config, toggle the server's enabled flag, save back
-        const resp = await fetch('/api/config?location=user');
+        const resp = await apiFetch('/api/config?location=user');
         const data = await resp.json();
         const config = data.config || {};
         if (config.mcp_servers && config.mcp_servers[serverId]) {
           config.mcp_servers[serverId].enabled = enabled;
-          await fetch('/api/config', {
+          await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ location: 'user', config }),
@@ -1854,12 +1862,12 @@ function dashboard() {
     // ── Tools ──
     async loadTools() {
       try {
-        const resp = await fetch('/api/tools');
+        const resp = await apiFetch('/api/tools');
         const data = await resp.json();
         this.allTools = data.tools || [];
         
         // Load tool policy from config
-        const cfgResp = await fetch('/api/config?location=user');
+        const cfgResp = await apiFetch('/api/config?location=user');
         const cfgData = await cfgResp.json();
         const policy = cfgData.config?.tool_policy || {};
         this.toolPolicy = {};
@@ -1929,7 +1937,7 @@ function dashboard() {
       }
       
       try {
-        const resp = await fetch('/api/config?location=user');
+        const resp = await apiFetch('/api/config?location=user');
         const data = await resp.json();
         const config = data.config || {};
         const existing = config.tool_policy || {};
@@ -1937,7 +1945,7 @@ function dashboard() {
         existing.require_approval = require_approval.length > 0 ? require_approval : undefined;
         existing.auto_approve = auto_approve.length > 0 ? auto_approve : undefined;
         config.tool_policy = existing;
-        await fetch('/api/config', {
+        await apiFetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ location: 'user', config }),
@@ -1948,7 +1956,7 @@ function dashboard() {
     // ── Policies ──
     async loadPolicies() {
       try {
-        const resp = await fetch('/api/policies');
+        const resp = await apiFetch('/api/policies');
         const data = await resp.json();
         this.allPolicies = data.policies || [];
       } catch (e) { console.error('Failed to load policies:', e); }
@@ -1963,7 +1971,7 @@ function dashboard() {
         newName = name + '-custom-' + i++;
       }
       try {
-        await fetch('/api/policies', {
+        await apiFetch('/api/policies', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: newName, config: JSON.parse(JSON.stringify(src.config)) }),
@@ -1975,7 +1983,7 @@ function dashboard() {
     async deletePolicy(name) {
       if (!confirm(`Delete custom policy "${name}"?`)) return;
       try {
-        await fetch(`/api/policies/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        await apiFetch(`/api/policies/${encodeURIComponent(name)}`, { method: 'DELETE' });
         await this.loadPolicies();
       } catch (e) { console.error('Failed to delete policy:', e); }
     },
@@ -2043,7 +2051,7 @@ function dashboard() {
       const r = clean(cfg.reliability); if (r) payload.reliability = r;
 
       try {
-        const resp = await fetch('/api/policies', {
+        const resp = await apiFetch('/api/policies', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, config: payload }),
@@ -2072,7 +2080,7 @@ function dashboard() {
       const messages = this.chatMessages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
       messages.push({ role: 'user', content: userMessage });
       try {
-        const response = await fetch('/api/chat', {
+        const response = await apiFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: this.selectedModel, messages }),
@@ -2139,7 +2147,7 @@ function dashboard() {
       if (!this.pendingApproval || !this.activeChatId) return;
       const { chatId, requestId } = this.pendingApproval;
       try {
-        await fetch(`/api/chat/${chatId}/approve`, {
+        await apiFetch(`/api/chat/${chatId}/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId, decision }),

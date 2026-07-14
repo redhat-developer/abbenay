@@ -119,8 +119,8 @@ function openAIError(res: Response, status: number, message: string, type: strin
 
 // ── Route registration ──────────────────────────────────────────────────
 
-// Future M2: add optional Bearer token auth here by reading config.yaml -> server.api_key
-// and checking the Authorization header before each route handler.
+// Auth is enforced globally in createWebApp() via Bearer / SameSite cookie middleware.
+// See http-security.ts and config.yaml → server.api_token / ABBENAY_API_TOKEN.
 
 export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
   /**

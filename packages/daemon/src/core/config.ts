@@ -136,6 +136,31 @@ export interface ConsumerConfig {
 }
 
 /**
+ * HTTP / web server security settings.
+ * Secure defaults live in code (localhost bind + required Bearer auth);
+ * this block overrides them when intentional network exposure is needed.
+ */
+export interface ServerConfig {
+  /**
+   * HTTP API Bearer token. Prefer `api_token_env` or the `ABBENAY_API_TOKEN`
+   * environment variable so the secret is not stored in plaintext YAML.
+   */
+  api_token?: string;
+  /** Environment variable name holding the HTTP API Bearer token */
+  api_token_env?: string;
+  /**
+   * Host/IP to bind the HTTP server.
+   * Default: 127.0.0.1. Use 0.0.0.0 only with an explicit opt-in (CLI/env/config).
+   */
+  host?: string;
+  /**
+   * Extra CORS allowed origins (in addition to http://127.0.0.1:<port>
+   * and http://localhost:<port>).
+   */
+  cors_origins?: string[];
+}
+
+/**
  * Full configuration file structure.
  * Keys in `providers` are virtual provider names (user-defined IDs).
  */
@@ -147,6 +172,8 @@ export interface ConfigFile {
   tool_policy?: import('./tool-registry.js').ToolPolicyConfig;
   /** Consumer applications with token-based auth and capability gating */
   consumers?: Record<string, ConsumerConfig>;
+  /** HTTP / web dashboard server security */
+  server?: ServerConfig;
 }
 
 // ── Path helpers ───────────────────────────────────────────────────────

@@ -13,6 +13,14 @@ Abbenay uses YAML configuration files and system keychain for secrets.
 ## Config File Format
 
 ```yaml
+# HTTP API security (optional overrides — secure defaults apply without this block)
+server:
+  api_token_env: "ABBENAY_API_TOKEN"   # preferred: token from env (never commit secrets)
+  # api_token: "..."                   # discouraged plaintext; prefer api_token_env
+  host: "127.0.0.1"                    # default bind; use 0.0.0.0 only intentionally
+  cors_origins:                        # extra allowed Origins (localhost always included)
+    - "https://my-trusted-app.example"
+
 providers:
   my-openai:                        # Virtual provider name (user-defined)
     engine: openai                  # Engine type (see Supported Engines below)
@@ -39,6 +47,54 @@ providers:
       qwen2.5-coder:
         model_id: "qwen2.5-coder:7b"        # Map virtual name to actual model ID
 ```
+
+### HTTP API security (`server`)
+
+The web dashboard, REST API (`/api/*`), OpenAI-compatible API (`/v1/*`), and
+MCP endpoint (`/mcp`) require authentication by default.
+
+| Setting / env | Purpose | Default |
+|---------------|---------|---------|
+| `ABBENAY_API_TOKEN` or `server.api_token` / `server.api_token_env` | Bearer token for all HTTP routes | Auto-generated and stored as `http-api-token` in the config directory |
+| `ABBENAY_HTTP_AUTH` | Enable/disable HTTP auth | Enabled (`1` / unset). Set to `0`, `false`, `off`, `no`, or `disabled` to turn auth off |
+| `ABBENAY_HTTP_HOST` or `server.host` or `--host` | HTTP bind address | `127.0.0.1` |
+| `ABBENAY_CORS_ORIGINS` or `server.cors_origins` | Extra CORS allowed origins | `http://127.0.0.1:<port>`, `http://localhost:<port>` |
+
+Call APIs with:
+
+```bash
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/api/health
+```
+
+The dashboard uses SameSite=Strict cookies plus a CSRF token for browser
+session auth. Opening `http://127.0.0.1:8787/?token=<token>` establishes the
+session. Binding to `0.0.0.0` requires an explicit opt-in and logs a warning —
+only do this when you intentionally expose the HTTP API (e.g. containers)
+and have set a strong token.
+
+> **WARNING — disabling HTTP auth:** Auth is **on by default**. For throwaway
+> local development only you may set `ABBENAY_HTTP_AUTH=0`. That allows any
+> process (and any website that can reach the bind address) to call the
+> daemon and read/write secrets, config, chat, MCP, and sessions. The server
+> logs a loud warning when auth is disabled. **Do not** combine
+> `ABBENAY_HTTP_AUTH=0` with `--host 0.0.0.0` or any non-loopback bind.
+> Prefer keeping auth enabled and using a local token instead.
+
+### Session ownership
+
+Every session is stamped with an `owner` principal:
+
+| Surface | Owner |
+|---------|--------|
+| CLI (`aby chat` / `aby sessions`) | `local` |
+| HTTP API (Bearer / dashboard cookie) | `http:<token-fingerprint>` |
+| HTTP + `X-Abbenay-Session-Owner: <name>` | `http:<fingerprint>:<name>` |
+| gRPC with matching consumer token | `consumer:<name>` |
+| gRPC without consumer token | `local` |
+
+List/get/delete/chat only return sessions for the caller's owner. Cross-owner
+access returns 404 (not 403) so session IDs are not leaked across principals.
+Legacy sessions without an `owner` field are treated as `local`.
 
 ### Key Concepts
 

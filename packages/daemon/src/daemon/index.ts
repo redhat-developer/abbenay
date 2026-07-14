@@ -22,6 +22,7 @@ import { startEmbeddedWebServer } from './web/server.js';
 import { getEngines, fetchModels } from '../core/engines.js';
 import { DEFAULT_WEB_PORT } from '../core/constants.js';
 import { VERSION } from '../version.js';
+import { resolveHttpApiToken } from './web/http-security.js';
 
 function printTable(headers: string[], rows: string[][]): void {
   const widths = headers.map((h, i) =>
@@ -97,6 +98,7 @@ program
 
 interface ServerOptions {
   port: number;
+  host?: string;
   mcp?: boolean;
   grpcPort?: number;
   grpcHost?: string;
@@ -118,7 +120,9 @@ function validatePort(raw: string): number {
 }
 
 async function runServer(opts: ServerOptions): Promise<void> {
-  const { port, mcp, grpcPort, grpcHost, bannerLines } = opts;
+  const { port, host, mcp, grpcPort, grpcHost, bannerLines } = opts;
+  const { token: apiToken, source: tokenSource } = resolveHttpApiToken();
+  const authEnabled = tokenSource !== 'disabled';
 
   if (isDaemonRunningSync()) {
     console.log('Daemon is running, requesting web server start via gRPC...');
@@ -131,7 +135,14 @@ async function runServer(opts: ServerOptions): Promise<void> {
       try {
         const http = await import('node:http');
         await new Promise<void>((resolve, reject) => {
-          const req = http.request(`${result.url}/api/mcp-server/start`, { method: 'POST' }, (res) => {
+          const headers: Record<string, string> = {};
+          if (authEnabled && apiToken) {
+            headers.Authorization = `Bearer ${apiToken}`;
+          }
+          const req = http.request(`${result.url}/api/mcp-server/start`, {
+            method: 'POST',
+            headers,
+          }, (res) => {
             res.resume();
             res.on('end', () => resolve());
           });
@@ -159,7 +170,7 @@ async function runServer(opts: ServerOptions): Promise<void> {
   } else {
     console.log('No daemon running, starting in-process...');
     const daemonState = await startDaemon({ keepAlive: false, grpcPort, grpcHost });
-    const { url, app } = await startEmbeddedWebServer(daemonState, port);
+    const { url, app, security } = await startEmbeddedWebServer(daemonState, port, host);
 
     if (mcp && app) {
       await daemonState.mcpServer.start(app);
@@ -167,6 +178,9 @@ async function runServer(opts: ServerOptions): Promise<void> {
 
     for (const line of (bannerLines?.(url, !!mcp) ?? [`Server: ${url}`])) {
       console.log(line);
+    }
+    if (security.tokenSource === 'generated' || security.generated) {
+      console.log(`API token file: use Authorization: Bearer <token> (see http-api-token in config dir)`);
     }
 
     console.log('Press Ctrl+C to stop');
@@ -180,6 +194,7 @@ program
   .command('start')
   .description('Start all services (daemon, web dashboard, OpenAI API, MCP server)')
   .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
+  .option('--host <host>', 'Host/IP to bind HTTP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .action(async (options) => {
@@ -189,6 +204,7 @@ program
       const grpcHost = options.grpcHost;
       await runServer({
         port,
+        host: options.host || undefined,
         mcp: true,
         grpcPort,
         grpcHost,
@@ -219,6 +235,7 @@ program
   .command('web')
   .description('Start web dashboard')
   .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
+  .option('--host <host>', 'Host/IP to bind HTTP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .option('--mcp', 'Start MCP server on /mcp endpoint')
@@ -227,6 +244,7 @@ program
     try {
       await runServer({
         port,
+        host: options.host || undefined,
         mcp: options.mcp,
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
@@ -247,6 +265,7 @@ program
   .command('serve')
   .description('Start OpenAI-compatible API server (serves /v1/models, /v1/chat/completions)')
   .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
+  .option('--host <host>', 'Host/IP to bind HTTP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
   .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
   .option('--mcp', 'Start MCP server on /mcp endpoint')
@@ -255,6 +274,7 @@ program
     try {
       await runServer({
         port,
+        host: options.host || undefined,
         mcp: options.mcp,
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
@@ -308,12 +328,13 @@ sessions
   .option('--limit <n>', 'Max results', '20')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
-    const { SessionStore } = await import('../core/session-store.js');
+    const { SessionStore, LOCAL_SESSION_OWNER } = await import('../core/session-store.js');
     const { getSessionsDir } = await import('../core/paths.js');
     const store = new SessionStore(getSessionsDir());
     const result = await store.list({
       model: options.model,
       limit: Number(options.limit),
+      owner: LOCAL_SESSION_OWNER,
     });
 
     if (options.json) {
@@ -339,18 +360,19 @@ sessions
   .description('Show session messages')
   .option('--json', 'Output as JSON')
   .action(async (id: string, options) => {
-    const { SessionStore } = await import('../core/session-store.js');
+    const { SessionStore, LOCAL_SESSION_OWNER } = await import('../core/session-store.js');
     const { getSessionsDir } = await import('../core/paths.js');
     const store = new SessionStore(getSessionsDir());
 
     try {
-      const session = await store.get(id);
+      const session = await store.getOwned(id, LOCAL_SESSION_OWNER);
       if (options.json) {
         console.log(JSON.stringify(session, null, 2));
       } else {
         console.log(`Session:  ${session.id}`);
         console.log(`Title:    ${session.title}`);
         console.log(`Model:    ${session.model}`);
+        console.log(`Owner:    ${session.owner || LOCAL_SESSION_OWNER}`);
         console.log(`Created:  ${session.createdAt}`);
         console.log(`Updated:  ${session.updatedAt}`);
         console.log(`Messages: ${session.messages.length}`);
@@ -373,12 +395,12 @@ sessions
   .command('delete <id>')
   .description('Delete a session')
   .action(async (id: string) => {
-    const { SessionStore } = await import('../core/session-store.js');
+    const { SessionStore, LOCAL_SESSION_OWNER } = await import('../core/session-store.js');
     const { getSessionsDir } = await import('../core/paths.js');
     const store = new SessionStore(getSessionsDir());
 
     try {
-      await store.delete(id);
+      await store.deleteOwned(id, LOCAL_SESSION_OWNER);
       console.log(`Deleted session: ${id}`);
     } catch {
       console.error(`Session not found: ${id}`);

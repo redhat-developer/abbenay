@@ -20,6 +20,7 @@ import {
 } from '../../core/config.js';
 import { DEFAULT_WEB_PORT } from '../../core/constants.js';
 import { getProviderTemplates } from '../../core/engines.js';
+import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -1046,7 +1047,8 @@ export function createAbbenayService(state: DaemonState) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'model is required' });
         return;
       }
-      state.sessionStore.create(model, topic || undefined, undefined, metadata).then((session) => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.create(model, topic || undefined, undefined, metadata, owner).then((session) => {
         callback(null, sessionToProto(session));
       }).catch((error: unknown) => {
         callback({ code: grpc.status.INTERNAL, message: error instanceof Error ? error.message : String(error) });
@@ -1063,7 +1065,8 @@ export function createAbbenayService(state: DaemonState) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
         return;
       }
-      state.sessionStore.get(id, includeMessages).then((session) => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.getOwned(id, owner, includeMessages).then((session) => {
         callback(null, sessionToProto(session));
       }).catch((error: unknown) => {
         callback({ code: grpc.status.NOT_FOUND, message: error instanceof Error ? error.message : String(error) });
@@ -1079,7 +1082,8 @@ export function createAbbenayService(state: DaemonState) {
       const rawOffset = call.request.offset;
       const limit = rawLimit == null || rawLimit < 0 ? undefined : rawLimit;
       const offset = rawOffset == null || rawOffset < 0 ? undefined : rawOffset;
-      state.sessionStore.list({ model, limit, offset }).then((result) => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.list({ model, limit, offset, owner }).then((result) => {
         callback(null, {
           sessions: result.sessions.map(summaryToProto),
           total_count: result.totalCount,
@@ -1098,7 +1102,8 @@ export function createAbbenayService(state: DaemonState) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
         return;
       }
-      state.sessionStore.delete(id).then(async () => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.deleteOwned(id, owner).then(async () => {
         // Clean up session-scoped dynamic MCP servers
         await state.mcpClientPool.disconnectByScope(id);
         state.toolRegistry?.clearSessionScope(id);
@@ -1170,7 +1175,8 @@ export function createAbbenayService(state: DaemonState) {
 
       (async () => {
         try {
-          const session = await state.sessionStore.get(sessionId, true);
+          const owner = resolveGrpcSessionOwner(call, loadConfig());
+          const session = await state.sessionStore.getOwned(sessionId, owner, true);
           await state.sessionStore.appendMessage(sessionId, chatMessage);
 
           const allMessages = [...session.messages, chatMessage];
@@ -1278,7 +1284,8 @@ export function createAbbenayService(state: DaemonState) {
 
       (async () => {
         try {
-          const session = await state.sessionStore.get(sessionId, true);
+          const owner = resolveGrpcSessionOwner(call, loadConfig());
+          const session = await state.sessionStore.getOwned(sessionId, owner, true);
           const userCount = session.messages.filter((m) => m.role === 'user').length;
 
           if (session.summary && session.summaryMessageCount === userCount) {
@@ -2052,6 +2059,38 @@ function transportProtoToConfig(transport: McpTransportProto): McpServerConfig {
 }
 
 // ── Consumer authorization (DR-024 / DR-025) ──────────────────────────
+
+/**
+ * Resolve the session owner principal for a gRPC call.
+ * - Matching consumer token → `consumer:<name>`
+ * - Otherwise (local CLI / VS Code / no consumers) → `local`
+ */
+export function resolveGrpcSessionOwner(
+  call: { metadata: grpc.Metadata },
+  config: ConfigFile | null,
+): string {
+  const consumers = config?.consumers;
+  if (!consumers || Object.keys(consumers).length === 0) {
+    return LOCAL_SESSION_OWNER;
+  }
+
+  const metadata = call.metadata.get('x-abbenay-token');
+  const token = metadata.length > 0 ? String(metadata[0]) : undefined;
+  if (!token) {
+    return LOCAL_SESSION_OWNER;
+  }
+
+  for (const [name, consumer] of Object.entries(consumers)) {
+    const expectedToken = consumer.token_env
+      ? process.env[consumer.token_env]
+      : undefined;
+    if (expectedToken && token === expectedToken) {
+      return `consumer:${name}`;
+    }
+  }
+
+  return LOCAL_SESSION_OWNER;
+}
 
 /** @internal Exported for testing. */
 export interface AuthResult {

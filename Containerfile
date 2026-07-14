@@ -102,7 +102,7 @@ USER ${APP_USER}
 EXPOSE 8787 50051
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:8787/api/health || exit 1
+    CMD curl -sf -H "Authorization: Bearer ${ABBENAY_API_TOKEN}" http://127.0.0.1:8787/api/health || exit 1
 
 ENTRYPOINT ["./abbenay"]
-CMD ["start", "--port", "8787", "--grpc-port", "50051", "--grpc-host", "0.0.0.0"]
+CMD ["start", "--port", "8787", "--host", "0.0.0.0", "--grpc-port", "50051", "--grpc-host", "0.0.0.0"]
