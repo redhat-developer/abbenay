@@ -2,7 +2,7 @@
  * Integration: gRPC over TLS — sensitive RPCs succeed with matching credentials.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import * as path from 'node:path';
@@ -10,8 +10,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { DaemonState } from '../../src/daemon/state.js';
-import { createAbbenayService } from '../../src/daemon/server/abbenay-service.js';
 import {
   createClientCredentials,
   createTcpServerCredentials,
@@ -22,6 +20,25 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// CI Linux runners have no org.freedesktop.secrets — mock keychain like grpc-real-service.
+const mockSecretStoreData = new Map<string, string>();
+vi.mock('../../src/daemon/secrets/keychain.js', () => ({
+  KeychainSecretStore: class {
+    async get(key: string): Promise<string | null> { return mockSecretStoreData.get(key) ?? null; }
+    async set(key: string, value: string): Promise<void> { mockSecretStoreData.set(key, value); }
+    async delete(key: string): Promise<boolean> { return mockSecretStoreData.delete(key); }
+    async has(key: string): Promise<boolean> { return mockSecretStoreData.has(key); }
+  },
+}));
+
+afterEach(() => {
+  mockSecretStoreData.clear();
+});
+
+// Imports that construct DaemonState must come after the keychain mock.
+import { DaemonState } from '../../src/daemon/state.js';
+import { createAbbenayService } from '../../src/daemon/server/abbenay-service.js';
 
 function resolveProto(): { protoFile: string; includeDir: string } {
   const candidates = [
