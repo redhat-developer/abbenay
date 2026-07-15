@@ -22,6 +22,26 @@ import { startEmbeddedWebServer } from './web/server.js';
 import { getEngines, fetchModels } from '../core/engines.js';
 import { DEFAULT_WEB_PORT } from '../core/constants.js';
 import { VERSION } from '../version.js';
+import type { GrpcTlsOptions } from './grpc-tls.js';
+
+/** Shared CLI flags for TCP gRPC bind + TLS policy. */
+function addGrpcBindOptions(cmd: Command): Command {
+  return cmd
+    .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
+    .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
+    .option('--grpc-tls', 'Enable TLS on the TCP gRPC listener (auto-generates self-signed certs)')
+    .option('--insecure', 'Allow plaintext gRPC on non-loopback binds (not recommended; prefer --grpc-tls)');
+}
+
+function grpcTlsFromCli(options: {
+  grpcTls?: boolean;
+  insecure?: boolean;
+}): GrpcTlsOptions {
+  return {
+    enabled: !!options.grpcTls,
+    insecure: !!options.insecure,
+  };
+}
 
 function printTable(headers: string[], rows: string[][]): void {
   const widths = headers.map((h, i) =>
@@ -46,16 +66,17 @@ program
     }
   });
 
-program
-  .command('daemon')
-  .description('Start the daemon (foreground)')
-  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
-  .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
+addGrpcBindOptions(
+  program
+    .command('daemon')
+    .description('Start the daemon (foreground)'),
+)
   .action(async (options) => {
     try {
       await startDaemon({
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
+        grpcTls: grpcTlsFromCli(options),
       });
     } catch (error) {
       console.error('Failed to start daemon:', error);
@@ -100,6 +121,7 @@ interface ServerOptions {
   mcp?: boolean;
   grpcPort?: number;
   grpcHost?: string;
+  grpcTls?: GrpcTlsOptions;
   /** Lines printed after the server URL, before "Press Ctrl+C" */
   bannerLines?: (url: string, mcpStarted: boolean) => string[];
 }
@@ -118,7 +140,7 @@ function validatePort(raw: string): number {
 }
 
 async function runServer(opts: ServerOptions): Promise<void> {
-  const { port, mcp, grpcPort, grpcHost, bannerLines } = opts;
+  const { port, mcp, grpcPort, grpcHost, grpcTls, bannerLines } = opts;
 
   if (isDaemonRunningSync()) {
     console.log('Daemon is running, requesting web server start via gRPC...');
@@ -158,7 +180,7 @@ async function runServer(opts: ServerOptions): Promise<void> {
     });
   } else {
     console.log('No daemon running, starting in-process...');
-    const daemonState = await startDaemon({ keepAlive: false, grpcPort, grpcHost });
+    const daemonState = await startDaemon({ keepAlive: false, grpcPort, grpcHost, grpcTls });
     const { url, app } = await startEmbeddedWebServer(daemonState, port);
 
     if (mcp && app) {
@@ -176,22 +198,24 @@ async function runServer(opts: ServerOptions): Promise<void> {
 
 // ── Server commands ─────────────────────────────────────────────────────
 
-program
-  .command('start')
-  .description('Start all services (daemon, web dashboard, OpenAI API, MCP server)')
-  .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
-  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
-  .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
+addGrpcBindOptions(
+  program
+    .command('start')
+    .description('Start all services (daemon, web dashboard, OpenAI API, MCP server)')
+    .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT)),
+)
   .action(async (options) => {
     const port = validatePort(options.port);
     try {
       const grpcPort = options.grpcPort ? validatePort(options.grpcPort) : undefined;
       const grpcHost = options.grpcHost;
+      const grpcTls = grpcTlsFromCli(options);
       await runServer({
         port,
         mcp: true,
         grpcPort,
         grpcHost,
+        grpcTls,
         bannerLines: (url, mcpStarted) => {
           const lines = [
             '',
@@ -203,7 +227,10 @@ program
             `    Models     ${url}/v1/models`,
           ];
           if (mcpStarted) lines.push(`    MCP        ${url}/mcp`);
-          if (grpcPort) lines.push(`    gRPC       ${grpcHost ?? '127.0.0.1'}:${grpcPort}`);
+          if (grpcPort) {
+            const mode = grpcTls.enabled ? 'TLS' : (grpcTls.insecure ? 'insecure' : 'plaintext');
+            lines.push(`    gRPC       ${grpcHost ?? '127.0.0.1'}:${grpcPort} (${mode})`);
+          }
           lines.push('');
           return lines;
         },
@@ -215,13 +242,13 @@ program
     }
   });
 
-program
-  .command('web')
-  .description('Start web dashboard')
-  .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
-  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
-  .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
-  .option('--mcp', 'Start MCP server on /mcp endpoint')
+addGrpcBindOptions(
+  program
+    .command('web')
+    .description('Start web dashboard')
+    .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
+    .option('--mcp', 'Start MCP server on /mcp endpoint'),
+)
   .action(async (options) => {
     const port = validatePort(options.port);
     try {
@@ -230,6 +257,7 @@ program
         mcp: options.mcp,
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
+        grpcTls: grpcTlsFromCli(options),
         bannerLines: (url, mcpStarted) => {
           const lines = [`Abbenay Web Dashboard: ${url}`];
           if (mcpStarted) lines.push(`MCP Server: ${url}/mcp`);
@@ -243,13 +271,13 @@ program
     }
   });
 
-program
-  .command('serve')
-  .description('Start OpenAI-compatible API server (serves /v1/models, /v1/chat/completions)')
-  .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
-  .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
-  .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
-  .option('--mcp', 'Start MCP server on /mcp endpoint')
+addGrpcBindOptions(
+  program
+    .command('serve')
+    .description('Start OpenAI-compatible API server (serves /v1/models, /v1/chat/completions)')
+    .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_WEB_PORT))
+    .option('--mcp', 'Start MCP server on /mcp endpoint'),
+)
   .action(async (options) => {
     const port = validatePort(options.port);
     try {
@@ -258,6 +286,7 @@ program
         mcp: options.mcp,
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
+        grpcTls: grpcTlsFromCli(options),
         bannerLines: (url, mcpStarted) => {
           const lines = [
             `Abbenay API server: ${url}`,

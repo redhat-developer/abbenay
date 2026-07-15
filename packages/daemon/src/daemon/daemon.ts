@@ -22,6 +22,10 @@ import {
 import { DaemonState } from './state.js';
 import { createAbbenayService } from './server/abbenay-service.js';
 import { stopEmbeddedWebServer } from './web/server.js';
+import {
+  resolveTcpGrpcBind,
+  type GrpcTlsOptions,
+} from './grpc-tls.js';
 
 export type { DaemonState };
 
@@ -85,6 +89,8 @@ export interface DaemonOptions {
   grpcPort?: number;
   /** Host/IP to bind the TCP gRPC listener to (default: 127.0.0.1). */
   grpcHost?: string;
+  /** TLS / insecure bind options for the TCP gRPC listener. */
+  grpcTls?: GrpcTlsOptions;
 }
 
 /**
@@ -124,7 +130,8 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
   const socketPath = getDefaultSocketPath();
 
   try {
-    // Bind to Unix socket
+    // Unix socket / named pipe: local IPC only (filesystem permissions).
+    // TLS is not used here — the TCP listener below is the network exposure path (C2).
     await new Promise<void>((resolve, reject) => {
       server!.bindAsync(
         `unix://${socketPath}`,
@@ -144,24 +151,36 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
     // Optionally bind gRPC to a TCP port for remote / container access
     if (opts?.grpcPort) {
       const grpcHost = opts.grpcHost ?? '127.0.0.1';
+      const tlsOpts: GrpcTlsOptions = opts.grpcTls ?? {};
+      const resolved = resolveTcpGrpcBind(grpcHost, tlsOpts);
 
-      if (grpcHost === '0.0.0.0') {
+      if (!resolved.tlsEnabled && tlsOpts.insecure) {
         console.warn(
-          '[Daemon] WARNING: gRPC is bound to 0.0.0.0 — the API is accessible from ' +
-          'any network interface. Ensure a consumers section is configured in config.yaml ' +
-          'to require authentication, or use --grpc-host 127.0.0.1 to restrict access.',
+          `[Daemon] WARNING: gRPC is bound to ${grpcHost} with --insecure (plaintext). ` +
+          'API keys, chat, and provider config travel unencrypted. Prefer --grpc-tls.',
+        );
+      } else if (resolved.tlsEnabled && (grpcHost === '0.0.0.0' || grpcHost === '::')) {
+        console.warn(
+          `[Daemon] gRPC TLS is enabled on ${grpcHost} — accessible from any network interface. ` +
+          'Configure a consumers section in config.yaml to require authentication.',
         );
       }
 
       await new Promise<void>((resolve, reject) => {
         server!.bindAsync(
           `${grpcHost}:${opts.grpcPort}`,
-          grpc.ServerCredentials.createInsecure(),
+          resolved.serverCredentials,
           (error, boundPort) => {
             if (error) {
               reject(error);
             } else {
-              console.log(`Abbenay gRPC listening on ${grpcHost}:${boundPort}`);
+              const mode = resolved.tlsEnabled ? 'TLS' : 'plaintext';
+              console.log(`Abbenay gRPC listening on ${grpcHost}:${boundPort} (${mode})`);
+              if (resolved.tlsEnabled && resolved.caPath) {
+                console.log(
+                  `  TLS: auto-generated self-signed cert; clients should trust ${resolved.caPath}`,
+                );
+              }
               resolve();
             }
           }

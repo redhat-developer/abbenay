@@ -27,6 +27,8 @@ packages/daemon/
 ├── tests/
 │   └── integration/
 │       ├── grpc-streaming.test.ts    <- Integration (real gRPC server/client)
+│       ├── grpc-tls.test.ts          <- TLS bind policy + SetSecret over TLS
+│       ├── grpc-real-service.test.ts <- Real service RPCs
 │       ├── web-sse.test.ts           <- Integration (real Express + HTTP)
 │       ├── openai-compat.test.ts     <- Integration (OpenAI-compat API)
 │       ├── sessions.test.ts          <- Integration (session CRUD + chat SSE)
@@ -81,6 +83,8 @@ Tests that start real servers, make real HTTP/gRPC calls.
 | File | What it covers |
 |------|----------------|
 | `tests/integration/grpc-streaming.test.ts` | gRPC unary RPCs + streaming + cancellation + concurrency |
+| `tests/integration/grpc-tls.test.ts` | gRPC TLS bind policy + SetSecret/GetSecret over TLS |
+| `tests/integration/grpc-bind-e2e.test.ts` | Subprocess E2E: localhost OK, 0.0.0.0 refuse, TLS/insecure OK |
 | `tests/integration/web-sse.test.ts` | Web API endpoints + SSE chat streaming + errors + disconnect |
 | `tests/integration/openai-compat.test.ts` | OpenAI-compatible API: /v1/models, streaming, non-streaming, errors, tool calls |
 | `tests/integration/sessions.test.ts` | Session REST API: CRUD endpoints, session chat SSE streaming + persistence |
