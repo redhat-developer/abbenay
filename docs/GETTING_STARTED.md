@@ -254,8 +254,8 @@ same token as the API key.
 
 > **WARNING:** HTTP auth is **enabled by default**. For throwaway local
 > development only you may set `ABBENAY_HTTP_AUTH=0` to skip Bearer tokens.
-> The server logs a warning. Never combine that with `--host 0.0.0.0`.
-> Prefer keeping auth on and using `ABBENAY_API_TOKEN` instead.
+> The server logs a warning. Combining that with `--host 0.0.0.0` refuses to
+> start. Prefer keeping auth on and using `ABBENAY_API_TOKEN` instead.
 
 ### With the OpenAI Python SDK
 
@@ -288,12 +288,19 @@ aby web
 ```
 
 Open http://127.0.0.1:8787 in your browser (loopback clients get a session
-automatically; or open the `/?token=...` URL printed at startup) to:
+automatically). For remote binds, use http://127.0.0.1:8787/login or
+`POST /login` with the API token in the body — avoid putting the token in
+the query string (it can leak via history, Referer, and logs).
+
+Use the dashboard to:
 
 - Add and configure providers
 - Store API keys in the system keychain
 - Enable/disable models
 - Test chat with streaming responses
+
+Sessions created before ownership was introduced have no `owner` field and
+are treated as CLI/`local` only — HTTP API clients will not list or open them.
 
 ---
 

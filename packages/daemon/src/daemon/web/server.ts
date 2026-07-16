@@ -30,9 +30,12 @@ import {
   resolveHttpSecurity,
   setAuthCookies,
   getCookie,
+  cookieSecureFromRequest,
+  timingSafeEqualString,
   API_TOKEN_COOKIE,
   CSRF_COOKIE,
   isLocalhostBind,
+  assertHttpAuthBindAllowed,
   type WebSecurityOptions,
   type ResolvedHttpSecurity,
   type RequestWithOwner,
@@ -84,8 +87,9 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   const security = resolveHttpSecurity(port, options?.host, options);
   app.locals.httpSecurity = security;
 
-  // Parse JSON bodies
+  // Parse JSON / form bodies (form used by POST /login)
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
 
   // CORS — explicit allowlist only (never *)
   app.use(createCorsMiddleware(security.corsOrigins));
@@ -103,10 +107,37 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
   };
 
+  const cookieOpts = (req: Request) => ({ secure: cookieSecureFromRequest(req) });
+
+  const hasValidAuthCookie = (req: Request): boolean => {
+    const cookieToken = getCookie(req, API_TOKEN_COOKIE);
+    return cookieToken !== null && timingSafeEqualString(cookieToken, security.apiToken);
+  };
+
+  const LOGIN_PAGE = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Abbenay login</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;padding:0 1rem}
+  label{display:block;margin-bottom:.5rem;font-weight:600}
+  input[type=password]{width:100%;padding:.5rem;box-sizing:border-box}
+  button{margin-top:1rem;padding:.5rem 1rem}
+  .err{color:#b00020;margin-bottom:1rem}
+</style></head><body>
+<h1>Abbenay</h1>
+<p>Enter the HTTP API token to open the dashboard. Prefer this form (or
+<code>POST /login</code>) over putting the token in the URL.</p>
+{{ERROR}}
+<form method="post" action="/login">
+  <label for="token">API token</label>
+  <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
+  <button type="submit">Sign in</button>
+</form>
+</body></html>`;
+
   /**
    * Serve dashboard HTML. Establishes SameSite auth cookies when auth is
    * enabled and:
-   * - ?token=<apiToken> is present, or
+   * - POST /login (preferred) or legacy ?token=<apiToken> succeeded, or
    * - the client is loopback (safe with default 127.0.0.1 bind)
    *
    * The API token is never embedded in HTML for remote clients; the dashboard
@@ -124,23 +155,25 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       return;
     }
 
+    // Legacy query login (kept for compat). Prefer POST /login — query tokens
+    // can leak via history, Referer, and access logs.
     const q = typeof req.query.token === 'string' ? req.query.token : undefined;
-    if (q) {
-      if (q !== security.apiToken) {
+    if (q !== undefined) {
+      if (!timingSafeEqualString(q, security.apiToken)) {
         res.status(401).send('Invalid token');
         return;
       }
-      setAuthCookies(res, security.apiToken);
+      setAuthCookies(res, security.apiToken, cookieOpts(req));
       res.redirect(302, '/');
       return;
     }
 
-    const hasAuthCookie = getCookie(req, API_TOKEN_COOKIE) === security.apiToken;
+    const hasAuthCookie = hasValidAuthCookie(req);
     const mayEstablishSession = hasAuthCookie || isLoopbackClient(req) || isLocalhostBind(security.host);
 
     let csrf = getCookie(req, CSRF_COOKIE);
     if (mayEstablishSession && (!hasAuthCookie || !csrf)) {
-      csrf = setAuthCookies(res, security.apiToken);
+      csrf = setAuthCookies(res, security.apiToken, cookieOpts(req));
     }
 
     let html = fs.readFileSync(indexPath, 'utf-8');
@@ -151,6 +184,50 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       : `${inject}${html}`;
     res.type('html').send(html);
   };
+
+  const extractLoginToken = (req: Request): string => {
+    const body = req.body as { token?: unknown; api_token?: unknown } | undefined;
+    if (typeof body?.token === 'string') return body.token;
+    if (typeof body?.api_token === 'string') return body.api_token;
+    return '';
+  };
+
+  app.get('/login', (req, res) => {
+    // Always offer the form when unauthenticated — loopback clients can also
+    // open `/` for auto cookie establish, but /login must not put the token
+    // in the URL for remote (or any) users.
+    if (!security.authEnabled || hasValidAuthCookie(req)) {
+      res.redirect(302, '/');
+      return;
+    }
+    res.type('html').send(LOGIN_PAGE.replace('{{ERROR}}', ''));
+  });
+
+  app.post('/login', (req, res) => {
+    if (!security.authEnabled) {
+      res.redirect(302, '/');
+      return;
+    }
+    const token = extractLoginToken(req);
+    if (!timingSafeEqualString(token, security.apiToken)) {
+      const wantsJson = req.is('application/json') || (req.headers.accept || '').includes('application/json');
+      if (wantsJson) {
+        res.status(401).json({ error: 'Invalid token' });
+        return;
+      }
+      res.status(401).type('html').send(
+        LOGIN_PAGE.replace('{{ERROR}}', '<p class="err">Invalid token</p>'),
+      );
+      return;
+    }
+    setAuthCookies(res, security.apiToken, cookieOpts(req));
+    const wantsJson = req.is('application/json') || (req.headers.accept || '').includes('application/json');
+    if (wantsJson) {
+      res.status(204).end();
+      return;
+    }
+    res.redirect(302, '/');
+  });
 
   app.get('/', serveDashboardHtml);
   app.get('/index.html', serveDashboardHtml);
@@ -1250,6 +1327,7 @@ export async function startEmbeddedWebServer(
 
   const security = resolveHttpSecurity(port, host, options);
   const bindHost = security.host || DEFAULT_HTTP_HOST;
+  assertHttpAuthBindAllowed(bindHost, security.authEnabled);
   const app = createWebApp(state, {
     ...options,
     apiToken: security.apiToken,
@@ -1272,11 +1350,13 @@ export async function startEmbeddedWebServer(
     }
     const addr = req.socket.remoteAddress || '';
     const loopback = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
-    const hasAuthCookie = getCookie(req, API_TOKEN_COOKIE) === security.apiToken;
+    const cookieToken = getCookie(req, API_TOKEN_COOKIE);
+    const hasAuthCookie =
+      cookieToken !== null && timingSafeEqualString(cookieToken, security.apiToken);
     const mayEstablish = hasAuthCookie || loopback || isLocalhostBind(bindHost);
     let csrf = getCookie(req, CSRF_COOKIE);
     if (mayEstablish && (!hasAuthCookie || !csrf)) {
-      csrf = setAuthCookies(res, security.apiToken);
+      csrf = setAuthCookies(res, security.apiToken, { secure: cookieSecureFromRequest(req) });
     }
     let html = fs.readFileSync(indexPath, 'utf-8');
     const inject = `<script>window.__ABBENAY_CSRF__=${JSON.stringify(csrf || '')};</script>`;
@@ -1296,12 +1376,6 @@ export async function startEmbeddedWebServer(
       'read/write secrets, config, chat, MCP, and sessions. ' +
       'Re-enable auth for anything beyond throwaway local development.',
     );
-    if (!isLocalhostBind(bindHost)) {
-      console.warn(
-        '[Web] CRITICAL: auth is disabled AND HTTP is bound beyond loopback ' +
-        `(${bindHost}). This exposes an unauthenticated API on the network.`,
-      );
-    }
   }
 
   if (!isLocalhostBind(bindHost)) {
@@ -1318,10 +1392,14 @@ export async function startEmbeddedWebServer(
       console.log(`[Web] Dashboard started: http://${displayHost}:${port} (bind ${bindHost})`);
       if (security.authEnabled) {
         if (security.generated) {
-          console.log(`[Web] Generated API token and saved to config dir (http-api-token).`);
+          console.log(
+            '[Web] Generated API token and saved to config dir (http-api-token). ' +
+            'Prefer setting ABBENAY_API_TOKEN explicitly in containers — auto-generated ' +
+            'tokens are hard to retrieve from inside the image.',
+          );
         }
         console.log(`[Web] Authenticate with: Authorization: Bearer <token>`);
-        console.log(`[Web] Dashboard login URL: http://${displayHost}:${port}/?token=<token>`);
+        console.log(`[Web] Dashboard login: http://${displayHost}:${port}/login`);
       } else {
         console.log(`[Web] HTTP auth disabled — requests are accepted without a Bearer token`);
       }

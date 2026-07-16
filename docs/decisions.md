@@ -439,9 +439,14 @@ default. Non-localhost bind requires explicit opt-in (`--host`,
 `ABBENAY_API_TOKEN` / `server.api_token` / `server.api_token_env`, or is
 auto-generated and persisted as `http-api-token` in the config directory.
 The dashboard uses `SameSite=Strict` cookies plus a CSRF token for browser
-state-changing requests. For local development only, `ABBENAY_HTTP_AUTH=0`
-(or `false`/`off`/`no`/`disabled`) turns auth off and logs a loud warning;
-it must not be combined with a non-loopback bind.
+state-changing requests. Prefer `GET/POST /login` (token in the form/body)
+over `/?token=` query login to avoid leaking credentials via history,
+Referer, and access logs; the query form remains for compatibility and uses
+a timing-safe compare. Cookies set the `Secure` flag when the request is
+HTTPS or `X-Forwarded-Proto: https`. For local development only,
+`ABBENAY_HTTP_AUTH=0` (or `false`/`off`/`no`/`disabled`) turns auth off and
+logs a loud warning. Combining auth-disabled with a non-loopback bind
+(`0.0.0.0`, LAN IP, etc.) fails closed: the HTTP server refuses to start.
 **Rationale:** The previous defaults (no auth, `Access-Control-Allow-Origin: *`,
 `app.listen(port)` → `0.0.0.0`) allowed any website the user visited to
 cross-origin call the daemon and read/write secrets, config, chat, MCP, and

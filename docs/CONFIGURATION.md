@@ -67,18 +67,22 @@ curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/api/hea
 ```
 
 The dashboard uses SameSite=Strict cookies plus a CSRF token for browser
-session auth. Opening `http://127.0.0.1:8787/?token=<token>` establishes the
-session. Binding to `0.0.0.0` requires an explicit opt-in and logs a warning —
-only do this when you intentionally expose the HTTP API (e.g. containers)
-and have set a strong token.
+session auth. Open `http://127.0.0.1:8787/login` (or `POST /login` with the
+token in the body) to establish a session — prefer that over putting the
+token in the URL. Cookies include the `Secure` flag when the request is
+HTTPS or arrives via a TLS-terminated proxy (`X-Forwarded-Proto: https`).
+Binding to `0.0.0.0` requires an explicit opt-in and logs a warning — only
+do this when you intentionally expose the HTTP API (e.g. containers) and
+have set a strong token.
 
 > **WARNING — disabling HTTP auth:** Auth is **on by default**. For throwaway
 > local development only you may set `ABBENAY_HTTP_AUTH=0`. That allows any
 > process (and any website that can reach the bind address) to call the
 > daemon and read/write secrets, config, chat, MCP, and sessions. The server
-> logs a loud warning when auth is disabled. **Do not** combine
-> `ABBENAY_HTTP_AUTH=0` with `--host 0.0.0.0` or any non-loopback bind.
-> Prefer keeping auth enabled and using a local token instead.
+> logs a loud warning when auth is disabled. Combining `ABBENAY_HTTP_AUTH=0`
+> with `--host 0.0.0.0` (or any non-loopback bind) fails closed — the HTTP
+> server refuses to start. Prefer keeping auth enabled and using a local
+> token instead.
 
 ### Session ownership
 

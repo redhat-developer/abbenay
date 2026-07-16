@@ -248,6 +248,9 @@ metadata:
 type: Opaque
 stringData:
   OPENROUTER_API_KEY: "sk-or-..."
+  # Must match the Bearer value in the probe httpHeaders below.
+  # Kubernetes does not expand env vars in httpGet.httpHeaders.
+  ABBENAY_API_TOKEN: "replace-with-a-strong-token"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -296,12 +299,18 @@ spec:
             httpGet:
               path: /api/health
               port: 8787
+              httpHeaders:
+                - name: Authorization
+                  value: Bearer replace-with-a-strong-token
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /api/health
               port: 8787
+              httpHeaders:
+                - name: Authorization
+                  value: Bearer replace-with-a-strong-token
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
@@ -331,9 +340,10 @@ spec:
   OpenShift's restricted SCC.
 - The built-in `HEALTHCHECK` uses `curl` against `/api/health` with
   `Authorization: Bearer ${ABBENAY_API_TOKEN}`. Set that env var when
-  running the container. In Kubernetes, use the `livenessProbe` and
-  `readinessProbe` shown above instead (include the same Authorization
-  header).
+  running the container. In Kubernetes, the sample `livenessProbe` /
+  `readinessProbe` send the same Bearer token via `httpHeaders` — keep that
+  value identical to `ABBENAY_API_TOKEN` in the Secret (Kubernetes does not
+  expand environment variables in `httpGet.httpHeaders`).
 - Sessions are ephemeral by default. To persist sessions across restarts,
   mount a volume at `/home/abbenay/.local/share/abbenay/sessions/`.
 
@@ -361,8 +371,8 @@ beyond loopback.
 (never `*`).
 
 > **WARNING:** `ABBENAY_HTTP_AUTH=0` disables HTTP auth for local development
-> only. Never use it with `--host 0.0.0.0` in containers or on shared hosts —
-> the API would be reachable without credentials.
+> only. Combining it with `--host 0.0.0.0` (or any non-loopback bind) fails
+> closed — the HTTP server refuses to start.
 
 When exposing HTTP, always set a strong `ABBENAY_API_TOKEN` and restrict
 `server.cors_origins`. Keep `ABBENAY_HTTP_AUTH` enabled (the default).

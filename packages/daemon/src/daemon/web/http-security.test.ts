@@ -6,11 +6,17 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   isLocalhostBind,
   isHttpAuthEnabled,
+  assertHttpAuthBindAllowed,
+  HttpAuthBindSecurityError,
   resolveHttpApiToken,
   resolveHttpHost,
   resolveCorsOrigins,
   extractBearerToken,
   getCookie,
+  timingSafeEqualString,
+  cookieSecureFromRequest,
+  setAuthCookies,
+  clearAuthCookies,
 } from './http-security.js';
 import {
   ownerIdFromHttpToken,
@@ -18,7 +24,7 @@ import {
   resolveSessionOwner,
   assertSessionOwner,
 } from '../../core/session-store.js';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 describe('isLocalhostBind', () => {
   it('accepts loopback addresses', () => {
@@ -66,6 +72,25 @@ describe('isHttpAuthEnabled', () => {
     expect(isHttpAuthEnabled({ authEnabled: true })).toBe(true);
     process.env.ABBENAY_HTTP_AUTH = '1';
     expect(isHttpAuthEnabled({ authEnabled: false })).toBe(false);
+  });
+});
+
+describe('assertHttpAuthBindAllowed', () => {
+  it('allows auth-disabled binds on loopback', () => {
+    expect(() => assertHttpAuthBindAllowed('127.0.0.1', false)).not.toThrow();
+    expect(() => assertHttpAuthBindAllowed('::1', false)).not.toThrow();
+    expect(() => assertHttpAuthBindAllowed('localhost', false)).not.toThrow();
+  });
+
+  it('allows auth-enabled binds on any host', () => {
+    expect(() => assertHttpAuthBindAllowed('0.0.0.0', true)).not.toThrow();
+    expect(() => assertHttpAuthBindAllowed('192.168.1.10', true)).not.toThrow();
+  });
+
+  it('refuses auth-disabled binds beyond loopback', () => {
+    expect(() => assertHttpAuthBindAllowed('0.0.0.0', false)).toThrow(HttpAuthBindSecurityError);
+    expect(() => assertHttpAuthBindAllowed('192.168.1.10', false)).toThrow(HttpAuthBindSecurityError);
+    expect(() => assertHttpAuthBindAllowed('::', false)).toThrow(HttpAuthBindSecurityError);
   });
 });
 
@@ -195,6 +220,56 @@ describe('extractBearerToken / getCookie', () => {
     } as Request;
     expect(getCookie(req, 'abbenay_api_token')).toBe('tok+1');
     expect(getCookie(req, 'missing')).toBeNull();
+  });
+});
+
+describe('timingSafeEqualString', () => {
+  it('matches equal strings', () => {
+    expect(timingSafeEqualString('abc', 'abc')).toBe(true);
+  });
+
+  it('rejects unequal strings and unequal lengths', () => {
+    expect(timingSafeEqualString('abc', 'abd')).toBe(false);
+    expect(timingSafeEqualString('abc', 'ab')).toBe(false);
+    expect(timingSafeEqualString('', 'x')).toBe(false);
+  });
+});
+
+describe('cookieSecureFromRequest / setAuthCookies', () => {
+  it('detects HTTPS via req.secure and X-Forwarded-Proto', () => {
+    expect(cookieSecureFromRequest({ secure: true, headers: {} } as Request)).toBe(true);
+    expect(cookieSecureFromRequest({
+      secure: false,
+      headers: { 'x-forwarded-proto': 'https' },
+    } as Request)).toBe(true);
+    expect(cookieSecureFromRequest({
+      secure: false,
+      headers: { 'x-forwarded-proto': 'https, http' },
+    } as Request)).toBe(true);
+    expect(cookieSecureFromRequest({ secure: false, headers: {} } as Request)).toBe(false);
+  });
+
+  it('sets Secure flag on cookies when requested', () => {
+    const cookies: string[] = [];
+    const res = {
+      append: (_name: string, value: string) => { cookies.push(value); },
+    } as unknown as Response;
+    setAuthCookies(res, 'tok', { secure: true });
+    expect(cookies.length).toBe(2);
+    expect(cookies[0]).toContain('Secure');
+    expect(cookies[1]).toContain('Secure');
+    cookies.length = 0;
+    clearAuthCookies(res, { secure: true });
+    expect(cookies.every((c) => c.includes('Secure'))).toBe(true);
+  });
+
+  it('omits Secure flag by default', () => {
+    const cookies: string[] = [];
+    const res = {
+      append: (_name: string, value: string) => { cookies.push(value); },
+    } as unknown as Response;
+    setAuthCookies(res, 'tok');
+    expect(cookies.every((c) => !c.includes('Secure'))).toBe(true);
   });
 });
 

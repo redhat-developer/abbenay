@@ -90,6 +90,33 @@ export function isLocalhostBind(host: string): boolean {
 }
 
 /**
+ * Thrown when HTTP auth is disabled on a non-loopback bind (fail-closed).
+ */
+export class HttpAuthBindSecurityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HttpAuthBindSecurityError';
+  }
+}
+
+/**
+ * Refuse auth-disabled HTTP binds beyond loopback.
+ *
+ * `ABBENAY_HTTP_AUTH=0` is a local-dev escape hatch only. Combining it with
+ * `--host 0.0.0.0` (or any non-loopback bind) would expose an unauthenticated
+ * API on the network — refuse to start instead of warning.
+ */
+export function assertHttpAuthBindAllowed(host: string, authEnabled: boolean): void {
+  if (authEnabled || isLocalhostBind(host)) {
+    return;
+  }
+  throw new HttpAuthBindSecurityError(
+    `Refusing to bind HTTP on non-loopback address "${host}" with authentication disabled ` +
+      '(ABBENAY_HTTP_AUTH=0). Re-enable auth, or bind to 127.0.0.1 / ::1 / localhost.',
+  );
+}
+
+/**
  * Path to the persisted auto-generated HTTP API token.
  */
 export function getHttpApiTokenPath(): string {
@@ -249,7 +276,10 @@ export function resolveHttpSecurity(
   };
 }
 
-function timingSafeEqualString(a: string, b: string): boolean {
+/**
+ * Timing-safe string equality (Bearer, cookie, query, and CSRF compares).
+ */
+export function timingSafeEqualString(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) {
@@ -258,6 +288,19 @@ function timingSafeEqualString(a: string, b: string): boolean {
     return false;
   }
   return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * True when cookies should include the Secure flag (HTTPS or TLS-terminated proxy).
+ */
+export function cookieSecureFromRequest(req: Request): boolean {
+  if (req.secure) return true;
+  const xf = req.headers['x-forwarded-proto'];
+  if (typeof xf === 'string') {
+    const proto = xf.split(',')[0]?.trim().toLowerCase();
+    if (proto === 'https') return true;
+  }
+  return false;
 }
 
 /**
@@ -417,14 +460,26 @@ export function createAuthMiddleware(
   };
 }
 
+export interface AuthCookieOptions {
+  /** Set the Secure flag (HTTPS / TLS-terminated reverse proxy). */
+  secure?: boolean;
+}
+
 /**
  * Set SameSite=Strict auth + CSRF cookies for the dashboard.
  */
-export function setAuthCookies(res: Response, apiToken: string): string {
+export function setAuthCookies(
+  res: Response,
+  apiToken: string,
+  opts?: AuthCookieOptions,
+): string {
   const csrf = crypto.randomBytes(24).toString('base64url');
-  const tokenCookie = `${API_TOKEN_COOKIE}=${encodeURIComponent(apiToken)}; Path=/; HttpOnly; SameSite=Strict`;
-  const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(csrf)}; Path=/; SameSite=Strict`;
+  const secure = opts?.secure ? '; Secure' : '';
+  const tokenCookie =
+    `${API_TOKEN_COOKIE}=${encodeURIComponent(apiToken)}; Path=/; HttpOnly; SameSite=Strict${secure}`;
   // Not HttpOnly so dashboard JS can send X-CSRF-Token
+  const csrfCookie =
+    `${CSRF_COOKIE}=${encodeURIComponent(csrf)}; Path=/; SameSite=Strict${secure}`;
   res.append('Set-Cookie', tokenCookie);
   res.append('Set-Cookie', csrfCookie);
   return csrf;
@@ -433,7 +488,11 @@ export function setAuthCookies(res: Response, apiToken: string): string {
 /**
  * Clear auth cookies.
  */
-export function clearAuthCookies(res: Response): void {
-  res.append('Set-Cookie', `${API_TOKEN_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict`);
-  res.append('Set-Cookie', `${CSRF_COOKIE}=; Path=/; Max-Age=0; SameSite=Strict`);
+export function clearAuthCookies(res: Response, opts?: AuthCookieOptions): void {
+  const secure = opts?.secure ? '; Secure' : '';
+  res.append(
+    'Set-Cookie',
+    `${API_TOKEN_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${secure}`,
+  );
+  res.append('Set-Cookie', `${CSRF_COOKIE}=; Path=/; Max-Age=0; SameSite=Strict${secure}`);
 }

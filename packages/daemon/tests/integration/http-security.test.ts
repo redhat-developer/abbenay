@@ -266,6 +266,102 @@ describe('ABBENAY_HTTP_AUTH disable escape hatch', () => {
     });
     expect(status).toBe(200);
   });
+
+  it('refuses to start when auth is disabled on a non-loopback bind', async () => {
+    await stopEmbeddedWebServer();
+    const state = createMockState();
+    await expect(
+      startEmbeddedWebServer(state, 18787, '0.0.0.0', {
+        authEnabled: false,
+        skipConfig: true,
+      }),
+    ).rejects.toThrow(/authentication disabled|ABBENAY_HTTP_AUTH/);
+    await stopEmbeddedWebServer();
+  });
+
+  it('allows auth-disabled start on loopback', async () => {
+    await stopEmbeddedWebServer();
+    const state = createMockState();
+    const probe = http.createServer();
+    const freePort = await new Promise<number>((resolve) => {
+      probe.listen(0, '127.0.0.1', () => {
+        const addr = probe.address();
+        resolve(typeof addr === 'object' && addr ? addr.port : 0);
+      });
+    });
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    const started = await startEmbeddedWebServer(state, freePort, '127.0.0.1', {
+      authEnabled: false,
+      skipConfig: true,
+    });
+    expect(started.security.authEnabled).toBe(false);
+    expect(started.security.host).toBe('127.0.0.1');
+    await stopEmbeddedWebServer();
+  });
+});
+
+describe('dashboard login', () => {
+  it('POST /login sets auth cookies with JSON body', async () => {
+    const res = await httpRequest('POST', '/login', {
+      token: null,
+      body: { token: TEST_TOKEN },
+      headers: { Accept: 'application/json' },
+    });
+    expect(res.statusCode).toBe(204);
+    const setCookie = res.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    expect(cookies.some((c) => c.startsWith('abbenay_api_token='))).toBe(true);
+    expect(cookies.some((c) => c.startsWith('abbenay_csrf='))).toBe(true);
+  });
+
+  it('POST /login rejects invalid token', async () => {
+    const res = await httpRequest('POST', '/login', {
+      token: null,
+      body: { token: 'wrong-token' },
+      headers: { Accept: 'application/json' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('POST /login sets Secure cookies behind X-Forwarded-Proto https', async () => {
+    const res = await httpRequest('POST', '/login', {
+      token: null,
+      body: { token: TEST_TOKEN },
+      headers: {
+        Accept: 'application/json',
+        'X-Forwarded-Proto': 'https',
+      },
+    });
+    expect(res.statusCode).toBe(204);
+    const setCookie = res.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    expect(cookies.length).toBeGreaterThan(0);
+    expect(cookies.every((c) => /;\s*Secure/i.test(c))).toBe(true);
+  });
+
+  it('legacy ?token= login redirects and sets cookies (timing-safe path)', async () => {
+    const res = await httpRequest('GET', `/?token=${encodeURIComponent(TEST_TOKEN)}`, {
+      token: null,
+    });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/');
+    const setCookie = res.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    expect(cookies.some((c) => c.startsWith('abbenay_api_token='))).toBe(true);
+  });
+
+  it('legacy ?token= rejects invalid token', async () => {
+    const res = await httpRequest('GET', '/?token=not-the-token', { token: null });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('GET /login serves a token form when unauthenticated', async () => {
+    const res = await httpRequest('GET', '/login', { token: null });
+    expect(res.statusCode).toBe(200);
+    expect(String(res.body)).toContain('action="/login"');
+    expect(String(res.body)).toContain('name="token"');
+  });
 });
 
 describe('CORS allowlist', () => {
