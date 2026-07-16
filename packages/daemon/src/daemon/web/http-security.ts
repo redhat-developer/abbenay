@@ -385,7 +385,7 @@ export function createCorsMiddleware(allowlist: string[]) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      `Content-Type, Authorization, ${CSRF_HEADER}, ${SESSION_OWNER_HEADER}`,
+      `Content-Type, Authorization, ${CSRF_HEADER}, ${SESSION_OWNER_HEADER}, Mcp-Session-Id, MCP-Protocol-Version`,
     );
 
     if (req.method === 'OPTIONS') {

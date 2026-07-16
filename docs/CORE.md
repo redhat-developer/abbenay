@@ -382,14 +382,22 @@ for await (const chunk of core.chat('my-openai/gpt-4o', messages, undefined, { t
 
 ### Tool policy
 
-Control tool visibility and approval via `ToolPolicyConfig`:
+Control tool visibility and approval via `ToolPolicyConfig`. Chat and the
+daemon MCP HTTP server share `createToolValidator` / `authorizeToolExecution`
+from `tool-approval.ts` (DR-033):
 
 ```typescript
+import { createToolValidator, authorizeToolExecution } from '@abbenay/core';
+
 const tools = registry.listForChat({
   disabled_tools: ['mcp:filesystem/*'],   // Never send to LLM
   auto_approve: ['local:*/*'],            // Execute without confirmation
   require_approval: ['ws:*/*'],           // Pause and ask user
 });
+
+// Same precedence for any execution surface:
+// disabled → deny; require_approval → ask; auto_approve → allow; default → ask
+const validator = createToolValidator(registry, policy, onApprovalNeeded);
 ```
 
 ## Relationship to @abbenay/daemon

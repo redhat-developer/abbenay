@@ -165,6 +165,14 @@ describe('HTTP auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rejects unauthenticated POST /mcp', async () => {
+    const res = await httpRequest('POST', '/mcp', {
+      token: null,
+      body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
   it('allows authenticated GET /api/secrets', async () => {
     const res = await httpRequest('GET', '/api/secrets');
     expect(res.statusCode).toBe(200);

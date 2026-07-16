@@ -61,6 +61,7 @@ All three tiers are enforced. The default for tools matching no tier is
 - **M2**: CLI `aby chat` with interactive approval — **done**
 - **M3**: VS Code backchannel approval flow
 - **M4**: `max_tool_iterations` enforcement — **done**
+- **M5**: MCP HTTP (`/mcp`) uses the same tool_policy path as chat (DR-033) — **done**
 
 ---
 

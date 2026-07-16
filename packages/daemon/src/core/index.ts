@@ -104,6 +104,18 @@ export type {
 /** Tool policy pattern matching */
 export { matchesAnyPattern } from './tool-registry.js';
 
+/** Shared tool approval validator (chat + MCP HTTP) */
+export {
+  createToolValidator,
+  authorizeToolExecution,
+  classifyToolPolicy,
+} from './tool-approval.js';
+export type {
+  ApprovalDecision,
+  OnToolApprovalNeeded,
+  ToolPolicyTier,
+} from './tool-approval.js';
+
 // ─── Engine Listing ─────────────────────────────────────────────────────
 
 /** Get all available engines (the fixed set of LLM API implementations) */

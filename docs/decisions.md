@@ -492,3 +492,46 @@ Forcing tools off forever breaks those clients; enabling Abbenay-side execution
 on `/v1` without an approval UI would weaken DR-019. Passthrough preserves the
 secure default while unblocking client-executed tools for explicitly opted-in
 models.
+
+---
+
+## DR-033: MCP HTTP uses the same tool approval policy as chat
+
+**Date:** 2026-07-17
+**Decision:** Every tool invocation on the embedded MCP HTTP endpoint (`/mcp`)
+goes through the shared `createToolValidator` / `authorizeToolExecution` helper
+used by chat. Precedence is `disabled_tools` → deny, `require_approval` → ask,
+`auto_approve` → allow, default → ask (DR-019). Pending MCP approvals block the
+MCP `tools/call` until the user resolves them via
+`GET/POST /api/mcp/approvals` (dashboard consent UX). `/mcp` remains behind the
+DR-030 Bearer/cookie auth gate. There is no executor path that bypasses
+`tool_policy`. After connection consent (DR-034), the daemon keeps a
+sessionful Streamable HTTP transport per approved `Mcp-Session-Id`
+(`enableJsonResponse: true`); non-initialize requests without an approved
+session are rejected.
+**Rationale:** Finding C3/A2 — `registerTools()` previously invoked executors
+directly, so an authenticated (or, before DR-030, open) MCP client could run
+tools while skipping approval tiers. Sharing one validator with chat closes
+that bypass and keeps policy configuration consistent across surfaces.
+
+---
+
+## DR-034: Explicit consent for MCP client connections
+
+**Date:** 2026-07-17
+**Decision:** Before an MCP client may establish a Streamable HTTP session on
+`/mcp`, the user must explicitly allow the connection (dashboard /
+`POST /api/mcp/connections/:requestId`). `initialize` blocks until allow/deny.
+Non-initialize requests without an approved `Mcp-Session-Id` are rejected with
+403 so `tools/call` cannot skip connection consent. Optional "Allow & Remember"
+keeps a **non-empty** `clientInfo.name` for the daemon lifetime (the default
+placeholder `unknown-client` is never remembered — remember is a DX shortcut,
+not strong client identity; any token bearer can present a remembered name).
+Sessions can be revoked via
+`DELETE /api/mcp/connections/sessions/:sessionId`.
+**Rationale:** Bearer auth alone (DR-030) proves possession of the API token but
+does not express user intent to let a specific MCP client attach. Connection
+consent closes the remaining C3 recommendation and stops token-bearing callers
+from silently opening an MCP session. API-token holders can both call `/mcp`
+and approve via `/api/mcp/connections`, so consent is interactive friction, not
+a second principal against a stolen/shared token.

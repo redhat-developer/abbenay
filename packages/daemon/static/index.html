@@ -582,9 +582,64 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-md);">
             <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
               MCP servers provide tools to the LLM. Configure them in <code>~/.config/abbenay/config.yaml</code> under <code>mcp_servers</code>.
+              Tools invoked via Abbenay's <code>/mcp</code> endpoint use the same approval policy as chat.
             </p>
-            <button class="btn btn-secondary btn-sm" @click="loadMcpServers()">Refresh</button>
+            <button class="btn btn-secondary btn-sm" @click="loadMcpServers(); loadMcpApprovals(); loadMcpConnections()">Refresh</button>
           </div>
+
+          <template x-if="pendingMcpConnections.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg); padding: 1rem; background: #fce7e7; border: 2px solid #c9190b; border-radius: 3px;">
+              <h3 style="margin: 0 0 0.75rem; font-size: 1rem;">Pending MCP client connections</h3>
+              <p style="margin: 0 0 0.75rem; font-size: 0.85rem; color: #6a6e73;">
+                An external MCP client is trying to connect to Abbenay. Approve only if you trust this client.
+              </p>
+              <template x-for="req in pendingMcpConnections" :key="req.requestId">
+                <div style="margin-bottom: 0.75rem; padding: 0.75rem; background: #fff; border-radius: 3px;">
+                  <div style="font-weight: 600;" x-text="req.clientName + ' v' + req.clientVersion"></div>
+                  <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-sm" @click="resolveMcpConnection(req.requestId, 'allow')">Allow once</button>
+                    <button class="btn btn-primary btn-sm" @click="resolveMcpConnection(req.requestId, 'allow', true)">Allow &amp; Remember</button>
+                    <button class="btn btn-secondary btn-sm" style="color: #c00;" @click="resolveMcpConnection(req.requestId, 'deny')">Deny</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="mcpSessions.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg);">
+              <h3 style="margin: 0 0 0.5rem; font-size: 0.95rem;">Active MCP client sessions</h3>
+              <template x-for="sess in mcpSessions" :key="sess.sessionId">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #f0f0f0;">
+                  <span>
+                    <strong x-text="sess.clientName"></strong>
+                    <span style="color: #6a6e73; font-size: 0.85rem;" x-text="' v' + sess.clientVersion"></span>
+                  </span>
+                  <button class="btn btn-secondary btn-sm" @click="revokeMcpSession(sess.sessionId)">Revoke</button>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="pendingMcpApprovals.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg); padding: 1rem; background: #fff3cd; border: 2px solid #e6a817; border-radius: 3px;">
+              <h3 style="margin: 0 0 0.75rem; font-size: 1rem;">Pending MCP tool approvals</h3>
+              <p style="margin: 0 0 0.75rem; font-size: 0.85rem; color: #6a6e73;">
+                An MCP client called a tool that requires your consent. Approve or deny to unblock the request.
+              </p>
+              <template x-for="req in pendingMcpApprovals" :key="req.requestId">
+                <div style="margin-bottom: 0.75rem; padding: 0.75rem; background: #fff; border-radius: 3px;">
+                  <div style="font-weight: 600;" x-text="req.namespacedName || req.toolName"></div>
+                  <pre style="font-size: 0.75rem; overflow: auto; max-height: 8rem; margin: 0.5rem 0;" x-text="JSON.stringify(req.args || {}, null, 2)"></pre>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary btn-sm" @click="resolveMcpApproval(req.requestId, 'allow')">Allow</button>
+                    <button class="btn btn-secondary btn-sm" @click="resolveMcpApproval(req.requestId, 'deny')">Deny</button>
+                    <button class="btn btn-secondary btn-sm" style="color: #c00;" @click="resolveMcpApproval(req.requestId, 'abort')">Abort</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
 
           <template x-if="mcpServers.length === 0">
             <div class="empty-state">
@@ -1354,6 +1409,9 @@ function dashboard() {
     
     // MCP Servers
     mcpServers: [],
+    pendingMcpApprovals: [],
+    pendingMcpConnections: [],
+    mcpSessions: [],
     
     // Tools
     allTools: [],
@@ -1416,8 +1474,15 @@ function dashboard() {
       await this.refresh();
       // Load MCP servers, tools, and policies in background
       this.loadMcpServers();
+      this.loadMcpApprovals();
+      this.loadMcpConnections();
       this.loadTools();
       this.loadPolicies();
+      // Poll pending MCP connection consent + tool approvals
+      setInterval(() => {
+        this.loadMcpApprovals();
+        this.loadMcpConnections();
+      }, 2000);
     },
     
     // ── Config helpers ──
@@ -1850,6 +1915,62 @@ function dashboard() {
         const data = await resp.json();
         this.mcpServers = data.mcp_servers || [];
       } catch (e) { console.error('Failed to load MCP servers:', e); }
+    },
+
+    async loadMcpApprovals() {
+      try {
+        const resp = await apiFetch('/api/mcp/approvals');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        this.pendingMcpApprovals = data.pending || [];
+      } catch (e) { /* ignore — MCP server may be stopped */ }
+    },
+
+    async loadMcpConnections() {
+      try {
+        const resp = await apiFetch('/api/mcp/connections');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        this.pendingMcpConnections = data.pending || [];
+        this.mcpSessions = data.sessions || [];
+      } catch (e) { /* ignore */ }
+    },
+
+    async resolveMcpConnection(requestId, decision, remember = false) {
+      try {
+        await apiFetch(`/api/mcp/connections/${encodeURIComponent(requestId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision, remember: !!remember }),
+        });
+        await this.loadMcpConnections();
+      } catch (e) {
+        console.error('Failed to resolve MCP connection:', e);
+      }
+    },
+
+    async revokeMcpSession(sessionId) {
+      try {
+        await apiFetch(`/api/mcp/connections/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+        });
+        await this.loadMcpConnections();
+      } catch (e) {
+        console.error('Failed to revoke MCP session:', e);
+      }
+    },
+
+    async resolveMcpApproval(requestId, decision) {
+      try {
+        await apiFetch(`/api/mcp/approvals/${encodeURIComponent(requestId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision }),
+        });
+        await this.loadMcpApprovals();
+      } catch (e) {
+        console.error('Failed to resolve MCP approval:', e);
+      }
     },
     
     async reconnectMcpServer(serverId) {

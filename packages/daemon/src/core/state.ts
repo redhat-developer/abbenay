@@ -35,7 +35,8 @@ import {
   type ToolExecutor,
   type ToolValidationCallback,
 } from './engines.js';
-import { matchesAnyPattern, type ToolRegistry } from './tool-registry.js';
+import type { ToolRegistry } from './tool-registry.js';
+import { createToolValidator } from './tool-approval.js';
 import { VERSION } from '../version.js';
 
 // ── Virtual provider info (runtime, for API responses) ─────────────────
@@ -641,32 +642,17 @@ export class CoreState {
 
     // ── Build tool validator from policy + caller's approval callback ──
     // Secure-by-default: all tools require approval unless explicitly
-    // listed in auto_approve.  See DR-019.
-    // Precedence: require_approval > auto_approve > default (ask).
+    // listed in auto_approve.  See DR-019 / DR-033.
+    // Same createToolValidator() path as MCP HTTP (/mcp) — no bypass.
     let toolValidator: ToolValidationCallback | undefined;
     if (toolOptions?.onToolApprovalNeeded && this.toolRegistry) {
       const registry = this.toolRegistry;
-      const requirePatterns = toolPolicy?.require_approval;
-      const autoPatterns = toolPolicy?.auto_approve;
-
-      toolValidator = async (toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
-        const resolved = registry.resolve(toolName);
-        const nsName = resolved?.namespacedName || toolName;
-
-        if (matchesAnyPattern(requirePatterns, nsName)) {
-          const requestId = crypto.randomUUID();
-          debug(`[State] Tool "${toolName}" (${nsName}) requires approval (explicit) — requestId=${requestId}`);
-          return toolOptions.onToolApprovalNeeded!(requestId, toolName, args, nsName);
-        }
-
-        if (matchesAnyPattern(autoPatterns, nsName)) {
-          return 'allow';
-        }
-
-        const requestId = crypto.randomUUID();
-        debug(`[State] Tool "${toolName}" (${nsName}) requires approval (default) — requestId=${requestId}`);
-        return toolOptions.onToolApprovalNeeded!(requestId, toolName, args, nsName);
-      };
+      const onApproval = toolOptions.onToolApprovalNeeded;
+      const inner = createToolValidator(registry, toolPolicy, async (requestId, toolName, args, nsName) => {
+        debug(`[State] Tool "${toolName}" (${nsName || toolName}) requires approval — requestId=${requestId}`);
+        return onApproval(requestId, toolName, args, nsName);
+      });
+      toolValidator = inner;
     }
 
     // ── Resolve maxSteps for tool loop ──

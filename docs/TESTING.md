@@ -69,7 +69,8 @@ Pure unit tests with no I/O, no network, no processes.
 | `src/core/mock.test.ts` | Mock engine: echo, fixed, error, empty, slow modes |
 | `src/core/config.test.ts` | Config loading, merging, validation |
 | `src/core/tool-registry.test.ts` | Glob matching, tool registration, resolution, policy filtering |
-| `src/core/tool-approval.test.ts` | 3-tier approval precedence (auto_approve, require_approval, default) |
+| `src/core/tool-approval.test.ts` | Shared validator: disabled / auto_approve / require_approval / default ask |
+| `src/daemon/mcp-server.test.ts` | MCP authorizeAndExecute honors tool_policy (no bypass) |
 | `src/state.test.ts` | DaemonState: provider listing, model listing, chat flow |
 | `src/daemon/chat-prompt.test.ts` | `parseApprovalInput` case-sensitive routing |
 | `src/daemon/web/openai-compat.test.ts` | OpenAI format mapping: models, finish reasons, stream chunks, complete responses |
@@ -88,6 +89,7 @@ Tests that start real servers, make real HTTP/gRPC calls.
 | `tests/integration/web-sse.test.ts` | Web API endpoints + SSE chat streaming + errors + disconnect |
 | `tests/integration/openai-compat.test.ts` | OpenAI-compatible API: /v1/models, streaming, non-streaming, errors, tool calls |
 | `tests/integration/sessions.test.ts` | Session REST API: CRUD endpoints, session chat SSE streaming + persistence |
+| `tests/integration/mcp-http-policy.test.ts` | `/mcp` auth + connection consent + tool_policy E2E |
 
 ### Mock Engine
 
