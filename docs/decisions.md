@@ -425,3 +425,48 @@ default CMD uses `--grpc-tls`.
 config, and tools. A warning alone is insufficient (finding C2). Fail-closed
 startup forces an explicit security choice while preserving localhost DX and
 allowing an escape hatch for trusted networks.
+
+---
+
+## DR-030: Secure-by-default HTTP API
+
+**Date:** 2026-07-14
+**Decision:** Require Bearer (or SameSite cookie) authentication on all HTTP
+routes (`/api/*`, `/v1/*`, `/mcp`) by default, restrict CORS to an explicit
+origin allowlist (never `*`), and bind the HTTP server to `127.0.0.1` by
+default. Non-localhost bind requires explicit opt-in (`--host`,
+`ABBENAY_HTTP_HOST`, or `server.host`). The API token resolves from
+`ABBENAY_API_TOKEN` / `server.api_token` / `server.api_token_env`, or is
+auto-generated and persisted as `http-api-token` in the config directory.
+The dashboard uses `SameSite=Strict` cookies plus a CSRF token for browser
+state-changing requests. Prefer `GET/POST /login` (token in the form/body)
+over `/?token=` query login to avoid leaking credentials via history,
+Referer, and access logs; the query form remains for compatibility and uses
+a timing-safe compare. Cookies set the `Secure` flag when the request is
+HTTPS or `X-Forwarded-Proto: https`. For local development only,
+`ABBENAY_HTTP_AUTH=0` (or `false`/`off`/`no`/`disabled`) turns auth off and
+logs a loud warning. Combining auth-disabled with a non-loopback bind
+(`0.0.0.0`, LAN IP, etc.) fails closed: the HTTP server refuses to start.
+**Rationale:** The previous defaults (no auth, `Access-Control-Allow-Origin: *`,
+`app.listen(port)` → `0.0.0.0`) allowed any website the user visited to
+cross-origin call the daemon and read/write secrets, config, chat, MCP, and
+sessions. Secure-by-default closes that gap while keeping intentional network
+exposure possible for containers with an explicit opt-in and a strong token.
+An env-var escape hatch keeps local DX workable without baking an insecure
+default back into production paths.
+
+---
+
+## DR-031: Session ownership principals
+
+**Date:** 2026-07-14
+**Decision:** Stamp every session with an `owner` principal and enforce
+owner-scoped list/get/delete/chat on HTTP and gRPC. Principals are
+`local` (CLI / local gRPC), `http:<token-fingerprint>` (HTTP API token, with
+optional `X-Abbenay-Session-Owner` claim), or `consumer:<name>` (gRPC consumer
+token). Legacy sessions without `owner` are treated as `local`. Cross-owner
+access returns "not found".
+**Rationale:** Authentication alone (DR-030) blocks anonymous access but does
+not isolate sessions between authenticated principals sharing one daemon.
+Ownership closes H9: HTTP clients, CLI, and named consumers cannot enumerate
+or read each other's conversation history.

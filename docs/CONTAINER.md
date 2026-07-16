@@ -99,6 +99,7 @@ Mount this file into the container at:
 podman run -d --name abbenay \
   -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
   -e OPENROUTER_API_KEY=sk-or-... \
+  -e ABBENAY_API_TOKEN=change-me \
   -p 8787:8787 \
   -p 50051:50051 \
   abbenay:latest
@@ -110,6 +111,7 @@ With consumer authentication (for programmatic clients like APME):
 podman run -d --name abbenay \
   -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
   -e OPENROUTER_API_KEY=sk-or-... \
+  -e ABBENAY_API_TOKEN=change-me \
   -e APME_TOKEN=secret123 \
   -p 8787:8787 \
   -p 50051:50051 \
@@ -119,8 +121,11 @@ podman run -d --name abbenay \
 ### Verify it's running
 
 ```bash
-curl http://localhost:8787/api/health
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/api/health
 ```
+
+Set `ABBENAY_API_TOKEN` in the container environment (required for the
+built-in healthcheck and all HTTP routes).
 
 ### View logs
 
@@ -133,8 +138,8 @@ podman logs -f abbenay
 ## Overriding the command
 
 The default `CMD` is
-`start --port 8787 --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls`,
-which runs all services with TLS-protected gRPC accessible from outside the
+`start --port 8787 --host 0.0.0.0 --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls`,
+which runs all services with HTTP and TLS-protected gRPC accessible from outside the
 container. You can override it to run a subset:
 
 ```bash
@@ -243,6 +248,9 @@ metadata:
 type: Opaque
 stringData:
   OPENROUTER_API_KEY: "sk-or-..."
+  # Must match the Bearer value in the probe httpHeaders below.
+  # Kubernetes does not expand env vars in httpGet.httpHeaders.
+  ABBENAY_API_TOKEN: "replace-with-a-strong-token"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -291,12 +299,18 @@ spec:
             httpGet:
               path: /api/health
               port: 8787
+              httpHeaders:
+                - name: Authorization
+                  value: Bearer replace-with-a-strong-token
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /api/health
               port: 8787
+              httpHeaders:
+                - name: Authorization
+                  value: Bearer replace-with-a-strong-token
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
@@ -324,13 +338,44 @@ spec:
 
 - The image runs as non-root user `abbenay` (UID 1001), compatible with
   OpenShift's restricted SCC.
-- The built-in `HEALTHCHECK` uses `curl` against `/api/health`. In
-  Kubernetes, use the `livenessProbe` and `readinessProbe` shown above
-  instead.
+- The built-in `HEALTHCHECK` uses `curl` against `/api/health` with
+  `Authorization: Bearer ${ABBENAY_API_TOKEN}`. Set that env var when
+  running the container. In Kubernetes, the sample `livenessProbe` /
+  `readinessProbe` send the same Bearer token via `httpHeaders` — keep that
+  value identical to `ABBENAY_API_TOKEN` in the Secret (Kubernetes does not
+  expand environment variables in `httpGet.httpHeaders`).
 - Sessions are ephemeral by default. To persist sessions across restarts,
   mount a volume at `/home/abbenay/.local/share/abbenay/sessions/`.
 
 ---
+
+## Security: HTTP bind and authentication
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--host` / `ABBENAY_HTTP_HOST` / `server.host` | `127.0.0.1` | HTTP bind (dashboard, `/api/*`, `/v1/*`, `/mcp`) |
+
+| Value | Effect |
+|-------|--------|
+| `127.0.0.1` (default) | Loopback only — safe for local development |
+| `0.0.0.0` | All interfaces — required inside containers so published ports are reachable |
+
+The container's default `CMD` uses `--host 0.0.0.0` because container
+networking requires listeners to accept connections from outside the
+container's network namespace. The daemon logs a warning when HTTP is bound
+beyond loopback.
+
+**HTTP authentication is on by default.** Set `ABBENAY_API_TOKEN` (or
+`server.api_token` / `server.api_token_env`) and pass
+`Authorization: Bearer <token>` on every request. CORS is allowlist-only
+(never `*`).
+
+> **WARNING:** `ABBENAY_HTTP_AUTH=0` disables HTTP auth for local development
+> only. Combining it with `--host 0.0.0.0` (or any non-loopback bind) fails
+> closed — the HTTP server refuses to start.
+
+When exposing HTTP, always set a strong `ABBENAY_API_TOKEN` and restrict
+`server.cors_origins`. Keep `ABBENAY_HTTP_AUTH` enabled (the default).
 
 ## Security: gRPC bind, TLS, and `--insecure`
 

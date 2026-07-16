@@ -230,15 +230,18 @@ Start the server:
 aby serve -p 8787
 ```
 
-Then point any OpenAI-compatible client at it:
+HTTP routes require a Bearer token (`ABBENAY_API_TOKEN`, `server.api_token`, or
+the auto-generated `http-api-token` in your config directory):
 
 ```bash
 # List models
-curl http://localhost:8787/v1/models
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  http://127.0.0.1:8787/v1/models
 
 # Chat (streaming)
-curl http://localhost:8787/v1/chat/completions \
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
   -H "Content-Type: application/json" \
+  http://127.0.0.1:8787/v1/chat/completions \
   -d '{
     "model": "my-openai/gpt-4o",
     "messages": [{"role": "user", "content": "Hello!"}],
@@ -246,12 +249,24 @@ curl http://localhost:8787/v1/chat/completions \
   }'
 ```
 
+Point any OpenAI-compatible client at `http://127.0.0.1:8787/v1` and use the
+same token as the API key.
+
+> **WARNING:** HTTP auth is **enabled by default**. For throwaway local
+> development only you may set `ABBENAY_HTTP_AUTH=0` to skip Bearer tokens.
+> The server logs a warning. Combining that with `--host 0.0.0.0` refuses to
+> start. Prefer keeping auth on and using `ABBENAY_API_TOKEN` instead.
+
 ### With the OpenAI Python SDK
 
 ```python
 from openai import OpenAI
+import os
 
-client = OpenAI(base_url="http://localhost:8787/v1", api_key="unused")
+client = OpenAI(
+    base_url="http://127.0.0.1:8787/v1",
+    api_key=os.environ["ABBENAY_API_TOKEN"],
+)
 response = client.chat.completions.create(
     model="my-openai/gpt-4o",
     messages=[{"role": "user", "content": "Hello!"}],
@@ -261,8 +276,8 @@ print(response.choices[0].message.content)
 
 ### With Cursor / Continue / aider
 
-Set the API base URL to `http://localhost:8787/v1` in your tool's
-settings. The API key field can be any non-empty string.
+Set the API base URL to `http://127.0.0.1:8787/v1` in your tool's
+settings. Use your Abbenay HTTP API token as the API key.
 
 ---
 
@@ -272,12 +287,20 @@ settings. The API key field can be any non-empty string.
 aby web
 ```
 
-Open http://localhost:8787 in your browser to:
+Open http://127.0.0.1:8787 in your browser (loopback clients get a session
+automatically). For remote binds, use http://127.0.0.1:8787/login or
+`POST /login` with the API token in the body — avoid putting the token in
+the query string (it can leak via history, Referer, and logs).
+
+Use the dashboard to:
 
 - Add and configure providers
 - Store API keys in the system keychain
 - Enable/disable models
 - Test chat with streaming responses
+
+Sessions created before ownership was introduced have no `owner` field and
+are treated as CLI/`local` only — HTTP API clients will not list or open them.
 
 ---
 

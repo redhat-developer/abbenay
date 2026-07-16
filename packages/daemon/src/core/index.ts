@@ -153,7 +153,8 @@ export {
 } from './policies.js';
 
 /** Shared constants */
-export { DEFAULT_WEB_PORT } from './constants.js';
+export { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from './constants.js';
+export type { ServerConfig } from './config.js';
 
 /** Platform-aware path utilities */
 export {
