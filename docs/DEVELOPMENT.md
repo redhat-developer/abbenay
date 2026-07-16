@@ -140,7 +140,24 @@ abbenay list-models         # show configured models from your config
 abbenay list-models --discover ollama   # query an engine for available models
 abbenay chat -m openai/gpt-4o          # interactive chat
 aby daemon                  # short alias
+
+# TCP gRPC (optional) — loopback plaintext OK; non-loopback needs TLS or --insecure
+abbenay daemon --grpc-port 50051
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --insecure   # not recommended
 ```
+
+### gRPC TCP / TLS flags
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--grpc-port <port>` | (off) | Also listen for gRPC on TCP |
+| `--grpc-host <host>` | `127.0.0.1` | Bind address; `0.0.0.0` for containers |
+| `--grpc-tls` | off | Enable TLS (auto-generated self-signed certs) |
+| `--insecure` | off | Allow plaintext on non-loopback binds |
+
+See [CONTAINER.md](./CONTAINER.md#security-grpc-bind-tls-and---insecure) for
+client trust and insecure tradeoffs.
 
 ### CLI list commands
 

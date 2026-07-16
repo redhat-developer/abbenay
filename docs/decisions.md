@@ -407,3 +407,21 @@ fine for early adopters but a barrier to organic adoption. Publishing to both
 VS Code Marketplace and OpenVSX ensures coverage for VS Code and compatible
 editors (Eclipse Theia, VSCodium, Gitpod). Gating alpha releases prevents
 incomplete builds from reaching end users.
+
+---
+
+## DR-029: Fail-closed TLS for non-loopback gRPC TCP binds
+
+**Date:** 2026-07-15
+**Decision:** TCP gRPC listeners require TLS (or an explicit `--insecure` opt-in)
+when binding to any non-loopback address, including `0.0.0.0` / `::`. Loopback
+binds (`127.0.0.1`, `::1`, `localhost`) may remain plaintext for local DX. Unix
+sockets stay plaintext (local IPC). `--grpc-tls` enables TLS with auto-generated
+self-signed material under the runtime `tls/` directory. Clients that use TCP
+(grpc-web-control, Python `AbbenayClient`) support matching SSL credentials;
+SSL target name for auto-generated certs is `abbenay-grpc`. The container
+default CMD uses `--grpc-tls`.
+**Rationale:** Plaintext gRPC on all interfaces exposes API keys, chat, provider
+config, and tools. A warning alone is insufficient (finding C2). Fail-closed
+startup forces an explicit security choice while preserving localhost DX and
+allowing an escape hatch for trusted networks.

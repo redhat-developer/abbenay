@@ -105,4 +105,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8787/api/health || exit 1
 
 ENTRYPOINT ["./abbenay"]
-CMD ["start", "--port", "8787", "--grpc-port", "50051", "--grpc-host", "0.0.0.0"]
+CMD ["start", "--port", "8787", "--grpc-port", "50051", "--grpc-host", "0.0.0.0", "--grpc-tls"]
