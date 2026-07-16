@@ -410,7 +410,25 @@ incomplete builds from reaching end users.
 
 ---
 
-## DR-029: Secure-by-default HTTP API
+## DR-029: Fail-closed TLS for non-loopback gRPC TCP binds
+
+**Date:** 2026-07-15
+**Decision:** TCP gRPC listeners require TLS (or an explicit `--insecure` opt-in)
+when binding to any non-loopback address, including `0.0.0.0` / `::`. Loopback
+binds (`127.0.0.1`, `::1`, `localhost`) may remain plaintext for local DX. Unix
+sockets stay plaintext (local IPC). `--grpc-tls` enables TLS with auto-generated
+self-signed material under the runtime `tls/` directory. Clients that use TCP
+(grpc-web-control, Python `AbbenayClient`) support matching SSL credentials;
+SSL target name for auto-generated certs is `abbenay-grpc`. The container
+default CMD uses `--grpc-tls`.
+**Rationale:** Plaintext gRPC on all interfaces exposes API keys, chat, provider
+config, and tools. A warning alone is insufficient (finding C2). Fail-closed
+startup forces an explicit security choice while preserving localhost DX and
+allowing an escape hatch for trusted networks.
+
+---
+
+## DR-030: Secure-by-default HTTP API
 
 **Date:** 2026-07-14
 **Decision:** Require Bearer (or SameSite cookie) authentication on all HTTP
@@ -434,7 +452,7 @@ default back into production paths.
 
 ---
 
-## DR-030: Session ownership principals
+## DR-031: Session ownership principals
 
 **Date:** 2026-07-14
 **Decision:** Stamp every session with an `owner` principal and enforce
@@ -443,7 +461,7 @@ owner-scoped list/get/delete/chat on HTTP and gRPC. Principals are
 optional `X-Abbenay-Session-Owner` claim), or `consumer:<name>` (gRPC consumer
 token). Legacy sessions without `owner` are treated as `local`. Cross-owner
 access returns "not found".
-**Rationale:** Authentication alone (DR-029) blocks anonymous access but does
+**Rationale:** Authentication alone (DR-030) blocks anonymous access but does
 not isolate sessions between authenticated principals sharing one daemon.
 Ownership closes H9: HTTP clients, CLI, and named consumers cannot enumerate
 or read each other's conversation history.
