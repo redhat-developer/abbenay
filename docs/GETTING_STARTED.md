@@ -328,6 +328,26 @@ Tools from connected MCP servers are automatically available in chat.
 Tool approval policies control which tools can execute without
 confirmation.
 
+### Expose Abbenay as an MCP server
+
+With `--mcp`, Abbenay also serves aggregated tools at `POST /mcp` for
+external MCP clients. That endpoint requires:
+
+1. The same Bearer token as other HTTP routes
+2. **Explicit connection consent** on `initialize` (dashboard → Pending MCP
+   client connections, or `POST /api/mcp/connections/:id`)
+3. `tool_policy` on every `tools/call` (same approval path as chat)
+
+After you allow a connection, use the `Mcp-Session-Id` from the initialize
+response on later requests. Tools that need consent appear under
+**Pending MCP tool approvals**.
+
+```bash
+aby start --mcp -p 8787
+# Client: Authorization: Bearer $ABBENAY_API_TOKEN → http://127.0.0.1:8787/mcp
+# Approve the client in the dashboard, then send Mcp-Session-Id on tools/call
+```
+
 ---
 
 ## 9. VS Code integration

@@ -247,6 +247,221 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   app.use('/v1', requireAuth);
   app.use('/mcp', requireAuth);
 
+  // ── MCP connection consent + tool approval (DR-033 / DR-034) ───────────
+  // Connection: initialize blocks until POST /api/mcp/connections resolves.
+  // Tools: authorizeAndExecute blocks until POST /api/mcp/approvals resolves.
+  // Abandoned pending entries auto-deny after mcpPendingTtlMs (default 5m).
+  const DEFAULT_MCP_PENDING_TTL_MS = 5 * 60 * 1000;
+  const mcpPendingTtlMs = options?.mcpPendingTtlMs != null && options.mcpPendingTtlMs > 0
+    ? options.mcpPendingTtlMs
+    : DEFAULT_MCP_PENDING_TTL_MS;
+
+  const pendingMcpApprovals = new Map<string, {
+    resolve: (decision: 'allow' | 'deny' | 'abort') => void;
+    toolName: string;
+    namespacedName?: string;
+    args: unknown;
+    createdAt: number;
+  }>();
+
+  const pendingMcpConnections = new Map<string, {
+    resolve: (decision: 'allow' | 'deny') => void;
+    clientName: string;
+    clientVersion: string;
+    createdAt: number;
+  }>();
+
+  if (typeof state.mcpServer?.configure === 'function') {
+    state.mcpServer.configure({
+      getPolicy: () => {
+        try {
+          return loadConfig().tool_policy;
+        } catch {
+          return undefined;
+        }
+      },
+      onApprovalNeeded: async (requestId, toolName, args, namespacedName) => {
+        console.log(
+          `[Web] MCP tool approval required: ${namespacedName || toolName} (requestId=${requestId})`,
+        );
+        return new Promise<'allow' | 'deny' | 'abort'>((resolve) => {
+          const timer = setTimeout(() => {
+            if (!pendingMcpApprovals.has(requestId)) return;
+            pendingMcpApprovals.delete(requestId);
+            console.log(
+              `[Web] MCP tool approval expired → deny: ${namespacedName || toolName} (requestId=${requestId})`,
+            );
+            resolve('deny');
+          }, mcpPendingTtlMs);
+          pendingMcpApprovals.set(requestId, {
+            resolve: (decision) => {
+              clearTimeout(timer);
+              resolve(decision);
+            },
+            toolName,
+            namespacedName,
+            args,
+            createdAt: Date.now(),
+          });
+        });
+      },
+      onConnectionConsentNeeded: async (requestId, clientName, clientVersion) => {
+        console.log(
+          `[Web] MCP connection consent required: ${clientName}@${clientVersion} (requestId=${requestId})`,
+        );
+        return new Promise<'allow' | 'deny'>((resolve) => {
+          const timer = setTimeout(() => {
+            if (!pendingMcpConnections.has(requestId)) return;
+            pendingMcpConnections.delete(requestId);
+            console.log(
+              `[Web] MCP connection consent expired → deny: ${clientName}@${clientVersion} (requestId=${requestId})`,
+            );
+            resolve('deny');
+          }, mcpPendingTtlMs);
+          pendingMcpConnections.set(requestId, {
+            resolve: (decision) => {
+              clearTimeout(timer);
+              resolve(decision);
+            },
+            clientName,
+            clientVersion,
+            createdAt: Date.now(),
+          });
+        });
+      },
+    });
+  }
+
+  /**
+   * GET /api/mcp/connections — pending connection consents + active sessions
+   */
+  app.get('/api/mcp/connections', (_req, res) => {
+    const pending = [...pendingMcpConnections.entries()].map(([requestId, p]) => ({
+      requestId,
+      clientName: p.clientName,
+      clientVersion: p.clientVersion,
+      createdAt: p.createdAt,
+    }));
+    const sessions = typeof state.mcpServer?.listSessions === 'function'
+      ? state.mcpServer.listSessions()
+      : [];
+    const remembered = typeof state.mcpServer?.listRememberedClients === 'function'
+      ? state.mcpServer.listRememberedClients()
+      : [];
+    res.json({ pending, sessions, remembered });
+  });
+
+  /**
+   * POST /api/mcp/connections/:requestId — allow / deny a pending MCP client connection
+   * Body: { decision: 'allow' | 'deny', remember?: boolean }
+   */
+  app.post('/api/mcp/connections/:requestId', (req, res) => {
+    const { requestId } = req.params;
+    const { decision, remember } = req.body as { decision?: string; remember?: boolean };
+    if (!decision || !['allow', 'deny'].includes(decision)) {
+      res.status(400).json({ error: 'decision must be allow or deny' });
+      return;
+    }
+    const pending = pendingMcpConnections.get(requestId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending MCP connection with requestId "${requestId}"` });
+      return;
+    }
+    console.log(
+      `[Web] MCP connection: ${pending.clientName}@${pending.clientVersion} → ${decision}` +
+        (remember && decision === 'allow' ? ' (remember)' : '') +
+        ` (requestId=${requestId})`,
+    );
+    if (decision === 'allow' && remember && typeof state.mcpServer?.rememberClient === 'function') {
+      state.mcpServer.rememberClient(pending.clientName);
+    }
+    pending.resolve(decision as 'allow' | 'deny');
+    pendingMcpConnections.delete(requestId);
+    res.json({ success: true });
+  });
+
+  /**
+   * DELETE /api/mcp/connections/sessions/:sessionId — revoke an approved session
+   */
+  app.delete('/api/mcp/connections/sessions/:sessionId', async (req, res) => {
+    try {
+      if (typeof state.mcpServer?.revokeSession !== 'function') {
+        res.status(404).json({ error: 'MCP server does not support session revoke' });
+        return;
+      }
+      const ok = await state.mcpServer.revokeSession(req.params.sessionId);
+      if (!ok) {
+        res.status(404).json({ error: `No MCP session "${req.params.sessionId}"` });
+        return;
+      }
+      res.json({ success: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  /**
+   * DELETE /api/mcp/connections/remembered/:clientName — forget a remembered client
+   */
+  app.delete('/api/mcp/connections/remembered/:clientName', (req, res) => {
+    const clientName = decodeURIComponent(req.params.clientName || '').trim();
+    if (!clientName) {
+      res.status(400).json({ error: 'clientName is required' });
+      return;
+    }
+    if (typeof state.mcpServer?.forgetClient !== 'function') {
+      res.status(404).json({ error: 'MCP server does not support forgetClient' });
+      return;
+    }
+    const before = typeof state.mcpServer.listRememberedClients === 'function'
+      ? state.mcpServer.listRememberedClients()
+      : [];
+    if (!before.includes(clientName)) {
+      res.status(404).json({ error: `No remembered MCP client "${clientName}"` });
+      return;
+    }
+    state.mcpServer.forgetClient(clientName);
+    console.log(`[Web] MCP remembered client forgotten: ${clientName}`);
+    res.json({ success: true, forgotten: clientName });
+  });
+
+  /**
+   * GET /api/mcp/approvals — list pending MCP tool approval requests
+   */
+  app.get('/api/mcp/approvals', (_req, res) => {
+    const pending = [...pendingMcpApprovals.entries()].map(([requestId, p]) => ({
+      requestId,
+      toolName: p.toolName,
+      namespacedName: p.namespacedName,
+      args: p.args,
+      createdAt: p.createdAt,
+    }));
+    res.json({ pending });
+  });
+
+  /**
+   * POST /api/mcp/approvals/:requestId — approve / deny / abort a pending MCP tool call
+   * Body: { decision: 'allow' | 'deny' | 'abort' }
+   */
+  app.post('/api/mcp/approvals/:requestId', (req, res) => {
+    const { requestId } = req.params;
+    const { decision } = req.body as { decision?: string };
+    if (!decision || !['allow', 'deny', 'abort'].includes(decision)) {
+      res.status(400).json({ error: 'decision must be allow, deny, or abort' });
+      return;
+    }
+    const pending = pendingMcpApprovals.get(requestId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending MCP approval with requestId "${requestId}"` });
+      return;
+    }
+    console.log(`[Web] MCP tool approval: ${pending.namespacedName || pending.toolName} → ${decision} (requestId=${requestId})`);
+    pending.resolve(decision as 'allow' | 'deny' | 'abort');
+    pendingMcpApprovals.delete(requestId);
+    res.json({ success: true });
+  });
+
   // ─── API Routes ────────────────────────────────────────────────────────
 
   /**

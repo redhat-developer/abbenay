@@ -85,7 +85,9 @@ gRPC, or MCP paths instead of `/v1`.
 ### HTTP API security (`server`)
 
 The web dashboard, REST API (`/api/*`), OpenAI-compatible API (`/v1/*`), and
-MCP endpoint (`/mcp`) require authentication by default.
+MCP endpoint (`/mcp`) require authentication by default. MCP tool calls also
+honor `tool_policy` (same approval path as chat — see [Tool policy](#tool-policy)
+below).
 
 | Setting / env | Purpose | Default |
 |---------------|---------|---------|
@@ -117,6 +119,51 @@ have set a strong token.
 > with `--host 0.0.0.0` (or any non-loopback bind) fails closed — the HTTP
 > server refuses to start. Prefer keeping auth enabled and using a local
 > token instead.
+
+### Tool policy
+
+`tool_policy` in `config.yaml` applies to **chat** and to tools invoked through
+Abbenay's MCP HTTP endpoint (`POST /mcp`). Both use the same validator
+(`createToolValidator` — DR-033).
+
+```yaml
+tool_policy:
+  disabled_tools: ['mcp:dangerous/*']   # Rejected; never listed for chat
+  auto_approve: ['local:agent/echo']    # Runs without prompting
+  require_approval: ['local:agent/danger']  # Blocks until user approves
+```
+
+| Outcome | Chat | MCP HTTP (`/mcp`) |
+|---------|------|-------------------|
+| `disabled_tools` | Tool omitted from LLM | `tools/call` returns error; executor not run |
+| `auto_approve` | Runs immediately | Runs immediately |
+| `require_approval` / default ask | SSE `approval_request`; `POST /api/chat/:chatId/approve` | Request blocks; dashboard / `GET|POST /api/mcp/approvals` |
+| Denied / abort | Tool skipped or loop aborted | `tools/call` returns `isError` |
+
+Unauthenticated `POST/GET/DELETE /mcp` is rejected with `401` (DR-030).
+
+### MCP client connection consent
+
+Bearer auth alone is not enough to open an MCP session. On `initialize`, Abbenay
+creates a pending connection consent (DR-034). The dashboard (or
+`GET/POST /api/mcp/connections`) must allow the client before a
+`Mcp-Session-Id` is issued. Subsequent `tools/call` requests without that
+session header are rejected with `403`.
+
+| Action | API |
+|--------|-----|
+| List pending + active sessions + remembered | `GET /api/mcp/connections` |
+| Allow / deny (optional `remember: true`) | `POST /api/mcp/connections/:requestId` |
+| Revoke session | `DELETE /api/mcp/connections/sessions/:sessionId` |
+| Forget remembered client | `DELETE /api/mcp/connections/remembered/:clientName` |
+
+`remember: true` is a DX shortcut keyed on `clientInfo.name` for the daemon
+lifetime. Empty names and the placeholder `unknown-client` are never
+remembered. Remember is not strong client identity — any API-token holder can
+present a remembered name, and the same token can both call `/mcp` and approve
+via `/api/mcp/connections`. Pending connection consents and tool approvals
+auto-deny after **5 minutes** if the user never responds, so abandoned
+`initialize` / `tools/call` requests cannot leak entries in the pending maps.
 
 ### Session ownership
 

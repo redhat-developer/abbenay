@@ -37,7 +37,7 @@ The `start` command runs all services:
 | Web dashboard | `http://localhost:8787` |
 | REST API | `http://localhost:8787/api/*` |
 | OpenAI-compatible API | `http://localhost:8787/v1/chat/completions` |
-| MCP server | `http://localhost:8787/mcp` (when `--mcp` is passed) |
+| MCP server | `http://localhost:8787/mcp` (when `--mcp` is passed; requires Bearer auth; tools honor `tool_policy`) |
 | gRPC (TCP) | `localhost:50051` (for Python/programmatic clients) |
 
 ### What's different from bare-metal

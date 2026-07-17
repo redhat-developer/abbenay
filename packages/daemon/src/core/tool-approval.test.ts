@@ -1,44 +1,17 @@
 /**
  * Tool approval validator unit tests
  *
- * Tests the 3-tier precedence logic (require_approval > auto_approve > default ask)
- * that is built inside CoreState.chat(). Exercises the validator construction
- * directly against ToolRegistry + matchesAnyPattern to verify tier ordering,
- * namespacedName passthrough, and backward compatibility.
+ * Tests the shared 3-tier precedence logic (disabled > require_approval >
+ * auto_approve > default ask) used by both chat and MCP HTTP.
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { matchesAnyPattern, ToolRegistry, type ToolPolicyConfig } from './tool-registry.js';
-
-type ApprovalDecision = 'allow' | 'deny' | 'abort';
-
-/**
- * Build a tool validator using the same logic as state.ts.
- * This is extracted here to test in isolation without mocking the full chat flow.
- */
-function buildValidator(
-  registry: ToolRegistry,
-  policy: ToolPolicyConfig | undefined,
-  onApprovalNeeded: (requestId: string, toolName: string, args: unknown, namespacedName?: string) => Promise<ApprovalDecision>,
-) {
-  const requirePatterns = policy?.require_approval;
-  const autoPatterns = policy?.auto_approve;
-
-  return async (toolName: string, args: unknown): Promise<ApprovalDecision> => {
-    const resolved = registry.resolve(toolName);
-    const nsName = resolved?.namespacedName || toolName;
-
-    if (matchesAnyPattern(requirePatterns, nsName)) {
-      return onApprovalNeeded('req-id', toolName, args, nsName);
-    }
-
-    if (matchesAnyPattern(autoPatterns, nsName)) {
-      return 'allow';
-    }
-
-    return onApprovalNeeded('req-id', toolName, args, nsName);
-  };
-}
+import { ToolRegistry, type ToolPolicyConfig } from './tool-registry.js';
+import {
+  authorizeToolExecution,
+  classifyToolPolicy,
+  createToolValidator,
+} from './tool-approval.js';
 
 function makeRegistry(): ToolRegistry {
   const reg = new ToolRegistry();
@@ -60,7 +33,7 @@ describe('Tool approval validator', () => {
     it('asks for all tools when no policy is configured', async () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('allow');
-      const validator = buildValidator(reg, undefined, onApproval);
+      const validator = createToolValidator(reg, undefined, onApproval);
 
       await validator('search', {});
       await validator('read', {});
@@ -72,10 +45,42 @@ describe('Tool approval validator', () => {
     it('asks for all tools with empty policy', async () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('allow');
-      const validator = buildValidator(reg, {}, onApproval);
+      const validator = createToolValidator(reg, {}, onApproval);
 
       await validator('search', {});
       expect(onApproval).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies ask-tier tools when no approval callback (fail-closed)', async () => {
+      const reg = makeRegistry();
+      const validator = createToolValidator(reg, undefined);
+      expect(await validator('search', {})).toBe('deny');
+    });
+  });
+
+  describe('disabled_tools tier', () => {
+    it('denies tools matching disabled_tools without asking', async () => {
+      const reg = makeRegistry();
+      const onApproval = vi.fn().mockResolvedValue('allow');
+      const policy: ToolPolicyConfig = { disabled_tools: ['mcp:github/delete_repo'] };
+      const validator = createToolValidator(reg, policy, onApproval);
+
+      expect(await validator('delete_repo', {})).toBe('deny');
+      expect(onApproval).not.toHaveBeenCalled();
+    });
+
+    it('disabled_tools overrides auto_approve', async () => {
+      const reg = makeRegistry();
+      const onApproval = vi.fn().mockResolvedValue('allow');
+      const policy: ToolPolicyConfig = {
+        auto_approve: ['mcp:*/*'],
+        disabled_tools: ['mcp:github/delete_repo'],
+      };
+      const validator = createToolValidator(reg, policy, onApproval);
+
+      expect(await validator('delete_repo', {})).toBe('deny');
+      expect(await validator('search', {})).toBe('allow');
+      expect(onApproval).not.toHaveBeenCalled();
     });
   });
 
@@ -84,7 +89,7 @@ describe('Tool approval validator', () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('allow');
       const policy: ToolPolicyConfig = { auto_approve: ['mcp:safe/*'] };
-      const validator = buildValidator(reg, policy, onApproval);
+      const validator = createToolValidator(reg, policy, onApproval);
 
       const decision = await validator('read', {});
       expect(decision).toBe('allow');
@@ -95,7 +100,7 @@ describe('Tool approval validator', () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('allow');
       const policy: ToolPolicyConfig = { auto_approve: ['mcp:safe/*'] };
-      const validator = buildValidator(reg, policy, onApproval);
+      const validator = createToolValidator(reg, policy, onApproval);
 
       await validator('search', {});
       expect(onApproval).toHaveBeenCalledTimes(1);
@@ -110,7 +115,7 @@ describe('Tool approval validator', () => {
         auto_approve: ['mcp:*/*'],
         require_approval: ['mcp:github/delete_repo'],
       };
-      const validator = buildValidator(reg, policy, onApproval);
+      const validator = createToolValidator(reg, policy, onApproval);
 
       const decision = await validator('delete_repo', {});
       expect(decision).toBe('deny');
@@ -124,7 +129,7 @@ describe('Tool approval validator', () => {
         auto_approve: ['mcp:*/*'],
         require_approval: ['mcp:github/delete_repo'],
       };
-      const validator = buildValidator(reg, policy, onApproval);
+      const validator = createToolValidator(reg, policy, onApproval);
 
       const decision = await validator('search', {});
       expect(decision).toBe('allow');
@@ -137,7 +142,7 @@ describe('Tool approval validator', () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('allow');
       const policy: ToolPolicyConfig = { auto_approve: ['*:*/*'] };
-      const validator = buildValidator(reg, policy, onApproval);
+      const validator = createToolValidator(reg, policy, onApproval);
 
       expect(await validator('search', {})).toBe('allow');
       expect(await validator('read', {})).toBe('allow');
@@ -150,11 +155,11 @@ describe('Tool approval validator', () => {
     it('passes namespacedName to approval callback', async () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('allow');
-      const validator = buildValidator(reg, undefined, onApproval);
+      const validator = createToolValidator(reg, undefined, onApproval);
 
       await validator('search', { q: 'test' });
       expect(onApproval).toHaveBeenCalledWith(
-        'req-id',
+        expect.any(String),
         'search',
         { q: 'test' },
         'mcp:github/search',
@@ -165,11 +170,11 @@ describe('Tool approval validator', () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('allow');
       const policy: ToolPolicyConfig = { require_approval: ['mcp:github/*'] };
-      const validator = buildValidator(reg, policy, onApproval);
+      const validator = createToolValidator(reg, policy, onApproval);
 
       await validator('search', {});
       expect(onApproval).toHaveBeenCalledWith(
-        'req-id',
+        expect.any(String),
         'search',
         {},
         'mcp:github/search',
@@ -181,7 +186,7 @@ describe('Tool approval validator', () => {
     it('propagates deny from callback', async () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('deny');
-      const validator = buildValidator(reg, undefined, onApproval);
+      const validator = createToolValidator(reg, undefined, onApproval);
 
       expect(await validator('search', {})).toBe('deny');
     });
@@ -189,9 +194,49 @@ describe('Tool approval validator', () => {
     it('propagates abort from callback', async () => {
       const reg = makeRegistry();
       const onApproval = vi.fn().mockResolvedValue('abort');
-      const validator = buildValidator(reg, undefined, onApproval);
+      const validator = createToolValidator(reg, undefined, onApproval);
 
       expect(await validator('search', {})).toBe('abort');
+    });
+  });
+
+  describe('classifyToolPolicy', () => {
+    it('classifies each tier', () => {
+      const policy: ToolPolicyConfig = {
+        disabled_tools: ['mcp:github/delete_repo'],
+        require_approval: ['mcp:github/search'],
+        auto_approve: ['mcp:safe/*'],
+      };
+      expect(classifyToolPolicy('mcp:github/delete_repo', policy)).toBe('disabled');
+      expect(classifyToolPolicy('mcp:github/search', policy)).toBe('require_approval');
+      expect(classifyToolPolicy('mcp:safe/read', policy)).toBe('auto_approve');
+      expect(classifyToolPolicy('local:agent/calculate', policy)).toBe('default_ask');
+    });
+  });
+
+  describe('authorizeToolExecution', () => {
+    it('returns disabled message for disabled tools', async () => {
+      const reg = makeRegistry();
+      const result = await authorizeToolExecution(
+        reg,
+        { disabled_tools: ['mcp:github/search'] },
+        'search',
+        {},
+      );
+      expect(result.decision).toBe('deny');
+      expect(result.message).toMatch(/disabled/);
+    });
+
+    it('allows auto_approve tools', async () => {
+      const reg = makeRegistry();
+      const result = await authorizeToolExecution(
+        reg,
+        { auto_approve: ['mcp:safe/*'] },
+        'read',
+        {},
+      );
+      expect(result.decision).toBe('allow');
+      expect(result.message).toBeUndefined();
     });
   });
 });
