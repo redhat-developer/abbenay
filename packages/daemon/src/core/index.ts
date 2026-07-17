@@ -152,6 +152,16 @@ export {
   isValidVirtualName,
 } from './config.js';
 
+/** Zod schemas for ConfigFile / PolicyConfig validation */
+export {
+  ConfigFileSchema,
+  PolicyConfigSchema,
+  ModelConfigSchema,
+  ProviderConfigSchema,
+  VirtualNameSchema,
+  parseConfigFile,
+} from './config-schema.js';
+
 /** Policy management */
 export {
   BUILTIN_POLICIES,
