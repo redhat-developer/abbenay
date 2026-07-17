@@ -81,6 +81,34 @@ export function resolveOpenAICompatToolsMode(
   return globalMode;
 }
 
+/** Defensive JSON.stringify for untrusted client payloads. */
+function safeJsonStringify(value: unknown, fallback: string): string {
+  try {
+    const s = JSON.stringify(value);
+    return typeof s === 'string' ? s : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Coerce OpenAI tool `parameters` into a JSON Schema object safe for engines.ts.
+ */
+export function coerceToolParametersSchema(parameters: unknown): Record<string, unknown> {
+  if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
+    const obj = parameters as Record<string, unknown>;
+    const properties = (obj.properties && typeof obj.properties === 'object' && !Array.isArray(obj.properties))
+      ? obj.properties
+      : {};
+    return {
+      ...obj,
+      type: typeof obj.type === 'string' ? obj.type : 'object',
+      properties,
+    };
+  }
+  return { type: 'object', properties: {} };
+}
+
 /**
  * Map OpenAI `tools` request entries to Abbenay ToolDefinition[].
  */
@@ -92,17 +120,19 @@ export function mapOpenAIToolsToDefinitions(tools: unknown): ToolDefinition[] {
   for (const entry of tools) {
     if (!entry || typeof entry !== 'object') continue;
     const t = entry as Record<string, unknown>;
+    // OpenAI tools are type:"function"; reject other tool kinds.
+    if (t.type !== undefined && t.type !== 'function') continue;
     const fn = t.function && typeof t.function === 'object'
       ? t.function as Record<string, unknown>
       : undefined;
-    const name = typeof fn?.name === 'string' ? fn.name : undefined;
+    const name = typeof fn?.name === 'string' ? fn.name.trim() : '';
     if (!name) continue;
     const description = typeof fn?.description === 'string' ? fn.description : '';
-    const parameters = fn?.parameters ?? { type: 'object', properties: {} };
+    const parameters = coerceToolParametersSchema(fn?.parameters);
     out.push({
       name,
       description,
-      inputSchema: JSON.stringify(parameters),
+      inputSchema: safeJsonStringify(parameters, '{"type":"object","properties":{}}'),
     });
   }
   return out;
@@ -116,17 +146,21 @@ export function normalizeOpenAIToolCalls(toolCalls: unknown): OpenAIToolCall[] |
   if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
     return undefined;
   }
-  return toolCalls.map((tc) => {
+  const out: OpenAIToolCall[] = [];
+  for (const tc of toolCalls) {
     const { id, name, arguments: args } = extractToolCallFields(tc);
+    const toolName = name.trim();
+    if (!toolName) continue;
     const argStr = typeof args === 'string'
       ? args
-      : JSON.stringify(args ?? {});
-    return {
+      : safeJsonStringify(args ?? {}, '{}');
+    out.push({
       id: id || `call_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
       type: 'function' as const,
-      function: { name, arguments: argStr },
-    };
-  });
+      function: { name: toolName, arguments: argStr },
+    });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 export function buildStreamChunk(

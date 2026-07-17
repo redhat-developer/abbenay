@@ -917,14 +917,19 @@ export async function* streamChat(
       for (const t of tools!) {
         let schema: JSONSchema7;
         try {
-          schema = JSON.parse(t.inputSchema) as JSONSchema7;
+          const parsed: unknown = JSON.parse(t.inputSchema);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            schema = parsed as JSONSchema7;
+          } else {
+            schema = { type: 'object', properties: {} };
+          }
         } catch {
           schema = { type: 'object', properties: {} };
         }
         if (!schema.type) {
           schema.type = 'object';
         }
-        if (!schema.properties) {
+        if (!schema.properties || typeof schema.properties !== 'object') {
           schema.properties = {};
         }
 

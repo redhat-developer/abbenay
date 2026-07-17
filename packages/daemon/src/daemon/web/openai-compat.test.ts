@@ -329,6 +329,23 @@ describe('mapOpenAIToolsToDefinitions', () => {
     expect(mapOpenAIToolsToDefinitions(null)).toEqual([]);
     expect(mapOpenAIToolsToDefinitions([{ type: 'function', function: {} }])).toEqual([]);
   });
+
+  it('rejects non-function tool types', () => {
+    expect(mapOpenAIToolsToDefinitions([
+      { type: 'custom', function: { name: 'x', parameters: {} } },
+    ])).toEqual([]);
+  });
+
+  it('coerces non-object parameters to an empty object schema', () => {
+    const defs = mapOpenAIToolsToDefinitions([
+      {
+        type: 'function',
+        function: { name: 'web_search', parameters: 5 },
+      },
+    ]);
+    expect(defs).toHaveLength(1);
+    expect(JSON.parse(defs[0].inputSchema)).toEqual({ type: 'object', properties: {} });
+  });
 });
 
 describe('normalizeOpenAIToolCalls', () => {
@@ -355,5 +372,12 @@ describe('normalizeOpenAIToolCalls', () => {
     ]);
     expect(normalized![0].function.name).toBe('search');
     expect(normalized![0].function.arguments).toBe('{"q":"b"}');
+  });
+
+  it('skips entries with empty tool names', () => {
+    expect(normalizeOpenAIToolCalls([
+      { id: 'call_x', type: 'function', function: { name: '', arguments: '{}' } },
+      { id: 'call_y', name: '   ', arguments: '{}' },
+    ])).toBeUndefined();
   });
 });
