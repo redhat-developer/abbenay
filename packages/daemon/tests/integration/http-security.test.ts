@@ -390,6 +390,15 @@ describe('dashboard login', () => {
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/login');
   });
+
+  it('SPA fallback paths also redirect when X-Forwarded-Host is public', async () => {
+    const res = await httpRequest('GET', '/providers', {
+      token: null,
+      headers: { 'X-Forwarded-Host': 'abbenay.example' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/login');
+  });
 });
 
 describe('CORS allowlist', () => {

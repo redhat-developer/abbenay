@@ -1695,6 +1695,9 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // ── OpenAI-compatible API (/v1/*) ─────────────────────────────────────
   registerOpenAIRoutes(app, state);
 
+  // SPA fallback — same locality /login policy as `/` and `/index.html`.
+  app.get('*', serveDashboardHtml);
+
   return app;
 }
 
@@ -1738,35 +1741,6 @@ export async function startEmbeddedWebServer(
     host: bindHost,
     corsOrigins: security.corsOrigins,
     skipConfig: true,
-  });
-
-  // SPA fallback (serve index.html for non-API routes)
-  app.get('*', (req, res) => {
-    const indexPath = path.join(STATIC_PATH, 'index.html');
-    if (!fs.existsSync(indexPath)) {
-      res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);
-      return;
-    }
-    if (!security.authEnabled) {
-      res.type('html').send(fs.readFileSync(indexPath, 'utf-8'));
-      return;
-    }
-    const addr = req.socket.remoteAddress || '';
-    const loopback = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
-    const cookieToken = getCookie(req, API_TOKEN_COOKIE);
-    const hasAuthCookie =
-      cookieToken !== null && timingSafeEqualString(cookieToken, security.apiToken);
-    const mayEstablish = hasAuthCookie || loopback || isLocalhostBind(bindHost);
-    let csrf = getCookie(req, CSRF_COOKIE);
-    if (mayEstablish && (!hasAuthCookie || !csrf)) {
-      csrf = setAuthCookies(res, security.apiToken, { secure: cookieSecureFromRequest(req) });
-    }
-    let html = fs.readFileSync(indexPath, 'utf-8');
-    const inject = `<script>window.__ABBENAY_CSRF__=${JSON.stringify(csrf || '')};</script>`;
-    html = html.includes('</head>')
-      ? html.replace('</head>', `${inject}</head>`)
-      : `${inject}${html}`;
-    res.type('html').send(html);
   });
 
   _webPort = port;
