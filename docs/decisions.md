@@ -478,7 +478,9 @@ or read each other's conversation history.
 **Date:** 2026-07-17
 **Decision:** `/v1/chat/completions` keeps tools disabled by default (DR-019).
 Operators may opt in to **passthrough** via global `openai_compat.tools` and/or
-per-model `openai_compat_tools` (dashboard checkbox or YAML). In passthrough,
+per-model `openai_compat_tools` (YAML, or the dashboard checkbox which sets
+`passthrough` / clears the override; forcing per-model `off` is YAML-only).
+In passthrough,
 Abbenay forwards client-provided OpenAI `tools` to the model and returns
 structured `tool_calls` (streaming and non-streaming); the **client** executes
 tools and posts `role: tool` follow-ups. Abbenay does not run MCP/tool

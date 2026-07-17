@@ -269,6 +269,25 @@ describe('buildCompleteResponse', () => {
     expect(result.choices[0].message.content).toBeNull();
     expect(result.choices[0].message.tool_calls).toEqual(toolCalls);
   });
+
+  it('nulls content whenever tool_calls are present', () => {
+    const toolCalls = [{
+      id: 'call_abc',
+      type: 'function' as const,
+      function: { name: 'web_search', arguments: '{"q":"x"}' },
+    }];
+    const result = buildCompleteResponse(
+      'id',
+      'model',
+      0,
+      'thinking aloud',
+      'tool-calls',
+      toolCalls,
+    ) as any;
+
+    expect(result.choices[0].message.content).toBeNull();
+    expect(result.choices[0].message.tool_calls).toEqual(toolCalls);
+  });
 });
 
 // ── resolveOpenAICompatToolsMode ────────────────────────────────────────

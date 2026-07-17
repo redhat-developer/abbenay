@@ -58,9 +58,11 @@ default from DR-019). Opt in to **passthrough** so clients like
 | Level | Key | UI |
 |-------|-----|-----|
 | Global | `openai_compat.tools: off \| passthrough` | YAML only |
-| Per model | `openai_compat_tools: off \| passthrough` | YAML or **Configure model** checkbox (“Allow OpenAI tools on /v1”) |
+| Per model | `openai_compat_tools: off \| passthrough` | YAML for both values; dashboard **Configure model** checkbox only sets `passthrough` or clears the key (inherit global) |
 
-Resolve order: **per-model → global → `off`**.
+Resolve order: **per-model → global → `off`**. To force a model `off` when
+global is `passthrough`, set `openai_compat_tools: off` in YAML (the checkbox
+cannot force `off`).
 
 ```yaml
 openai_compat:

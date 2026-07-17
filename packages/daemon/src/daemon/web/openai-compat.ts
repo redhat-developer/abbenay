@@ -249,11 +249,13 @@ export function buildCompleteResponse(
   finishReason: string,
   toolCalls?: OpenAIToolCall[],
 ): object {
+  const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
   const message: Record<string, unknown> = {
     role: 'assistant',
-    content: toolCalls && toolCalls.length > 0 ? (content || null) : content,
+    // OpenAI clients often ignore tool_calls when content is a non-null string.
+    content: hasToolCalls ? null : content,
   };
-  if (toolCalls && toolCalls.length > 0) {
+  if (hasToolCalls) {
     message.tool_calls = toolCalls;
   }
   return {
