@@ -90,6 +90,8 @@ Tests that start real servers, make real HTTP/gRPC calls.
 | `tests/integration/openai-compat.test.ts` | OpenAI-compatible API: /v1/models, streaming, non-streaming, errors, tool calls |
 | `tests/integration/sessions.test.ts` | Session REST API: CRUD endpoints, session chat SSE streaming + persistence |
 | `tests/integration/mcp-http-policy.test.ts` | `/mcp` auth + connection consent + tool_policy E2E |
+| `tests/integration/http-security.test.ts` | HTTP auth, CORS, bind defaults, dashboard login |
+| `tests/integration/discover-models-auth.test.ts` | discover-models: reject `?apiKey=`; accept `X-Api-Key` / body |
 
 ### Mock Engine
 

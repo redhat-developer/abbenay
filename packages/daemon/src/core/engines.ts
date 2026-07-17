@@ -805,9 +805,17 @@ async function fetchGeminiModels(
   baseUrl?: string,
 ): Promise<DiscoveredModel[]> {
   const base = baseUrl || 'https://generativelanguage.googleapis.com';
-  const url = `${base}/v1beta/models${apiKey ? `?key=${apiKey}` : ''}`;
+  // Never put API keys in the URL (?key= leaks via logs, proxies, history, Referer).
+  // Match @ai-sdk/google: send the key via x-goog-api-key header.
+  const url = `${base}/v1beta/models`;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (apiKey) {
+    headers['x-goog-api-key'] = apiKey;
+  }
 
-  const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const resp = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
   if (!resp.ok) {
     throw new Error(`Gemini HTTP ${resp.status}`);
   }

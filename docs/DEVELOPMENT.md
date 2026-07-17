@@ -109,6 +109,7 @@ The build handles macOS-specific SEA requirements automatically: it passes `--ma
 | `build:dev` | `node build.js --skip-zip --code-install` | Build + install VSIX, no zip |
 | `build:proto` | `node build.js --proto-only` | Regenerate proto stubs only |
 | `lint` | `npm run lint --workspaces --if-present` | Lint all packages |
+| `check:no-query-secrets` | `npm run check:no-query-secrets` | Ban query-string API key patterns in sources (DR-035) |
 | `test` | `npm run test --workspaces --if-present` | Test all packages |
 | `ci:build` | `node build.js --skip-proto` | Full build, skip proto (stubs committed) |
 | `ci:package-python` | `cd packages/python && uvx hatch build` | Build Python wheel |
