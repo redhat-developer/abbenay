@@ -169,6 +169,10 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * authenticates via HttpOnly cookie + CSRF header (and API clients use Bearer).
    */
   const serveDashboardHtml = (req: Request, res: Response): void => {
+    // All HTML entry points (/, /index.html, SPA deep-links) must be
+    // non-cacheable — embedded window.__ABBENAY_CSRF__ must stay fresh.
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
     const indexPath = path.join(STATIC_PATH, 'index.html');
     if (!fs.existsSync(indexPath)) {
       res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);

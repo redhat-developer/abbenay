@@ -399,6 +399,12 @@ describe('dashboard login', () => {
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/login');
   });
+
+  it('SPA fallback dashboard HTML is non-cacheable', async () => {
+    const res = await httpRequest('GET', '/providers', { token: null });
+    expect(res.statusCode).toBe(200);
+    expect(String(res.headers['cache-control'] || '')).toMatch(/no-store/i);
+  });
 });
 
 describe('CORS allowlist', () => {
