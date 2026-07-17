@@ -1,5 +1,5 @@
 /**
- * Unit tests for gRPC consumer authorization (DR-036).
+ * Unit tests for gRPC consumer authorization (DR-037).
  */
 
 import { describe, it, expect, afterEach } from 'vitest';

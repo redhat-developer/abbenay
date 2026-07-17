@@ -24,9 +24,9 @@ import { createAbbenayService } from './server/abbenay-service.js';
 import {
   assertConsumersConfiguredForBind,
   buildConsumerAuthContext,
+  hasConfiguredConsumers,
   resolveAllowOpenAuth,
-} from './server/consumer-auth.js';
-import { stopEmbeddedWebServer } from './web/server.js';
+} from './server/consumer-auth.js';import { stopEmbeddedWebServer } from './web/server.js';
 import { loadConfig } from '../core/config.js';
 import {
   resolveTcpGrpcBind,
@@ -175,7 +175,7 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
       const tlsOpts: GrpcTlsOptions = opts.grpcTls ?? {};
       const resolved = resolveTcpGrpcBind(grpcHost, tlsOpts);
 
-      // DR-036: non-loopback binds require consumers (or explicit open auth)
+      // DR-037: non-loopback binds require consumers (or explicit open auth)
       assertConsumersConfiguredForBind(grpcHost, loadConfig(), { allowOpenAuth });
 
       if (!resolved.tlsEnabled && tlsOpts.insecure) {
@@ -184,7 +184,13 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
           'API keys, chat, and provider config travel unencrypted. Prefer --grpc-tls.',
         );
       }
-      if (allowOpenAuth && !authContext.loopbackOnly) {
+      // Only warn when open auth is actually active (empty consumers + escape hatch).
+      // When consumers are configured, RPCs remain gated even with --allow-open-auth/--insecure.
+      if (
+        allowOpenAuth
+        && !authContext.loopbackOnly
+        && !hasConfiguredConsumers(loadConfig())
+      ) {
         console.warn(
           `[Daemon] WARNING: gRPC on ${grpcHost} allows open consumer auth ` +
           '(--allow-open-auth / --insecure). Sensitive RPCs are not gated by consumers.',

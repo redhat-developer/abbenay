@@ -674,7 +674,7 @@ export function createAbbenayService(
           return;
         }
 
-        // Consumer authorization gate (DR-024 / DR-036)
+        // Consumer authorization gate (DR-024 / DR-037)
         const auth = authorizeConsumer(
           call,
           loadConfig() || { providers: {} },
@@ -1261,7 +1261,7 @@ export function createAbbenayService(
           return;
         }
 
-        // Consumer authorization gate (DR-024 / DR-036)
+        // Consumer authorization gate (DR-024 / DR-037)
         const auth = authorizeConsumer(
           call,
           loadConfig() || { providers: {} },
@@ -1381,6 +1381,9 @@ export function createAbbenayService(
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
     SummarizeSession(call: grpc.ServerUnaryCall<{ session_id?: string; sessionId?: string; summarize_model?: string; summarizeModel?: string }, object>, callback: grpc.sendUnaryData<object>): void {
+      // Same capability as Chat — summarization invokes the LLM and can burn provider keys.
+      if (!requireCapability(call, 'chat', authContext, callback)) return;
+
       const sessionId = call.request.session_id || call.request.sessionId || '';
       if (!sessionId) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
@@ -2172,7 +2175,7 @@ function transportProtoToConfig(transport: McpTransportProto): McpServerConfig {
   throw new Error(`Unknown transport type: "${type}". Must be "stdio", "http", or "sse".`);
 }
 
-// ── Consumer authorization (DR-024 / DR-025 / DR-036) ─────────────────
+// ── Consumer authorization (DR-024 / DR-025 / DR-037) ─────────────────
 
 /**
  * Resolve the session owner principal for a gRPC call.

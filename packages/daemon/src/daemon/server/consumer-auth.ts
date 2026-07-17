@@ -1,5 +1,5 @@
 /**
- * Consumer authorization for gRPC (DR-024 / DR-025 / DR-036).
+ * Consumer authorization for gRPC (DR-024 / DR-025 / DR-037).
  *
  * - Localhost / unix socket: empty `consumers` remains allow-all (local DX).
  * - Non-loopback bind: empty `consumers` fails closed unless explicit open mode

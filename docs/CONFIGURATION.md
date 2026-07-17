@@ -185,7 +185,7 @@ via `/api/mcp/connections`. Pending connection consents and tool approvals
 auto-deny after **5 minutes** if the user never responds, so abandoned
 `initialize` / `tools/call` requests cannot leak entries in the pending maps.
 
-### Consumer authentication (`consumers`) — DR-036
+### Consumer authentication (`consumers`) — DR-037
 
 Named consumer applications authenticate to gRPC with a token in the
 `x-abbenay-token` metadata header. Each consumer is granted a capability
@@ -197,7 +197,7 @@ consumers:
     token_env: "APME_TOKEN"          # env var holding the consumer token
     # token_keychain: "APME_TOKEN"   # future: keychain-backed token
     capabilities:
-      chat: true                     # Chat / SessionChat
+      chat: true                     # Chat / SessionChat / SummarizeSession
       inline_policy: true            # PolicyConfig on chat requests
       mcp_register: true             # RegisterMcpServer / UnregisterMcpServer
       secrets: true                  # Get/Set/Delete/ListSecret, GetKeyStatus
@@ -208,7 +208,7 @@ consumers:
 
 | Capability | Gated RPCs |
 |------------|------------|
-| `chat` | `Chat`, `SessionChat` |
+| `chat` | `Chat`, `SessionChat`, `SummarizeSession` |
 | `inline_policy` | Inline `PolicyConfig` on chat (also needs `chat`) |
 | `mcp_register` | `RegisterMcpServer`, `UnregisterMcpServer`, `ReconnectMcpServer` |
 | `secrets` | `GetSecret`, `SetSecret`, `DeleteSecret`, `ListSecrets`, `GetKeyStatus` |

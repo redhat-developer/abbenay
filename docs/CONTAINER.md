@@ -423,7 +423,7 @@ when connecting by IP).
 `--insecure` on `0.0.0.0` restores the old plaintext behavior. API keys, chat,
 provider config, and tools travel unencrypted. Prefer `--grpc-tls`.
 
-**Consumers (DR-036):** Non-loopback gRPC binds refuse to start when
+**Consumers (DR-037):** Non-loopback gRPC binds refuse to start when
 `consumers` is missing/empty unless `--allow-open-auth` or `--insecure` is
 set. The image default CMD uses `--grpc-tls` on `0.0.0.0`, so mount a config
 with a `consumers` section (see `config.container.example.yaml`) and pass the

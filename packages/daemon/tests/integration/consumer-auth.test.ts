@@ -1,5 +1,5 @@
 /**
- * Integration: consumer capability gating on sensitive gRPC RPCs (H8/H10 / DR-036).
+ * Integration: consumer capability gating on sensitive gRPC RPCs (H8/H10 / DR-037).
  */
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
@@ -272,6 +272,24 @@ describe('Consumer auth RPC gating', () => {
   it('full token can call secrets and config', async () => {
     await callUnary(client, 'SetSecret', { key: 'FULL', value: 'ok' }, GOOD_TOKEN);
     await callUnary(client, 'GetConfig', {}, GOOD_TOKEN);
+  });
+
+  it('denies SummarizeSession without chat capability', async () => {
+    await expectPermissionDenied(callUnary(client, 'SummarizeSession', {
+      session_id: 'sess-nope',
+    }, 'secrets-only'));
+  });
+
+  it('allows SummarizeSession past auth with chat capability', async () => {
+    // Capability check runs before session lookup — missing session is not PERMISSION_DENIED.
+    try {
+      await callUnary(client, 'SummarizeSession', { session_id: 'missing-session' }, 'chat-only');
+    } catch (err: unknown) {
+      const code = (err as { code?: number }).code;
+      expect(code).not.toBe(grpc.status.PERMISSION_DENIED);
+      return;
+    }
+    // If it somehow succeeds, that also means auth passed.
   });
 });
 

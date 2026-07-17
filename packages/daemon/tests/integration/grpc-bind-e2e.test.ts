@@ -1,9 +1,9 @@
 /**
- * E2E (subprocess): gRPC TCP bind security policy (C2 + DR-036 consumers).
+ * E2E (subprocess): gRPC TCP bind security policy (C2 + DR-037 consumers).
  *
  * - 127.0.0.1 plaintext → starts (local DX; empty consumers OK)
  * - 0.0.0.0 without TLS/--insecure → refused
- * - 0.0.0.0 with --grpc-tls but no consumers → refused (DR-036)
+ * - 0.0.0.0 with --grpc-tls but no consumers → refused (DR-037)
  * - 0.0.0.0 with --grpc-tls + --allow-open-auth → starts
  * - 0.0.0.0 with --insecure → starts (open auth implied)
  */
