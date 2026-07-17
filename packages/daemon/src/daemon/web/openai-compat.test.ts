@@ -13,10 +13,14 @@ import {
   buildStreamChunk,
   buildCompleteResponse,
   generateChatId,
+  resolveOpenAICompatToolsMode,
+  mapOpenAIToolsToDefinitions,
+  normalizeOpenAIToolCalls,
   type StreamChunkOptions,
 } from './openai-compat.js';
 import type { ModelInfo } from '../../core/state.js';
 import type { ChatChunk } from '../../core/engines.js';
+import type { ConfigFile } from '../../core/config.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- test assertions need flexible access to untyped response shapes */
 
@@ -232,5 +236,124 @@ describe('buildCompleteResponse', () => {
   it('maps finish reason correctly', () => {
     const result = buildCompleteResponse('id', 'model', 0, '', 'length') as any;
     expect(result.choices[0].finish_reason).toBe('length');
+  });
+
+  it('includes tool_calls on the assistant message when provided', () => {
+    const toolCalls = [{
+      id: 'call_abc',
+      type: 'function' as const,
+      function: { name: 'web_search', arguments: '{"q":"x"}' },
+    }];
+    const result = buildCompleteResponse(
+      'id',
+      'model',
+      0,
+      '',
+      'tool-calls',
+      toolCalls,
+    ) as any;
+
+    expect(result.choices[0].finish_reason).toBe('tool_calls');
+    expect(result.choices[0].message.content).toBeNull();
+    expect(result.choices[0].message.tool_calls).toEqual(toolCalls);
+  });
+});
+
+// ── resolveOpenAICompatToolsMode ────────────────────────────────────────
+
+describe('resolveOpenAICompatToolsMode', () => {
+  it('defaults to off with empty config', () => {
+    expect(resolveOpenAICompatToolsMode('openai/gpt-4o', {})).toBe('off');
+    expect(resolveOpenAICompatToolsMode('openai/gpt-4o', null)).toBe('off');
+  });
+
+  it('uses global openai_compat.tools', () => {
+    const config: ConfigFile = { openai_compat: { tools: 'passthrough' } };
+    expect(resolveOpenAICompatToolsMode('openai/gpt-4o', config)).toBe('passthrough');
+  });
+
+  it('prefers per-model override over global', () => {
+    const config: ConfigFile = {
+      openai_compat: { tools: 'off' },
+      providers: {
+        openrouter: {
+          engine: 'openrouter',
+          models: {
+            'x-ai/grok-3': { openai_compat_tools: 'passthrough' },
+          },
+        },
+      },
+    };
+    expect(resolveOpenAICompatToolsMode('openrouter/x-ai/grok-3', config)).toBe('passthrough');
+    expect(resolveOpenAICompatToolsMode('openrouter/other', config)).toBe('off');
+  });
+
+  it('allows model to force off when global is passthrough', () => {
+    const config: ConfigFile = {
+      openai_compat: { tools: 'passthrough' },
+      providers: {
+        openai: {
+          engine: 'openai',
+          models: { 'gpt-4o': { openai_compat_tools: 'off' } },
+        },
+      },
+    };
+    expect(resolveOpenAICompatToolsMode('openai/gpt-4o', config)).toBe('off');
+  });
+});
+
+// ── mapOpenAIToolsToDefinitions / normalizeOpenAIToolCalls ─────────────
+
+describe('mapOpenAIToolsToDefinitions', () => {
+  it('maps OpenAI function tools to ToolDefinition', () => {
+    const defs = mapOpenAIToolsToDefinitions([
+      {
+        type: 'function',
+        function: {
+          name: 'web_search',
+          description: 'Search the web',
+          parameters: { type: 'object', properties: { q: { type: 'string' } } },
+        },
+      },
+    ]);
+    expect(defs).toHaveLength(1);
+    expect(defs[0].name).toBe('web_search');
+    expect(defs[0].description).toBe('Search the web');
+    expect(JSON.parse(defs[0].inputSchema)).toEqual({
+      type: 'object',
+      properties: { q: { type: 'string' } },
+    });
+  });
+
+  it('returns empty for non-arrays and invalid entries', () => {
+    expect(mapOpenAIToolsToDefinitions(null)).toEqual([]);
+    expect(mapOpenAIToolsToDefinitions([{ type: 'function', function: {} }])).toEqual([]);
+  });
+});
+
+describe('normalizeOpenAIToolCalls', () => {
+  it('normalizes OpenAI nested tool_calls', () => {
+    const normalized = normalizeOpenAIToolCalls([
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'search', arguments: '{"q":"a"}' },
+      },
+    ]);
+    expect(normalized).toEqual([
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'search', arguments: '{"q":"a"}' },
+      },
+    ]);
+  });
+
+  it('normalizes flat tool_calls', () => {
+    const normalized = normalizeOpenAIToolCalls([
+      { id: 'call_2', name: 'search', arguments: { q: 'b' } },
+    ]);
+    expect(normalized![0].function.name).toBe('search');
+    expect(normalized![0].function.arguments).toBe('{"q":"b"}');
   });
 });

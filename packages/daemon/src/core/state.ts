@@ -612,7 +612,8 @@ export class CoreState {
       tools = undefined;
       resolvedExecutor = undefined;
     } else if (effectiveToolMode === 'passthrough') {
-      tools = undefined;
+      // Client-provided schemas only — no Abbenay executor (caller runs tools).
+      tools = toolOptions?.tools;
       resolvedExecutor = undefined;
       console.warn(`[State] passthrough mode: tools will be sent to LLM but not executed (delegated to caller)`);
     } else {
@@ -669,11 +670,14 @@ export class CoreState {
     }
 
     // ── Resolve maxSteps for tool loop ──
-    // Priority: caller > config tool_policy > policy tool.max_tool_iterations > default
-    const maxSteps = toolOptions?.maxToolIterations
-      ?? toolPolicy?.max_tool_iterations
-      ?? flatPolicy?.maxToolIterations
-      ?? 10;
+    // Priority: caller > config tool_policy > policy tool.max_tool_iterations > default.
+    // Passthrough never runs a multi-step executor loop — stop after the model proposes calls.
+    const maxSteps = effectiveToolMode === 'passthrough'
+      ? 1
+      : (toolOptions?.maxToolIterations
+        ?? toolPolicy?.max_tool_iterations
+        ?? flatPolicy?.maxToolIterations
+        ?? 10);
 
     // ── Call the actual engine ──
     const isJsonStrict = flatPolicy?.outputFormat === 'json_only';

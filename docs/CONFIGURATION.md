@@ -48,6 +48,38 @@ providers:
         model_id: "qwen2.5-coder:7b"        # Map virtual name to actual model ID
 ```
 
+### OpenAI-compatible tools (`openai_compat`) — DR-032
+
+By default, `POST /v1/chat/completions` **ignores** request `tools` (secure
+default from DR-019). Opt in to **passthrough** so clients like
+[Open WebUI](https://docs.openwebui.com/) Native function calling can send
+`tools`, receive structured `tool_calls`, and execute tools **themselves**.
+
+| Level | Key | UI |
+|-------|-----|-----|
+| Global | `openai_compat.tools: off \| passthrough` | YAML only |
+| Per model | `openai_compat_tools: off \| passthrough` | YAML or **Configure model** checkbox (“Allow OpenAI tools on /v1”) |
+
+Resolve order: **per-model → global → `off`**.
+
+```yaml
+openai_compat:
+  tools: off                         # default — Cursor/aider/scripts stay tool-free on /v1
+
+providers:
+  openrouter:
+    engine: openrouter
+    models:
+      anthropic/claude-sonnet-4: {}
+      x-ai/grok-3:
+        openai_compat_tools: passthrough   # Open WebUI Native FC for this model only
+```
+
+**Security tradeoff:** Passthrough trusts the client’s tool list and does not
+use Abbenay’s approval UI. Prefer enabling it only on models you use with
+trusted clients. For Abbenay-executed / approval-gated tools, use the dashboard,
+gRPC, or MCP paths instead of `/v1`.
+
 ### HTTP API security (`server`)
 
 The web dashboard, REST API (`/api/*`), OpenAI-compatible API (`/v1/*`), and

@@ -3,14 +3,23 @@
  *
  * Translates between the OpenAI wire format and Abbenay's DaemonState,
  * making Abbenay a drop-in replacement for any OpenAI-compatible client
- * (Cursor, Continue, aider, any `openai` SDK script, etc.).
+ * (Cursor, Continue, aider, Open WebUI, any `openai` SDK script, etc.).
+ *
+ * Tools on `/v1` are off by default (DR-019). Opt-in passthrough (DR-032)
+ * forwards client `tools` and returns `tool_calls` for client-side execution.
  */
 
 import * as crypto from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import type { DaemonState } from '../../daemon/state.js';
 import type { ModelInfo, ChatToolOptions } from '../../core/state.js';
-import type { ChatChunk } from '../../core/engines.js';
+import type { ChatChunk, ToolDefinition } from '../../core/engines.js';
+import { extractToolCallFields } from '../../core/engines.js';
+import {
+  loadConfig,
+  type ConfigFile,
+  type OpenAICompatToolsMode,
+} from '../../core/config.js';
 
 // ── Format helpers (exported for unit testing) ──────────────────────────
 
@@ -43,6 +52,81 @@ export interface StreamChunkOptions {
   id: string;
   model: string;
   created: number;
+}
+
+export interface OpenAIToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+/**
+ * Resolve `/v1` tools mode: model override → global → `off`.
+ */
+export function resolveOpenAICompatToolsMode(
+  compositeModelId: string,
+  config: ConfigFile | null | undefined,
+): OpenAICompatToolsMode {
+  const globalMode = config?.openai_compat?.tools === 'passthrough' ? 'passthrough' : 'off';
+  const slashIdx = compositeModelId.indexOf('/');
+  if (slashIdx === -1) {
+    return globalMode;
+  }
+  const providerId = compositeModelId.substring(0, slashIdx);
+  const modelName = compositeModelId.substring(slashIdx + 1);
+  const modelMode = config?.providers?.[providerId]?.models?.[modelName]?.openai_compat_tools;
+  if (modelMode === 'passthrough' || modelMode === 'off') {
+    return modelMode;
+  }
+  return globalMode;
+}
+
+/**
+ * Map OpenAI `tools` request entries to Abbenay ToolDefinition[].
+ */
+export function mapOpenAIToolsToDefinitions(tools: unknown): ToolDefinition[] {
+  if (!Array.isArray(tools)) {
+    return [];
+  }
+  const out: ToolDefinition[] = [];
+  for (const entry of tools) {
+    if (!entry || typeof entry !== 'object') continue;
+    const t = entry as Record<string, unknown>;
+    const fn = t.function && typeof t.function === 'object'
+      ? t.function as Record<string, unknown>
+      : undefined;
+    const name = typeof fn?.name === 'string' ? fn.name : undefined;
+    if (!name) continue;
+    const description = typeof fn?.description === 'string' ? fn.description : '';
+    const parameters = fn?.parameters ?? { type: 'object', properties: {} };
+    out.push({
+      name,
+      description,
+      inputSchema: JSON.stringify(parameters),
+    });
+  }
+  return out;
+}
+
+/**
+ * Normalize OpenAI nested tool_calls on inbound messages to a stable shape
+ * that convertMessages / engines understand (also accepts flat entries).
+ */
+export function normalizeOpenAIToolCalls(toolCalls: unknown): OpenAIToolCall[] | undefined {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
+    return undefined;
+  }
+  return toolCalls.map((tc) => {
+    const { id, name, arguments: args } = extractToolCallFields(tc);
+    const argStr = typeof args === 'string'
+      ? args
+      : JSON.stringify(args ?? {});
+    return {
+      id: id || `call_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
+      type: 'function' as const,
+      function: { name, arguments: argStr },
+    };
+  });
 }
 
 export function buildStreamChunk(
@@ -98,7 +182,15 @@ export function buildCompleteResponse(
   created: number,
   content: string,
   finishReason: string,
+  toolCalls?: OpenAIToolCall[],
 ): object {
+  const message: Record<string, unknown> = {
+    role: 'assistant',
+    content: toolCalls && toolCalls.length > 0 ? (content || null) : content,
+  };
+  if (toolCalls && toolCalls.length > 0) {
+    message.tool_calls = toolCalls;
+  }
   return {
     id,
     object: 'chat.completion',
@@ -106,7 +198,7 @@ export function buildCompleteResponse(
     model,
     choices: [{
       index: 0,
-      message: { role: 'assistant', content },
+      message,
       finish_reason: mapFinishReason(finishReason),
     }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
@@ -115,6 +207,22 @@ export function buildCompleteResponse(
 
 function openAIError(res: Response, status: number, message: string, type: string): void {
   res.status(status).json({ error: { message, type } });
+}
+
+function toolCallFromChunk(chunk: ChatChunk): OpenAIToolCall | null {
+  if (chunk.type !== 'tool' || chunk.state !== 'running' || !chunk.call) {
+    return null;
+  }
+  return {
+    id: `call_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
+    type: 'function',
+    function: {
+      name: chunk.name || '',
+      arguments: typeof chunk.call.params === 'string'
+        ? chunk.call.params
+        : JSON.stringify(chunk.call.params ?? {}),
+    },
+  };
 }
 
 // ── Route registration ──────────────────────────────────────────────────
@@ -151,6 +259,7 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
       top_p,
       max_tokens,
       max_completion_tokens,
+      tools,
     } = req.body;
 
     if (!model) {
@@ -168,7 +277,7 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
         content: m.content || '',
         name: m.name || undefined,
         tool_call_id: m.tool_call_id || undefined,
-        tool_calls: m.tool_calls || undefined,
+        tool_calls: normalizeOpenAIToolCalls(m.tool_calls) ?? m.tool_calls ?? undefined,
       }),
     );
 
@@ -179,13 +288,13 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
     if (effectiveMaxTokens != null) requestParams.maxTokens = effectiveMaxTokens;
     const hasParams = Object.keys(requestParams).length > 0;
 
-    // OpenAI-compatible transport has no approval UI, so tools are disabled
-    // to preserve secure-by-default (DR-019). M2 can add opt-in via config
-    // that would parse `tools` from the request and wire onToolApprovalNeeded.
-    const toolOptions: ChatToolOptions = {
-      toolMode: 'none',
-      tools: undefined,
-    };
+    // Secure-by-default (DR-019): tools off unless config opts into passthrough (DR-032).
+    const config = loadConfig();
+    const mode = resolveOpenAICompatToolsMode(String(model), config);
+    const mappedTools = mapOpenAIToolsToDefinitions(tools);
+    const toolOptions: ChatToolOptions = mode === 'passthrough' && mappedTools.length > 0
+      ? { toolMode: 'passthrough', tools: mappedTools, maxToolIterations: 1 }
+      : { toolMode: 'none', tools: undefined };
 
     const chatId = generateChatId();
     const created = Math.floor(Date.now() / 1000);
@@ -204,7 +313,7 @@ function handleStreaming(
   res: Response,
   state: DaemonState,
   model: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown }>,
   params: Record<string, unknown> | undefined,
   toolOptions: ChatToolOptions,
   chatId: string,
@@ -272,7 +381,7 @@ async function handleNonStreaming(
   res: Response,
   state: DaemonState,
   model: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown }>,
   params: Record<string, unknown> | undefined,
   toolOptions: ChatToolOptions,
   chatId: string,
@@ -281,10 +390,14 @@ async function handleNonStreaming(
   try {
     let content = '';
     let finishReason = 'stop';
+    const toolCalls: OpenAIToolCall[] = [];
 
     for await (const chunk of state.chat(model, messages, params, toolOptions)) {
       if (chunk.type === 'text') {
         content += chunk.text;
+      } else if (chunk.type === 'tool') {
+        const tc = toolCallFromChunk(chunk);
+        if (tc) toolCalls.push(tc);
       } else if (chunk.type === 'done') {
         finishReason = chunk.finishReason;
       } else if (chunk.type === 'error') {
@@ -293,7 +406,14 @@ async function handleNonStreaming(
       }
     }
 
-    res.json(buildCompleteResponse(chatId, model, created, content, finishReason));
+    res.json(buildCompleteResponse(
+      chatId,
+      model,
+      created,
+      content,
+      finishReason,
+      toolCalls.length > 0 ? toolCalls : undefined,
+    ));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     openAIError(res, 500, msg, 'server_error');
