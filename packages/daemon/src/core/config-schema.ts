@@ -33,6 +33,15 @@ export const VirtualNameSchema = z
     message: 'must be lowercase alphanumeric with dots, hyphens, or underscores',
   });
 
+/** Opt-in mode for OpenAI-compatible `/v1` tools (DR-032). */
+export const OpenAICompatToolsModeSchema = z.enum(['off', 'passthrough']);
+
+export const OpenAICompatConfigSchema = z
+  .object({
+    tools: OpenAICompatToolsModeSchema.optional(),
+  })
+  .strict();
+
 export const ModelConfigSchema = z
   .object({
     model_id: z.string().min(1).optional(),
@@ -44,6 +53,7 @@ export const ModelConfigSchema = z
     top_k: z.number().int().nonnegative().optional(),
     max_tokens: z.number().int().positive().optional(),
     timeout: z.number().positive().optional(),
+    openai_compat_tools: OpenAICompatToolsModeSchema.optional(),
   })
   .strict();
 
@@ -115,6 +125,7 @@ export const ConfigFileSchema = z
     tool_policy: ToolPolicyConfigSchema.optional(),
     consumers: z.record(z.string(), ConsumerConfigSchema).optional(),
     server: ServerConfigSchema.optional(),
+    openai_compat: OpenAICompatConfigSchema.optional(),
   })
   .strict();
 

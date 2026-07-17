@@ -157,6 +157,8 @@ export {
   PolicyConfigSchema,
   ModelConfigSchema,
   ProviderConfigSchema,
+  OpenAICompatConfigSchema,
+  OpenAICompatToolsModeSchema,
   VirtualNameSchema,
   VIRTUAL_NAME_REGEX,
   isValidVirtualName,

@@ -572,7 +572,9 @@ Shared `ConfigFile` / `PolicyConfig` schemas live in `@abbenay/core`
 (`config-schema.ts`) and are reused by the web layer (`api-schemas.ts`).
 Schemas use `.strict()` so unexpected fields are rejected (field-injection
 defense). OpenAI `/v1/chat/completions` allows optional `tools` so DR-032
-passthrough continues to work under validation.
+passthrough continues to work under validation. `ConfigFileSchema` /
+`ModelConfigSchema` include `openai_compat` and `openai_compat_tools` so
+dashboard/`POST /api/config` can persist DR-032 settings without 400s.
 **Rationale:** Unvalidated `req.body` destructuring allowed arbitrary config
 writes, path traversal into workspace config paths, type confusion, and
 field injection (findings H4/H5). Auth (DR-030) authenticates the caller but

@@ -69,6 +69,40 @@ describe('ConfigFileSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts openai_compat tools passthrough (DR-032)', () => {
+    const result = parseConfigFile({
+      providers: {},
+      openai_compat: { tools: 'passthrough' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts per-model openai_compat_tools override', () => {
+    const result = parseConfigFile({
+      providers: {
+        openai: {
+          engine: 'openai',
+          models: { 'gpt-4o': { openai_compat_tools: 'passthrough' } },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid openai_compat.tools values', () => {
+    const result = parseConfigFile({
+      openai_compat: { tools: 'auto' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown keys under openai_compat', () => {
+    const result = ConfigFileSchema.safeParse({
+      openai_compat: { tools: 'passthrough', evil: true },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('PolicyConfigSchema', () => {
