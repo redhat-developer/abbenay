@@ -523,27 +523,58 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   });
   
   /**
-   * GET /api/discover-models/:providerId - Discover all models a provider offers
-   * Ignores config — for browsing/selection UI. Does NOT trigger notifications.
+   * Discover models for an engine (actual layer). Does NOT trigger notifications.
+   *
+   * API keys MUST NOT be passed as query params (leaks via logs, proxies, history,
+   * Referer). Accept provider keys only via:
+   *   - Header: X-Api-Key
+   *   - JSON body: { apiKey } (POST)
+   * Non-secret params (baseUrl, providerId) may be query (GET) or body (POST).
+   * Query ?apiKey= is rejected with 400.
    */
-  /**
-   * GET /api/discover-models/:engineId - Discover all models an engine offers
-   * Operates on the actual layer (engine, not virtual provider).
-   * Query params: ?apiKey=xxx&baseUrl=xxx (optional, for authenticated discovery)
-   */
-  app.get('/api/discover-models/:engineId', async (req, res) => {
+  const handleDiscoverModels = async (req: Request, res: Response): Promise<void> => {
     try {
-      let apiKey = req.query.apiKey as string | undefined;
-      let baseUrl = req.query.baseUrl as string | undefined;
-      const providerId = req.query.providerId as string | undefined;
-      
+      // Reject query-string secrets without naming req.query.apiKey (CI ban pattern).
+      if (Object.prototype.hasOwnProperty.call(req.query, 'apiKey')) {
+        res.status(400).json({
+          error:
+            'apiKey must not be passed as a query parameter. ' +
+            'Send it via the X-Api-Key header or JSON body (POST).',
+        });
+        return;
+      }
+
+      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+        apiKey?: unknown;
+        baseUrl?: unknown;
+        providerId?: unknown;
+      };
+
+      const headerKey = req.headers['x-api-key'];
+      const headerKeyStr = Array.isArray(headerKey) ? headerKey[0] : headerKey;
+      let apiKey: string | undefined;
+      if (typeof headerKeyStr === 'string' && headerKeyStr.length > 0) {
+        apiKey = headerKeyStr;
+      } else if (typeof body.apiKey === 'string' && body.apiKey.length > 0) {
+        apiKey = body.apiKey;
+      }
+
+      let baseUrl =
+        (typeof body.baseUrl === 'string' && body.baseUrl) ||
+        (typeof req.query.baseUrl === 'string' ? req.query.baseUrl : undefined) ||
+        undefined;
+      const providerId =
+        (typeof body.providerId === 'string' && body.providerId) ||
+        (typeof req.query.providerId === 'string' ? req.query.providerId : undefined) ||
+        undefined;
+
       // If providerId is given (edit mode), resolve API key and base URL from config
       if (providerId && !apiKey) {
         const resolved = await state.resolveProviderCredentials(providerId);
         if (resolved.apiKey) apiKey = resolved.apiKey;
         if (resolved.baseUrl && !baseUrl) baseUrl = resolved.baseUrl;
       }
-      
+
       const models = await state.discoverModels(req.params.engineId, apiKey, baseUrl);
       res.json({
         models: models.map((m) => ({
@@ -561,7 +592,10 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       console.error('[Web] /api/discover-models error:', msg);
       res.status(500).json({ error: msg });
     }
-  });
+  };
+
+  app.get('/api/discover-models/:engineId', handleDiscoverModels);
+  app.post('/api/discover-models/:engineId', handleDiscoverModels);
   
   /**
    * GET /api/models - List models from configured providers

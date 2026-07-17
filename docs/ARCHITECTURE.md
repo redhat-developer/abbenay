@@ -456,6 +456,8 @@ internal MCP tool for cross-session retrieval.
 3. Frontend makes API calls to Express routes:
    - GET /api/providers → state.listProviders()
    - GET /api/models → state.listModels()
+   - GET|POST /api/discover-models/:engineId → state.discoverModels()
+     (provider API key via `X-Api-Key` / JSON body only — never `?apiKey=`; DR-035)
    - GET /api/config → loadConfig()
    - POST /api/config → saveConfig()
    - POST /api/secrets → state.secretStore.set()

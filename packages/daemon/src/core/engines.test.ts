@@ -9,10 +9,10 @@
  * JSON→SSE conversion).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { sanitizeVertexRequestBody, convertAnthropicJsonToSse } from './engines.js';
+import { sanitizeVertexRequestBody, convertAnthropicJsonToSse, fetchModels } from './engines.js';
 
 const ENGINES_SRC = fs.readFileSync(
   path.join(__dirname, 'engines.ts'),
@@ -219,5 +219,48 @@ describe('convertAnthropicJsonToSse', () => {
     const deltaLine = result.body.split('\n').find(l => l.startsWith('data: ') && l.includes('message_delta'));
     const deltaData = JSON.parse(deltaLine!.replace('data: ', ''));
     expect(deltaData.delta.stop_reason).toBe('end_turn');
+  });
+});
+
+describe('Gemini model discovery auth (no query-string keys)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('should send API key via x-goog-api-key and never put key material in the URL', async () => {
+    const apiKey = 'test-gemini-secret-key-xyz';
+    let capturedUrl = '';
+    let capturedHeaders: HeadersInit | undefined;
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(input);
+      capturedHeaders = init?.headers;
+      return new Response(JSON.stringify({
+        models: [{
+          name: 'models/gemini-2.0-flash',
+          supportedGenerationMethods: ['generateContent'],
+          inputTokenLimit: 1048576,
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const models = await fetchModels('gemini', apiKey);
+    expect(models).toHaveLength(1);
+    expect(models[0].id).toBe('gemini-2.0-flash');
+
+    expect(capturedUrl).toContain('/v1beta/models');
+    expect(capturedUrl).not.toContain('key=');
+    expect(capturedUrl).not.toContain(apiKey);
+
+    const headers = new Headers(capturedHeaders);
+    expect(headers.get('x-goog-api-key')).toBe(apiKey);
+  });
+
+  it('should not construct Gemini URLs with query-string API keys', () => {
+    // Ban executable patterns; comments documenting the ban may mention key=.
+    expect(ENGINES_SRC).not.toMatch(/`\$\{[^`]*\}\?key=\$\{/);
+    expect(ENGINES_SRC).not.toMatch(/['"`]\?key=\$\{/);
+    expect(ENGINES_SRC).toMatch(/x-goog-api-key/);
   });
 });

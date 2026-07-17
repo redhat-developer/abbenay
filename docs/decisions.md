@@ -539,3 +539,20 @@ consent closes the remaining C3 recommendation and stops token-bearing callers
 from silently opening an MCP session. API-token holders can both call `/mcp`
 and approve via `/api/mcp/connections`, so consent is interactive friction, not
 a second principal against a stolen/shared token.
+
+---
+
+## DR-035: No API keys in URL query strings
+
+**Date:** 2026-07-17
+**Decision:** Never place provider API keys in request URLs. Gemini outbound
+calls use the `x-goog-api-key` header (same as `@ai-sdk/google`). The
+`/api/discover-models/:engineId` endpoint accepts provider keys only via the
+`X-Api-Key` header or JSON body (`POST`); `?apiKey=` is rejected with HTTP 400.
+Non-secret params (`baseUrl`, `providerId`) may remain on the query string for
+GET. CI runs `npm run check:no-query-secrets` to block regressions of common
+query-secret patterns (`?key=`, `query.apiKey` / `query['apiKey']`,
+`params.set/append('apiKey'`, `searchParams.set('key'`) in production sources.
+**Rationale:** Query-string secrets leak into access logs, reverse proxies,
+browser history, and `Referer` headers. Header/body transport matches other
+engines (Bearer / `x-api-key`) and closes findings H2/H3.

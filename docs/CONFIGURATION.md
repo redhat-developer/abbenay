@@ -102,6 +102,26 @@ Call APIs with:
 curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/api/health
 ```
 
+Provider API keys for model discovery must never appear in query strings
+(DR-035). Use `X-Api-Key` or a JSON body (daemon Bearer auth stays on
+`Authorization`):
+
+```bash
+# Header
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  -H "X-Api-Key: $GOOGLE_API_KEY" \
+  http://127.0.0.1:8787/api/discover-models/gemini
+
+# Body
+curl -X POST -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"apiKey\":\"$GOOGLE_API_KEY\"}" \
+  http://127.0.0.1:8787/api/discover-models/gemini
+```
+
+`GET/POST ...?apiKey=` is rejected (HTTP 400). Outbound Gemini calls use the
+`x-goog-api-key` header, not `?key=` in the URL.
+
 The dashboard uses SameSite=Strict cookies plus a CSRF token for browser
 session auth. Open `http://127.0.0.1:8787/login` (or `POST /login` with the
 token in the body) to establish a session — prefer that over putting the

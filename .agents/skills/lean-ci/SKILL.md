@@ -36,6 +36,7 @@ locally-runnable scripts; CI just calls them.
 | npm script | What it does | When to use in CI |
 |------------|-------------|-------------------|
 | `npm run lint` | Lint all workspace packages | Quality gate |
+| `npm run check:no-query-secrets` | Ban query-secret URL patterns in sources (DR-035) | Quality gate |
 | `npm test` | Test all workspace packages | Quality gate |
 | `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + tar.gz) | Build artifacts |
 | `npm run ci:package-python` | Build Python wheel via `uvx hatch build` | Python artifact |

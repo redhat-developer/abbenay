@@ -1723,10 +1723,11 @@ function dashboard() {
       this.wizardFromModelsTab = true;
       // Discover models so the dual-list has data if user clicks "Back to models"
       try {
-        const params = new URLSearchParams();
-        params.set('providerId', model.provider);
-        const url = `/api/discover-models/${encodeURIComponent(model.engine)}?${params}`;
-        const resp = await apiFetch(url);
+        const resp = await apiFetch(`/api/discover-models/${encodeURIComponent(model.engine)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerId: model.provider }),
+        });
         const data = await resp.json();
         this.wizardDiscoveredModels = data.models || [];
       } catch (e) { console.error('Discovery failed:', e); }
@@ -1746,17 +1747,21 @@ function dashboard() {
         this.wizardStep = 2;
       } else if (this.wizardStep === 2) {
         if (!this.wizardName) return;
-        // Discover models for Step 3
+        // Discover models for Step 3 — API keys go in header/body only (never query)
         try {
-          const params = new URLSearchParams();
-          if (this.wizardApiKey) params.set('apiKey', this.wizardApiKey);
-          if (this.wizardBaseUrl) params.set('baseUrl', this.wizardBaseUrl);
+          const body = {};
+          if (this.wizardBaseUrl) body.baseUrl = this.wizardBaseUrl;
           // In edit mode without a new key, tell backend to resolve from config
           if (this.wizardEditMode && !this.wizardApiKey) {
-            params.set('providerId', this.wizardEditId);
+            body.providerId = this.wizardEditId;
           }
-          const url = `/api/discover-models/${encodeURIComponent(this.wizardEngine)}?${params}`;
-          const resp = await apiFetch(url);
+          const headers = { 'Content-Type': 'application/json' };
+          if (this.wizardApiKey) headers['X-Api-Key'] = this.wizardApiKey;
+          const resp = await apiFetch(`/api/discover-models/${encodeURIComponent(this.wizardEngine)}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+          });
           const data = await resp.json();
           this.wizardDiscoveredModels = data.models || [];
         } catch (e) { console.error('Discovery failed:', e); }
