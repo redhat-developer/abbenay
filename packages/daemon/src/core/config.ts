@@ -108,12 +108,23 @@ export interface McpServerConfig {
 /**
  * Capabilities a consumer can be granted.
  * Extensible: add new boolean flags as new gated features are introduced.
+ * When a `consumers` section is present, sensitive RPCs require the matching flag.
  */
 export interface ConsumerCapabilities {
-  /** Allow sending inline PolicyConfig on ChatRequest */
+  /** Allow sending inline PolicyConfig on ChatRequest / SessionChatRequest */
   inline_policy?: boolean;
   /** Allow dynamic MCP server registration via RegisterMcpServer RPC */
   mcp_register?: boolean;
+  /** Allow GetSecret / SetSecret / DeleteSecret / ListSecrets / GetKeyStatus */
+  secrets?: boolean;
+  /** Allow GetConfig / UpdateConfig / policy CRUD / web server start-stop */
+  config?: boolean;
+  /** Allow ConfigureProvider / RemoveProvider / DiscoverModels */
+  providers?: boolean;
+  /** Allow Shutdown RPC */
+  shutdown?: boolean;
+  /** Allow Chat / SessionChat (base chat; inline_policy is separate) */
+  chat?: boolean;
 }
 
 /**

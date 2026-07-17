@@ -25,13 +25,17 @@ import { VERSION } from '../version.js';
 import { resolveHttpApiToken } from './web/http-security.js';
 import type { GrpcTlsOptions } from './grpc-tls.js';
 
-/** Shared CLI flags for TCP gRPC bind + TLS policy. */
+/** Shared CLI flags for TCP gRPC bind + TLS / consumer-auth policy. */
 function addGrpcBindOptions(cmd: Command): Command {
   return cmd
     .option('--grpc-port <port>', 'Also listen for gRPC on this TCP port (for remote/container access)')
     .option('--grpc-host <host>', 'Host/IP to bind gRPC TCP listener (default: 127.0.0.1, use 0.0.0.0 for containers)')
     .option('--grpc-tls', 'Enable TLS on the TCP gRPC listener (auto-generates self-signed certs)')
-    .option('--insecure', 'Allow plaintext gRPC on non-loopback binds (not recommended; prefer --grpc-tls)');
+    .option('--insecure', 'Allow plaintext gRPC on non-loopback binds (not recommended; prefer --grpc-tls). Also permits empty consumers (open auth).')
+    .option(
+      '--allow-open-auth',
+      'Allow empty consumers on non-loopback gRPC binds (not recommended; configure consumers instead)',
+    );
 }
 
 function grpcTlsFromCli(options: {
@@ -42,6 +46,13 @@ function grpcTlsFromCli(options: {
     enabled: !!options.grpcTls,
     insecure: !!options.insecure,
   };
+}
+
+function allowOpenAuthFromCli(options: {
+  allowOpenAuth?: boolean;
+  insecure?: boolean;
+}): boolean {
+  return !!options.allowOpenAuth || !!options.insecure;
 }
 
 function printTable(headers: string[], rows: string[][]): void {
@@ -78,6 +89,7 @@ addGrpcBindOptions(
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
         grpcTls: grpcTlsFromCli(options),
+        allowOpenAuth: allowOpenAuthFromCli(options),
       });
     } catch (error) {
       console.error('Failed to start daemon:', error);
@@ -124,6 +136,7 @@ interface ServerOptions {
   grpcPort?: number;
   grpcHost?: string;
   grpcTls?: GrpcTlsOptions;
+  allowOpenAuth?: boolean;
   /** Lines printed after the server URL, before "Press Ctrl+C" */
   bannerLines?: (url: string, mcpStarted: boolean) => string[];
 }
@@ -142,7 +155,7 @@ function validatePort(raw: string): number {
 }
 
 async function runServer(opts: ServerOptions): Promise<void> {
-  const { port, host, mcp, grpcPort, grpcHost, grpcTls, bannerLines } = opts;
+  const { port, host, mcp, grpcPort, grpcHost, grpcTls, allowOpenAuth, bannerLines } = opts;
   const { token: apiToken, source: tokenSource } = resolveHttpApiToken();
   const authEnabled = tokenSource !== 'disabled';
 
@@ -191,7 +204,13 @@ async function runServer(opts: ServerOptions): Promise<void> {
     });
   } else {
     console.log('No daemon running, starting in-process...');
-    const daemonState = await startDaemon({ keepAlive: false, grpcPort, grpcHost, grpcTls });
+    const daemonState = await startDaemon({
+      keepAlive: false,
+      grpcPort,
+      grpcHost,
+      grpcTls,
+      allowOpenAuth,
+    });
     const { url, app, security } = await startEmbeddedWebServer(daemonState, port, host);
 
     if (mcp && app) {
@@ -232,6 +251,7 @@ addGrpcBindOptions(
         grpcPort,
         grpcHost,
         grpcTls,
+        allowOpenAuth: allowOpenAuthFromCli(options),
         bannerLines: (url, mcpStarted) => {
           const lines = [
             '',
@@ -276,6 +296,7 @@ addGrpcBindOptions(
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
         grpcTls: grpcTlsFromCli(options),
+        allowOpenAuth: allowOpenAuthFromCli(options),
         bannerLines: (url, mcpStarted) => {
           const lines = [`Abbenay Web Dashboard: ${url}`];
           if (mcpStarted) lines.push(`MCP Server: ${url}/mcp`);
@@ -307,6 +328,7 @@ addGrpcBindOptions(
         grpcPort: options.grpcPort ? validatePort(options.grpcPort) : undefined,
         grpcHost: options.grpcHost,
         grpcTls: grpcTlsFromCli(options),
+        allowOpenAuth: allowOpenAuthFromCli(options),
         bannerLines: (url, mcpStarted) => {
           const lines = [
             `Abbenay API server: ${url}`,

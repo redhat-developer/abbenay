@@ -105,7 +105,9 @@ podman run -d --name abbenay \
   abbenay:latest
 ```
 
-With consumer authentication (for programmatic clients like APME):
+Consumer authentication is **required** for the default image CMD (`--grpc-host
+0.0.0.0`). Use `config.container.example.yaml` (includes a `consumers` section)
+and pass the consumer token env:
 
 ```bash
 podman run -d --name abbenay \
@@ -117,6 +119,9 @@ podman run -d --name abbenay \
   -p 50051:50051 \
   abbenay:latest
 ```
+
+Without a `consumers` section the daemon refuses to start on `0.0.0.0` unless
+you pass `--allow-open-auth` or `--insecure` (not recommended).
 
 ### Verify it's running
 
@@ -416,6 +421,12 @@ when connecting by IP).
 ### Insecure tradeoffs
 
 `--insecure` on `0.0.0.0` restores the old plaintext behavior. API keys, chat,
-provider config, and tools travel unencrypted. Prefer `--grpc-tls`. Always
-configure a `consumers` section in `config.yaml` when exposing gRPC beyond a
-trusted network.
+provider config, and tools travel unencrypted. Prefer `--grpc-tls`.
+
+**Consumers (DR-037):** Non-loopback gRPC binds refuse to start when
+`consumers` is missing/empty unless `--allow-open-auth` or `--insecure` is
+set. The image default CMD uses `--grpc-tls` on `0.0.0.0`, so mount a config
+with a `consumers` section (see `config.container.example.yaml`) and pass the
+token env (e.g. `-e APME_TOKEN=...`). Clients send the token as gRPC metadata
+`x-abbenay-token`. See
+[CONFIGURATION.md](./CONFIGURATION.md#consumer-authentication-consumers).
