@@ -250,6 +250,12 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // ── MCP connection consent + tool approval (DR-033 / DR-034) ───────────
   // Connection: initialize blocks until POST /api/mcp/connections resolves.
   // Tools: authorizeAndExecute blocks until POST /api/mcp/approvals resolves.
+  // Abandoned pending entries auto-deny after mcpPendingTtlMs (default 5m).
+  const DEFAULT_MCP_PENDING_TTL_MS = 5 * 60 * 1000;
+  const mcpPendingTtlMs = options?.mcpPendingTtlMs != null && options.mcpPendingTtlMs > 0
+    ? options.mcpPendingTtlMs
+    : DEFAULT_MCP_PENDING_TTL_MS;
+
   const pendingMcpApprovals = new Map<string, {
     resolve: (decision: 'allow' | 'deny' | 'abort') => void;
     toolName: string;
@@ -279,8 +285,19 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           `[Web] MCP tool approval required: ${namespacedName || toolName} (requestId=${requestId})`,
         );
         return new Promise<'allow' | 'deny' | 'abort'>((resolve) => {
+          const timer = setTimeout(() => {
+            if (!pendingMcpApprovals.has(requestId)) return;
+            pendingMcpApprovals.delete(requestId);
+            console.log(
+              `[Web] MCP tool approval expired → deny: ${namespacedName || toolName} (requestId=${requestId})`,
+            );
+            resolve('deny');
+          }, mcpPendingTtlMs);
           pendingMcpApprovals.set(requestId, {
-            resolve,
+            resolve: (decision) => {
+              clearTimeout(timer);
+              resolve(decision);
+            },
             toolName,
             namespacedName,
             args,
@@ -293,8 +310,19 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           `[Web] MCP connection consent required: ${clientName}@${clientVersion} (requestId=${requestId})`,
         );
         return new Promise<'allow' | 'deny'>((resolve) => {
+          const timer = setTimeout(() => {
+            if (!pendingMcpConnections.has(requestId)) return;
+            pendingMcpConnections.delete(requestId);
+            console.log(
+              `[Web] MCP connection consent expired → deny: ${clientName}@${clientVersion} (requestId=${requestId})`,
+            );
+            resolve('deny');
+          }, mcpPendingTtlMs);
           pendingMcpConnections.set(requestId, {
-            resolve,
+            resolve: (decision) => {
+              clearTimeout(timer);
+              resolve(decision);
+            },
             clientName,
             clientVersion,
             createdAt: Date.now(),
@@ -371,6 +399,31 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
     }
+  });
+
+  /**
+   * DELETE /api/mcp/connections/remembered/:clientName — forget a remembered client
+   */
+  app.delete('/api/mcp/connections/remembered/:clientName', (req, res) => {
+    const clientName = decodeURIComponent(req.params.clientName || '').trim();
+    if (!clientName) {
+      res.status(400).json({ error: 'clientName is required' });
+      return;
+    }
+    if (typeof state.mcpServer?.forgetClient !== 'function') {
+      res.status(404).json({ error: 'MCP server does not support forgetClient' });
+      return;
+    }
+    const before = typeof state.mcpServer.listRememberedClients === 'function'
+      ? state.mcpServer.listRememberedClients()
+      : [];
+    if (!before.includes(clientName)) {
+      res.status(404).json({ error: `No remembered MCP client "${clientName}"` });
+      return;
+    }
+    state.mcpServer.forgetClient(clientName);
+    console.log(`[Web] MCP remembered client forgotten: ${clientName}`);
+    res.json({ success: true, forgotten: clientName });
   });
 
   /**

@@ -527,8 +527,12 @@ Non-initialize requests without an approved `Mcp-Session-Id` are rejected with
 keeps a **non-empty** `clientInfo.name` for the daemon lifetime (the default
 placeholder `unknown-client` is never remembered — remember is a DX shortcut,
 not strong client identity; any token bearer can present a remembered name).
+Remembered names can be cleared via
+`DELETE /api/mcp/connections/remembered/:clientName` (dashboard Forget).
 Sessions can be revoked via
-`DELETE /api/mcp/connections/sessions/:sessionId`.
+`DELETE /api/mcp/connections/sessions/:sessionId`. Pending connection consents
+and MCP tool approvals auto-deny after a 5-minute TTL so abandoned clients
+cannot leak pending map entries.
 **Rationale:** Bearer auth alone (DR-030) proves possession of the API token but
 does not express user intent to let a specific MCP client attach. Connection
 consent closes the remaining C3 recommendation and stops token-bearing callers

@@ -59,6 +59,12 @@ export interface WebSecurityOptions {
   authEnabled?: boolean;
   /** Skip loading user config (tests). */
   skipConfig?: boolean;
+  /**
+   * TTL for pending MCP connection-consent and tool-approval promises (ms).
+   * Abandoned initialize/approvals are auto-denied and removed from the pending
+   * maps when the timer fires. Default: 5 minutes. Tests may pass a short value.
+   */
+  mcpPendingTtlMs?: number;
 }
 
 /** Env values that disable HTTP auth (local-dev escape hatch). */

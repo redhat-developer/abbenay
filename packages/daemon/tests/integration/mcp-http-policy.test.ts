@@ -421,6 +421,46 @@ describe('MCP connection consent (DR-034)', () => {
     const res = await initPromise;
     expect(res.statusCode).toBe(200);
   });
+
+  it('DELETE remembered client requires consent again', async () => {
+    const name = `forget-me-${++clientSeq}`;
+    await mcpConnect(name, true);
+
+    let list = await httpRequest('GET', '/api/mcp/connections');
+    expect(list.body.remembered).toContain(name);
+
+    const forgotten = await httpRequest(
+      'DELETE',
+      `/api/mcp/connections/remembered/${encodeURIComponent(name)}`,
+    );
+    expect(forgotten.statusCode).toBe(200);
+    expect(forgotten.body.forgotten).toBe(name);
+
+    list = await httpRequest('GET', '/api/mcp/connections');
+    expect(list.body.remembered).not.toContain(name);
+
+    // Next initialize needs consent again
+    const initPromise = httpRequest('POST', '/mcp', {
+      body: {
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name, version: '0.0.4' },
+        },
+      },
+      headers: { 'MCP-Protocol-Version': '2024-11-05' },
+    });
+    const requestId = await waitForPendingConnection();
+    expect(requestId).toBeTruthy();
+    await httpRequest('POST', `/api/mcp/connections/${requestId}`, {
+      body: { decision: 'deny' },
+    });
+    const res = await initPromise;
+    expect(res.statusCode).toBe(403);
+  });
 });
 
 describe('MCP HTTP tool_policy', () => {
@@ -565,5 +605,182 @@ describe('MCP HTTP tool_policy', () => {
     expect(call.http.statusCode).toBe(200);
     expect(call.rpc?.result?.isError).not.toBe(true);
     expect(dangerExecutor).toHaveBeenCalled();
+  });
+});
+
+describe('MCP pending consent / approval TTL', () => {
+  let ttlHttpServer: http.Server;
+  let ttlBaseUrl: string;
+  let ttlMcpServer: AbbenayMcpServer;
+  let ttlRegistry: ToolRegistry;
+  let ttlSessionsDir: string;
+
+  function ttlRequest(
+    method: string,
+    urlPath: string,
+    opts?: { body?: unknown; headers?: Record<string, string> },
+  ): Promise<{ statusCode: number; body: any }> {
+    return new Promise((resolve, reject) => {
+      const urlObj = new URL(urlPath, ttlBaseUrl);
+      const headers: Record<string, string> = {
+        Connection: 'close',
+        Accept: 'application/json, text/event-stream',
+        Authorization: `Bearer ${TEST_TOKEN}`,
+        ...(opts?.headers || {}),
+      };
+      let bodyStr: string | undefined;
+      if (opts?.body !== undefined) {
+        bodyStr = JSON.stringify(opts.body);
+        headers['Content-Type'] = 'application/json';
+        headers['Content-Length'] = String(Buffer.byteLength(bodyStr));
+      }
+      const req = http.request(
+        {
+          hostname: urlObj.hostname,
+          port: urlObj.port,
+          path: urlObj.pathname,
+          method,
+          headers,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => {
+            const raw = Buffer.concat(chunks).toString('utf-8');
+            let body: any = raw;
+            try { body = JSON.parse(raw); } catch { /* keep raw */ }
+            resolve({ statusCode: res.statusCode || 0, body });
+          });
+        },
+      );
+      req.on('error', reject);
+      if (bodyStr) req.write(bodyStr);
+      req.end();
+    });
+  }
+
+  beforeAll(async () => {
+    ttlSessionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-mcp-ttl-'));
+    writePolicy({ auto_approve: ['local:agent/echo'] });
+
+    ttlRegistry = new ToolRegistry();
+    ttlRegistry.register('agent', 'local', [
+      {
+        name: 'echo',
+        description: 'Safe echo',
+        inputSchema: JSON.stringify({ type: 'object', properties: {} }),
+        executor: async () => ({ ok: true }),
+      },
+    ]);
+    const router = new ToolRouter();
+    ttlMcpServer = new AbbenayMcpServer(ttlRegistry, router);
+
+    const state = {
+      version: '0.1.0-test',
+      startedAt: new Date(),
+      secretStore: mockSecretStore,
+      sessionStore: new SessionStore(ttlSessionsDir),
+      toolRegistry: ttlRegistry,
+      mcpServer: ttlMcpServer,
+      async listProviders() { return []; },
+      async listModels() { return []; },
+      async discoverModels() { return []; },
+      async resolveProviderCredentials() { return {}; },
+      async chat() {
+        return (async function* () {
+          yield { type: 'done' as const, finishReason: 'stop' };
+        })();
+      },
+      getStatus() {
+        return { version: '0.1.0-test', uptime: 0, providers: 0, models: 0 };
+      },
+      getConnectedClients() { return []; },
+      mcpClientPool: {
+        getAllStatus() { return []; },
+        async reconnect() {},
+      },
+    } as unknown as DaemonState;
+
+    const app = createWebApp(state, {
+      apiToken: TEST_TOKEN,
+      skipConfig: false,
+      host: '127.0.0.1',
+      mcpPendingTtlMs: 80,
+    });
+    await ttlMcpServer.start(app);
+
+    const port = await new Promise<number>((resolve) => {
+      ttlHttpServer = app.listen(0, '127.0.0.1', () => {
+        const addr = ttlHttpServer.address();
+        resolve(typeof addr === 'object' && addr ? addr.port : 0);
+      });
+    });
+    ttlBaseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    await ttlMcpServer.stop();
+    if (ttlHttpServer) {
+      await new Promise<void>((resolve) => ttlHttpServer.close(() => resolve()));
+    }
+    fs.rmSync(ttlSessionsDir, { recursive: true, force: true });
+  });
+
+  it('auto-denies abandoned initialize after TTL and clears pending map', async () => {
+    const initPromise = ttlRequest('POST', '/mcp', {
+      body: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'ttl-client', version: '0.0.1' },
+        },
+      },
+      headers: { 'MCP-Protocol-Version': '2024-11-05' },
+    });
+
+    let sawPending = false;
+    for (let i = 0; i < 40; i++) {
+      const list = await ttlRequest('GET', '/api/mcp/connections');
+      if (list.body.pending?.length > 0) {
+        sawPending = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(sawPending).toBe(true);
+
+    const res = await initPromise;
+    expect(res.statusCode).toBe(403);
+    expect(String(res.body.error || '')).toMatch(/denied/i);
+
+    const list = await ttlRequest('GET', '/api/mcp/connections');
+    expect(list.body.pending).toEqual([]);
+  });
+
+  it('auto-denies abandoned tool approval after TTL', async () => {
+    writePolicy({}); // default ask → approval required
+
+    const echo = ttlRegistry.resolve('echo')!;
+    const resultPromise = ttlMcpServer.authorizeAndExecute(echo, {});
+
+    let approvalId: string | undefined;
+    for (let i = 0; i < 40; i++) {
+      const list = await ttlRequest('GET', '/api/mcp/approvals');
+      if (list.body.pending?.length > 0) {
+        approvalId = list.body.pending[0].requestId;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(approvalId).toBeDefined();
+
+    const denied = await resultPromise;
+    expect(denied.isError).toBe(true);
+
+    const list = await ttlRequest('GET', '/api/mcp/approvals');
+    expect(list.body.pending).toEqual([]);
   });
 });

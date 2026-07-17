@@ -621,6 +621,21 @@
             </div>
           </template>
 
+          <template x-if="mcpRemembered.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg);">
+              <h3 style="margin: 0 0 0.5rem; font-size: 0.95rem;">Remembered MCP clients</h3>
+              <p style="margin: 0 0 0.5rem; font-size: 0.85rem; color: #6a6e73;">
+                These client names skip connection consent for this daemon lifetime. Forget to require approval again.
+              </p>
+              <template x-for="name in mcpRemembered" :key="name">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #f0f0f0;">
+                  <strong x-text="name"></strong>
+                  <button class="btn btn-secondary btn-sm" @click="forgetMcpClient(name)">Forget</button>
+                </div>
+              </template>
+            </div>
+          </template>
+
           <template x-if="pendingMcpApprovals.length > 0">
             <div style="margin-bottom: var(--rh-space-lg); padding: 1rem; background: #fff3cd; border: 2px solid #e6a817; border-radius: 3px;">
               <h3 style="margin: 0 0 0.75rem; font-size: 1rem;">Pending MCP tool approvals</h3>
@@ -1412,6 +1427,7 @@ function dashboard() {
     pendingMcpApprovals: [],
     pendingMcpConnections: [],
     mcpSessions: [],
+    mcpRemembered: [],
     
     // Tools
     allTools: [],
@@ -1933,6 +1949,7 @@ function dashboard() {
         const data = await resp.json();
         this.pendingMcpConnections = data.pending || [];
         this.mcpSessions = data.sessions || [];
+        this.mcpRemembered = data.remembered || [];
       } catch (e) { /* ignore */ }
     },
 
@@ -1957,6 +1974,17 @@ function dashboard() {
         await this.loadMcpConnections();
       } catch (e) {
         console.error('Failed to revoke MCP session:', e);
+      }
+    },
+
+    async forgetMcpClient(clientName) {
+      try {
+        await apiFetch(`/api/mcp/connections/remembered/${encodeURIComponent(clientName)}`, {
+          method: 'DELETE',
+        });
+        await this.loadMcpConnections();
+      } catch (e) {
+        console.error('Failed to forget MCP client:', e);
       }
     },
 

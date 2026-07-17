@@ -152,15 +152,18 @@ session header are rejected with `403`.
 
 | Action | API |
 |--------|-----|
-| List pending + active sessions | `GET /api/mcp/connections` |
+| List pending + active sessions + remembered | `GET /api/mcp/connections` |
 | Allow / deny (optional `remember: true`) | `POST /api/mcp/connections/:requestId` |
 | Revoke session | `DELETE /api/mcp/connections/sessions/:sessionId` |
+| Forget remembered client | `DELETE /api/mcp/connections/remembered/:clientName` |
 
 `remember: true` is a DX shortcut keyed on `clientInfo.name` for the daemon
 lifetime. Empty names and the placeholder `unknown-client` are never
 remembered. Remember is not strong client identity — any API-token holder can
 present a remembered name, and the same token can both call `/mcp` and approve
-via `/api/mcp/connections`.
+via `/api/mcp/connections`. Pending connection consents and tool approvals
+auto-deny after **5 minutes** if the user never responds, so abandoned
+`initialize` / `tools/call` requests cannot leak entries in the pending maps.
 
 ### Session ownership
 

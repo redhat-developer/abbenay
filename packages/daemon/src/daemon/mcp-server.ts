@@ -151,9 +151,11 @@ export class AbbenayMcpServer {
     this.rememberedClients.add(name);
   }
 
-  /** Forget a remembered client name. */
+  /** Forget a remembered client name (no-op if unknown). */
   forgetClient(clientName: string): void {
-    this.rememberedClients.delete(clientName);
+    const name = clientName?.trim();
+    if (!name) return;
+    this.rememberedClients.delete(name);
   }
 
   listRememberedClients(): string[] {
