@@ -7,6 +7,7 @@ import {
   isLocalhostBind,
   isLoopbackRemoteAddress,
   isLocalDashboardHost,
+  requestDashboardHost,
   shouldRedirectDashboardToLogin,
   mayAutoEstablishDashboardSession,
   isHttpAuthEnabled,
@@ -63,11 +64,33 @@ describe('isLocalDashboardHost', () => {
     expect(isLocalDashboardHost('localhost:8787')).toBe(true);
     expect(isLocalDashboardHost('127.0.0.1:8787')).toBe(true);
     expect(isLocalDashboardHost('[::1]:8787')).toBe(true);
+    expect(isLocalDashboardHost('::1')).toBe(true);
   });
 
   it('rejects public hostnames', () => {
     expect(isLocalDashboardHost('abbenay.20665.net')).toBe(false);
     expect(isLocalDashboardHost('abbenay.example:443')).toBe(false);
+  });
+});
+
+describe('requestDashboardHost', () => {
+  it('prefers the first X-Forwarded-Host value', () => {
+    expect(
+      requestDashboardHost({
+        headers: {
+          host: '127.0.0.1:8787',
+          'x-forwarded-host': 'abbenay.example, internal.local',
+        },
+      }),
+    ).toBe('abbenay.example');
+  });
+
+  it('falls back to Host when X-Forwarded-Host is absent', () => {
+    expect(
+      requestDashboardHost({
+        headers: { host: 'localhost:8787' },
+      }),
+    ).toBe('localhost:8787');
   });
 });
 
@@ -118,7 +141,7 @@ describe('shouldRedirectDashboardToLogin', () => {
   });
 
   it('redirects when reverse-proxy peer is loopback but Host is public', () => {
-    // Copilot: TLS-terminated proxy often appears as loopback remoteAddress
+    // TLS-terminated proxies often present as loopback remoteAddress
     expect(
       shouldRedirectDashboardToLogin({
         authEnabled: true,

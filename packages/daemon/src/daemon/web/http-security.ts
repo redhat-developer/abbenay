@@ -113,10 +113,16 @@ export function isLocalDashboardHost(hostHeader?: string | string[] | null): boo
   const raw = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
   const first = (raw || '').split(',')[0]?.trim().toLowerCase() || '';
   if (!first) return false;
-  // Strip port; handle [IPv6]:port
-  const hostname = first.startsWith('[')
-    ? (first.match(/^\[([^\]]+)\]/)?.[1] || first)
-    : first.replace(/:\d+$/, '');
+  // Strip port for hostname / IPv4; handle [IPv6]:port. Do not strip from
+  // bare IPv6 (e.g. ::1) — trailing :digits would mangle it to ::.
+  let hostname: string;
+  if (first.startsWith('[')) {
+    hostname = first.match(/^\[([^\]]+)\]/)?.[1] || first;
+  } else if ((first.match(/:/g) || []).length > 1) {
+    hostname = first;
+  } else {
+    hostname = first.replace(/:\d+$/, '');
+  }
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 }
 
@@ -127,13 +133,12 @@ export function isLocalDashboardHost(hostHeader?: string | string[] | null): boo
 export function requestDashboardHost(req: {
   headers: { host?: string | string[]; 'x-forwarded-host'?: string | string[] };
 }): string | undefined {
-  const xf = req.headers['x-forwarded-host'];
-  if (typeof xf === 'string' && xf.trim()) return xf;
-  if (Array.isArray(xf) && xf[0]) return xf[0];
-  const host = req.headers.host;
-  if (typeof host === 'string') return host;
-  if (Array.isArray(host)) return host[0];
-  return undefined;
+  const firstHeaderValue = (value?: string | string[]): string | undefined => {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (typeof raw !== 'string' || !raw.trim()) return undefined;
+    return raw.split(',')[0]?.trim() || undefined;
+  };
+  return firstHeaderValue(req.headers['x-forwarded-host']) ?? firstHeaderValue(req.headers.host);
 }
 
 /**
