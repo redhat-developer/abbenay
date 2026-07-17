@@ -266,7 +266,8 @@ export function buildCompleteResponse(
     choices: [{
       index: 0,
       message,
-      finish_reason: mapFinishReason(finishReason),
+      // Clients expect tool_calls finish_reason whenever message.tool_calls is set.
+      finish_reason: mapFinishReason(hasToolCalls ? 'tool-calls' : finishReason),
     }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   };

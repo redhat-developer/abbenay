@@ -1083,10 +1083,15 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
         if (m.tool_calls && m.tool_calls.length > 0) {
           for (const tc of m.tool_calls) {
             const { id, name, arguments: args } = extractToolCallFields(tc);
+            const toolCallId = id.trim();
+            const toolName = name.trim();
+            if (!toolCallId || !toolName) {
+              continue;
+            }
             parts.push({
               type: 'tool-call',
-              toolCallId: id,
-              toolName: name,
+              toolCallId,
+              toolName,
               input: coerceToolCallInput(args),
             });
           }
