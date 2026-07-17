@@ -149,7 +149,6 @@ export {
   getConfiguredProviders,
   resolveEngineModelId,
   getEnabledModelNames,
-  isValidVirtualName,
 } from './config.js';
 
 /** Zod schemas for ConfigFile / PolicyConfig validation */
