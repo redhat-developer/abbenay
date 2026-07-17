@@ -1699,8 +1699,20 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // ── OpenAI-compatible API (/v1/*) ─────────────────────────────────────
   registerOpenAIRoutes(app, state);
 
-  // SPA fallback — same locality /login policy as `/` and `/index.html`.
-  app.get('*', serveDashboardHtml);
+  // Unknown API/OpenAI/MCP GETs stay JSON 404s — never SPA HTML or /login.
+  const isApiStylePath = (p: string): boolean =>
+    p === '/api' || p.startsWith('/api/') ||
+    p === '/v1' || p.startsWith('/v1/') ||
+    p === '/mcp' || p.startsWith('/mcp/');
+
+  app.get('*', (req, res) => {
+    if (isApiStylePath(req.path)) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    // SPA fallback — same locality /login policy as `/` and `/index.html`.
+    serveDashboardHtml(req, res);
+  });
 
   return app;
 }

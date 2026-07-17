@@ -405,6 +405,21 @@ describe('dashboard login', () => {
     expect(res.statusCode).toBe(200);
     expect(String(res.headers['cache-control'] || '')).toMatch(/no-store/i);
   });
+
+  it('unknown API GET returns JSON 404, not SPA HTML or /login', async () => {
+    const res = await httpRequest('GET', '/api/does-not-exist', {
+      token: null,
+      headers: { 'X-Forwarded-Host': 'abbenay.example' },
+    });
+    // Auth runs first → 401 for unauthenticated; with auth, unknown → JSON 404.
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ error: 'Unauthorized' });
+
+    const authed = await httpRequest('GET', '/api/does-not-exist');
+    expect(authed.statusCode).toBe(404);
+    expect(authed.body).toEqual({ error: 'Not found' });
+    expect(String(authed.headers.location || '')).toBe('');
+  });
 });
 
 describe('CORS allowlist', () => {
