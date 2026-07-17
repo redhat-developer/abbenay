@@ -217,10 +217,10 @@ consumers:
 
 **Behavior:**
 
-- **No `consumers` section (default):** Inline policy is allowed for all callers. This preserves frictionless operation for single-user local deployments.
-- **`consumers` section present:** Only callers that pass a valid token via the `x-abbenay-token` gRPC metadata header and whose consumer entry has `inline_policy: true` can use inline policy. Unauthorized requests with an inline policy receive `PERMISSION_DENIED`.
+- **No `consumers` section on localhost / unix socket (default):** Inline policy is allowed for all callers (local DX). Non-loopback binds without consumers fail closed (see DR-036).
+- **`consumers` section present:** Callers need `chat` plus `inline_policy`, with a valid `x-abbenay-token`. Unauthorized requests receive `PERMISSION_DENIED`.
 
-The consumer model provides per-app granularity — the admin can trust APME without trusting all Python clients. Token-based auth was chosen over client-type gating for this reason (see DR-024).
+The consumer model provides per-app granularity — the admin can trust APME without trusting all Python clients. Token-based auth was chosen over client-type gating for this reason (see DR-024 / DR-036).
 
 ## Alternatives Considered
 

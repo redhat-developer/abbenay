@@ -87,7 +87,9 @@ Tests that start real servers, make real HTTP/gRPC calls.
 |------|----------------|
 | `tests/integration/grpc-streaming.test.ts` | gRPC unary RPCs + streaming + cancellation + concurrency |
 | `tests/integration/grpc-tls.test.ts` | gRPC TLS bind policy + SetSecret/GetSecret over TLS |
-| `tests/integration/grpc-bind-e2e.test.ts` | Subprocess E2E: localhost OK, 0.0.0.0 refuse, TLS/insecure OK |
+| `tests/integration/grpc-bind-e2e.test.ts` | Subprocess E2E: localhost OK, 0.0.0.0 refuse, TLS/insecure + consumers/open-auth |
+| `tests/integration/consumer-auth.test.ts` | Consumer capability gating on sensitive RPCs |
+| `src/daemon/server/consumer-auth.test.ts` | Unit: timing-safe tokens, fail-closed bind, capability matrix |
 | `tests/integration/web-sse.test.ts` | Web API endpoints + SSE chat + config Zod validation / workspace allowlist |
 | `tests/integration/openai-compat.test.ts` | OpenAI-compatible API: /v1/models, streaming, non-streaming, errors, tool calls |
 | `tests/integration/sessions.test.ts` | Session REST API: CRUD endpoints, session chat SSE streaming + persistence |

@@ -185,6 +185,53 @@ via `/api/mcp/connections`. Pending connection consents and tool approvals
 auto-deny after **5 minutes** if the user never responds, so abandoned
 `initialize` / `tools/call` requests cannot leak entries in the pending maps.
 
+### Consumer authentication (`consumers`) — DR-036
+
+Named consumer applications authenticate to gRPC with a token in the
+`x-abbenay-token` metadata header. Each consumer is granted a capability
+matrix; sensitive RPCs require both a matching token and the relevant flag.
+
+```yaml
+consumers:
+  apme:
+    token_env: "APME_TOKEN"          # env var holding the consumer token
+    # token_keychain: "APME_TOKEN"   # future: keychain-backed token
+    capabilities:
+      chat: true                     # Chat / SessionChat
+      inline_policy: true            # PolicyConfig on chat requests
+      mcp_register: true             # RegisterMcpServer / UnregisterMcpServer
+      secrets: true                  # Get/Set/Delete/ListSecret, GetKeyStatus
+      config: true                   # Get/UpdateConfig, policy CRUD, web start/stop
+      providers: true                # ConfigureProvider / RemoveProvider / DiscoverModels
+      shutdown: true                 # Shutdown RPC
+```
+
+| Capability | Gated RPCs |
+|------------|------------|
+| `chat` | `Chat`, `SessionChat` |
+| `inline_policy` | Inline `PolicyConfig` on chat (also needs `chat`) |
+| `mcp_register` | `RegisterMcpServer`, `UnregisterMcpServer`, `ReconnectMcpServer` |
+| `secrets` | `GetSecret`, `SetSecret`, `DeleteSecret`, `ListSecrets`, `GetKeyStatus` |
+| `config` | `GetConfig`, `UpdateConfig`, `CreatePolicy`, `DeletePolicy`, `StartWebServer`, `StopWebServer` |
+| `providers` | `ConfigureProvider`, `RemoveProvider`, `DiscoverModels` |
+| `shutdown` | `Shutdown` |
+
+**Behavior:**
+
+| Bind / config | Empty `consumers` | `consumers` configured |
+|---------------|-------------------|------------------------|
+| Unix socket or loopback TCP (`127.0.0.1`, `::1`) | Allow-all (local DX) | Token + capability required for sensitive RPCs |
+| Non-loopback TCP (`0.0.0.0`, LAN IP, …) | **Refuse to start** unless `--allow-open-auth` or `--insecure` | Token + capability required |
+
+Token comparison uses `crypto.timingSafeEqual` (equal-length buffers). Wrong
+or missing tokens receive `PERMISSION_DENIED`. Health/status/list discovery
+RPCs stay ungated so probes and local tooling keep working.
+
+> **WARNING — open auth:** `--allow-open-auth` (or `--insecure`, which implies
+> it) on a non-loopback bind restores allow-all when `consumers` is empty.
+> Prefer configuring consumers. HTTP API auth is separate (`server` / Bearer);
+> see above.
+
 ### Session ownership
 
 Every session is stamped with an `owner` principal:

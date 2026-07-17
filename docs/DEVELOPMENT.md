@@ -143,9 +143,11 @@ abbenay chat -m openai/gpt-4o          # interactive chat
 aby daemon                  # short alias
 
 # TCP gRPC (optional) — loopback plaintext OK; non-loopback needs TLS or --insecure
+# Non-loopback also requires a consumers section (or --allow-open-auth / --insecure)
 abbenay daemon --grpc-port 50051
-abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls   # needs consumers in config
 abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --insecure   # not recommended
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls --allow-open-auth  # not recommended
 ```
 
 ### gRPC TCP / TLS flags
@@ -155,9 +157,14 @@ abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --insecure   # not recommen
 | `--grpc-port <port>` | (off) | Also listen for gRPC on TCP |
 | `--grpc-host <host>` | `127.0.0.1` | Bind address; `0.0.0.0` for containers |
 | `--grpc-tls` | off | Enable TLS (auto-generated self-signed certs) |
-| `--insecure` | off | Allow plaintext on non-loopback binds |
+| `--insecure` | off | Allow plaintext on non-loopback binds; also permits empty consumers |
+| `--allow-open-auth` | off | Allow empty consumers on non-loopback binds (prefer configuring `consumers`) |
 
-See [CONTAINER.md](./CONTAINER.md#security-grpc-bind-tls-and---insecure) for
+Non-loopback binds without a `consumers` section fail closed unless
+`--allow-open-auth` or `--insecure` is set. See
+[CONFIGURATION.md](./CONFIGURATION.md#consumer-authentication-consumers) for
+the capability model and
+[CONTAINER.md](./CONTAINER.md#security-grpc-bind-tls-and---insecure) for
 client trust and insecure tradeoffs.
 
 ### CLI list commands

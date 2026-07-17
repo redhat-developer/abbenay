@@ -583,3 +583,23 @@ the path exists.
 writes, path traversal into workspace config paths, type confusion, and
 field injection (findings H4/H5). Auth (DR-030) authenticates the caller but
 does not constrain payload shape or write targets.
+
+---
+
+## DR-037: Mandatory consumer auth for non-localhost gRPC
+
+**Date:** 2026-07-17
+**Decision:** Extend the DR-024 consumer model so that (1) binding gRPC to a
+non-loopback address with an empty/missing `consumers` section fails closed
+unless `--allow-open-auth` or `--insecure` is set; (2) when `consumers` is
+configured, all sensitive RPCs (secrets, config, providers, shutdown, chat
+including SummarizeSession, MCP register, inline policy) require a matching
+`x-abbenay-token` and the corresponding capability; (3) token comparison uses
+`crypto.timingSafeEqual` on equal-length buffers. Localhost / unix-socket
+binds with empty consumers remain allow-all for local DX. HTTP consumer auth
+remains out of scope (covered by DR-030 Bearer auth).
+**Rationale:** Previously only Chat (inline policy) and RegisterMcpServer were
+gated, and empty consumers meant allow-all even on `0.0.0.0` — findings H8/H10.
+Fail-closed on network exposure closes unauthenticated secret/config/shutdown
+access while keeping single-user local workflows frictionless. Timing-safe
+compare closes token oracle leaks.
