@@ -421,6 +421,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    */
   app.delete('/api/mcp/connections/sessions/:sessionId', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       if (typeof state.mcpServer?.revokeSession !== 'function') {
         res.status(404).json({ error: 'MCP server does not support session revoke' });
         return;
@@ -441,6 +446,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * DELETE /api/mcp/connections/remembered/:clientName — forget a remembered client
    */
   app.delete('/api/mcp/connections/remembered/:clientName', (req, res) => {
+    const parsed = parseRequestBody(EmptyBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
+      return;
+    }
     const clientName = decodeURIComponent(req.params.clientName || '').trim();
     if (!clientName) {
       res.status(400).json({ error: 'clientName is required' });

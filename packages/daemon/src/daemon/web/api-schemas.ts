@@ -2,8 +2,9 @@
  * Zod request-body schemas for every mutating HTTP web API route.
  *
  * Config shapes are shared with `@abbenay/core` via config-schema.ts.
- * Route schemas use `.strict()` so unexpected fields are rejected before
- * business logic runs.
+ * Most route schemas use `.strict()` so unexpected fields are rejected before
+ * business logic runs. OpenAI `/v1` uses `.strip()` so unknown client fields
+ * do not 400 (DR-020 compatibility).
  */
 
 import { z } from 'zod';
@@ -184,6 +185,8 @@ const OpenAIChatMessageSchema = z
   })
   .passthrough();
 
+// Strip unknown OpenAI client fields (stream_options, user, stop, …) rather than
+// .strict()-rejecting them — DR-020 clients send extras by default.
 export const PostOpenAIChatCompletionsBodySchema = z
   .object({
     model: z.string().min(1),
@@ -196,7 +199,7 @@ export const PostOpenAIChatCompletionsBodySchema = z
     // DR-032: optional client tools for opt-in passthrough (validated/mapped in openai-compat).
     tools: z.array(z.unknown()).optional(),
   })
-  .strict();
+  .strip();
 
 export type PostConfigBody = z.infer<typeof PostConfigBodySchema>;
 export type PostChatBody = z.infer<typeof PostChatBodySchema>;

@@ -11,7 +11,11 @@ import {
   formatZodError,
   parseRequestBody,
 } from './validate-body.js';
-import { PostChatBodySchema, PostConfigBodySchema } from './api-schemas.js';
+import {
+  PostChatBodySchema,
+  PostConfigBodySchema,
+  PostOpenAIChatCompletionsBodySchema,
+} from './api-schemas.js';
 
 describe('containsPathTraversal', () => {
   it('detects .. segments on Unix and Windows separators', () => {
@@ -54,6 +58,15 @@ describe('checkWorkspaceLocation', () => {
       expect(result.error).toMatch(/allowlisted/i);
     }
   });
+
+  it('rejects null bytes with 400', () => {
+    const result = checkWorkspaceLocation('/tmp/allowed-ws\0/../etc/passwd', allowed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(400);
+      expect(result.error).toMatch(/null/i);
+    }
+  });
 });
 
 describe('parseRequestBody', () => {
@@ -91,6 +104,24 @@ describe('parseRequestBody', () => {
       extra: true,
     });
     expect(result.success).toBe(false);
+  });
+
+  it('strips unknown OpenAI client fields instead of rejecting them', () => {
+    const result = parseRequestBody(PostOpenAIChatCompletionsBodySchema, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+      stream_options: { include_usage: true },
+      user: 'client-1',
+      stop: ['\n'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.model).toBe('openai/gpt-4o');
+      expect(result.data.stream).toBe(true);
+      expect('stream_options' in result.data).toBe(false);
+      expect('user' in result.data).toBe(false);
+    }
   });
 });
 

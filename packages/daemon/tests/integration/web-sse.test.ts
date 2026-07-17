@@ -417,9 +417,8 @@ describe('Web API - Config Endpoints', () => {
       location: '../../etc/passwd',
       config: { providers: { evil: { engine: 'openai' } } },
     });
-    expect([400, 403]).toContain(statusCode);
-    expect(body.error).toMatch(/traversal|allowlisted/i);
-    expect(fs.existsSync('/etc/passwd.config')).toBe(false);
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/traversal/i);
     // Must not create a workspace config under a traversal target
     expect(fs.existsSync(path.join(process.cwd(), '../../etc/passwd', '.config', 'abbenay', 'config.yaml'))).toBe(false);
     const after = fs.existsSync(path.join(tmpConfigDir, 'config.yaml'))

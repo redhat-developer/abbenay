@@ -5,10 +5,21 @@
  * `parseRequestBody`. Invalid bodies return HTTP 400 before business logic.
  */
 
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Response } from 'express';
 import { z } from 'zod';
 import type { DaemonState } from '../state.js';
+
+/** Resolve to a real path when the target exists; otherwise path.resolve. */
+function resolvePathKey(p: string): string {
+  const resolved = path.resolve(p);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
 
 /**
  * Format a ZodError into a concise API error string.
@@ -58,8 +69,8 @@ export function containsPathTraversal(location: string): boolean {
 export function collectAllowlistedWorkspaces(state: DaemonState): string[] {
   const set = new Set<string>();
   const add = (p?: string): void => {
-    if (typeof p === 'string' && p.trim().length > 0) {
-      set.add(path.resolve(p));
+    if (typeof p === 'string' && p.trim().length > 0 && !p.includes('\0')) {
+      set.add(resolvePathKey(p));
     }
   };
 
@@ -93,6 +104,13 @@ export function checkWorkspaceLocation(
   if (typeof location !== 'string' || location.trim().length === 0) {
     return { ok: false, status: 400, error: 'location must be a non-empty string' };
   }
+  if (location.includes('\0')) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Invalid location: null bytes are not allowed',
+    };
+  }
   if (containsPathTraversal(location)) {
     return {
       ok: false,
@@ -101,8 +119,8 @@ export function checkWorkspaceLocation(
     };
   }
 
-  const resolved = path.resolve(location);
-  const allowed = new Set(allowlisted.map((p) => path.resolve(p)));
+  const resolved = resolvePathKey(location);
+  const allowed = new Set(allowlisted.map((p) => resolvePathKey(p)));
   if (!allowed.has(resolved)) {
     return {
       ok: false,
