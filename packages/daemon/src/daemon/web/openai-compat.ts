@@ -185,15 +185,19 @@ export function buildStreamChunk(
   if (chunk.type === 'tool' && chunk.state === 'running' && chunk.call) {
     const delta: Record<string, unknown> = {};
     if (isFirstChunk) delta.role = 'assistant';
+    const toolName = (chunk.name || '').trim();
+    if (!toolName) {
+      return null;
+    }
     delta.tool_calls = [{
       index: toolCallIndex,
       id: `call_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
       type: 'function',
       function: {
-        name: chunk.name,
+        name: toolName,
         arguments: typeof chunk.call.params === 'string'
           ? chunk.call.params
-          : JSON.stringify(chunk.call.params ?? {}),
+          : safeJsonStringify(chunk.call.params ?? {}, '{}'),
       },
     }];
     return { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
@@ -247,14 +251,18 @@ function toolCallFromChunk(chunk: ChatChunk): OpenAIToolCall | null {
   if (chunk.type !== 'tool' || chunk.state !== 'running' || !chunk.call) {
     return null;
   }
+  const name = (chunk.name || '').trim();
+  if (!name) {
+    return null;
+  }
   return {
     id: `call_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
     type: 'function',
     function: {
-      name: chunk.name || '',
+      name,
       arguments: typeof chunk.call.params === 'string'
         ? chunk.call.params
-        : JSON.stringify(chunk.call.params ?? {}),
+        : safeJsonStringify(chunk.call.params ?? {}, '{}'),
     },
   };
 }
@@ -306,18 +314,14 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
     }
 
     const chatMessages = messages.map(
-      (m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown }) => {
-        const normalized = normalizeOpenAIToolCalls(m.tool_calls);
-        const toolCalls = normalized
-          ?? (Array.isArray(m.tool_calls) ? m.tool_calls as unknown[] : undefined);
-        return {
-          role: m.role || 'user',
-          content: m.content || '',
-          name: m.name || undefined,
-          tool_call_id: m.tool_call_id || undefined,
-          tool_calls: toolCalls,
-        };
-      },
+      (m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown }) => ({
+        role: m.role || 'user',
+        content: m.content || '',
+        name: m.name || undefined,
+        tool_call_id: m.tool_call_id || undefined,
+        // Only pass sanitized tool_calls — never the raw request array.
+        tool_calls: normalizeOpenAIToolCalls(m.tool_calls),
+      }),
     );
 
     const requestParams: Record<string, unknown> = {};

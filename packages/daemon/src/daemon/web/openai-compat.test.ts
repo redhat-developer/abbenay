@@ -169,6 +169,17 @@ describe('buildStreamChunk', () => {
       };
       expect(buildStreamChunk(chunk, opts, 0, false)).toBeNull();
     });
+
+    it('returns null for running tool chunks with empty name', () => {
+      const chunk: ChatChunk = {
+        type: 'tool',
+        name: '',
+        state: 'running',
+        call: { params: { q: 'test' }, result: undefined },
+        done: false,
+      };
+      expect(buildStreamChunk(chunk, opts, 0, false)).toBeNull();
+    });
   });
 
   describe('done chunks', () => {
