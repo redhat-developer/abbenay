@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { extractToolCallFields } from './engines.js';
+import { coerceToolCallInput, extractToolCallFields } from './engines.js';
 
 describe('extractToolCallFields', () => {
   it('reads OpenAI nested function tool_calls', () => {
@@ -36,5 +36,23 @@ describe('extractToolCallFields', () => {
       name: '',
       arguments: undefined,
     });
+  });
+});
+
+describe('coerceToolCallInput', () => {
+  it('keeps plain objects', () => {
+    expect(coerceToolCallInput({ q: 'x' })).toEqual({ q: 'x' });
+  });
+
+  it('parses JSON object strings', () => {
+    expect(coerceToolCallInput('{"q":"x"}')).toEqual({ q: 'x' });
+  });
+
+  it('falls back to {} for primitives, arrays, and invalid JSON', () => {
+    expect(coerceToolCallInput('5')).toEqual({});
+    expect(coerceToolCallInput('[]')).toEqual({});
+    expect(coerceToolCallInput([])).toEqual({});
+    expect(coerceToolCallInput(null)).toEqual({});
+    expect(coerceToolCallInput('not-json')).toEqual({});
   });
 });

@@ -1044,6 +1044,22 @@ export function extractToolCallFields(tc: unknown): {
   };
 }
 
+/** Coerce tool-call arguments to a plain object for the AI SDK `input` field. */
+export function coerceToolCallInput(args: unknown): Record<string, unknown> {
+  let value = args;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
 /**
  * Convert our internal message format to Vercel AI SDK ModelMessage format.
  */
@@ -1064,21 +1080,11 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
         if (m.tool_calls && m.tool_calls.length > 0) {
           for (const tc of m.tool_calls) {
             const { id, name, arguments: args } = extractToolCallFields(tc);
-            let input: Record<string, unknown> = {};
-            if (typeof args === 'string') {
-              try {
-                input = JSON.parse(args) as Record<string, unknown>;
-              } catch {
-                input = {};
-              }
-            } else if (args && typeof args === 'object') {
-              input = args as Record<string, unknown>;
-            }
             parts.push({
               type: 'tool-call',
               toolCallId: id,
               toolName: name,
-              input,
+              input: coerceToolCallInput(args),
             });
           }
         }
