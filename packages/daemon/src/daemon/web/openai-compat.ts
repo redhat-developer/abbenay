@@ -272,13 +272,18 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
     }
 
     const chatMessages = messages.map(
-      (m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown }) => ({
-        role: m.role || 'user',
-        content: m.content || '',
-        name: m.name || undefined,
-        tool_call_id: m.tool_call_id || undefined,
-        tool_calls: normalizeOpenAIToolCalls(m.tool_calls) ?? m.tool_calls ?? undefined,
-      }),
+      (m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown }) => {
+        const normalized = normalizeOpenAIToolCalls(m.tool_calls);
+        const toolCalls = normalized
+          ?? (Array.isArray(m.tool_calls) ? m.tool_calls as unknown[] : undefined);
+        return {
+          role: m.role || 'user',
+          content: m.content || '',
+          name: m.name || undefined,
+          tool_call_id: m.tool_call_id || undefined,
+          tool_calls: toolCalls,
+        };
+      },
     );
 
     const requestParams: Record<string, unknown> = {};
@@ -289,12 +294,18 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
     const hasParams = Object.keys(requestParams).length > 0;
 
     // Secure-by-default (DR-019): tools off unless config opts into passthrough (DR-032).
-    const config = loadConfig();
-    const mode = resolveOpenAICompatToolsMode(String(model), config);
-    const mappedTools = mapOpenAIToolsToDefinitions(tools);
-    const toolOptions: ChatToolOptions = mode === 'passthrough' && mappedTools.length > 0
-      ? { toolMode: 'passthrough', tools: mappedTools, maxToolIterations: 1 }
-      : { toolMode: 'none', tools: undefined };
+    // Skip disk config + tool mapping when the request has no tools (common default path).
+    let toolOptions: ChatToolOptions = { toolMode: 'none', tools: undefined };
+    if (Array.isArray(tools) && tools.length > 0) {
+      const config = loadConfig();
+      const mode = resolveOpenAICompatToolsMode(String(model), config);
+      if (mode === 'passthrough') {
+        const mappedTools = mapOpenAIToolsToDefinitions(tools);
+        if (mappedTools.length > 0) {
+          toolOptions = { toolMode: 'passthrough', tools: mappedTools, maxToolIterations: 1 };
+        }
+      }
+    }
 
     const chatId = generateChatId();
     const created = Math.floor(Date.now() / 1000);
@@ -313,7 +324,7 @@ function handleStreaming(
   res: Response,
   state: DaemonState,
   model: string,
-  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown }>,
+  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }>,
   params: Record<string, unknown> | undefined,
   toolOptions: ChatToolOptions,
   chatId: string,
@@ -381,7 +392,7 @@ async function handleNonStreaming(
   res: Response,
   state: DaemonState,
   model: string,
-  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown }>,
+  messages: Array<{ role: string; content: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }>,
   params: Record<string, unknown> | undefined,
   toolOptions: ChatToolOptions,
   chatId: string,

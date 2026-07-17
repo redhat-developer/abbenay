@@ -955,7 +955,9 @@ export async function* streamChat(
       model,
       messages: aiMessages,
       ...(aiTools ? { tools: aiTools } : {}),
-      ...(effectiveMaxSteps > 1 ? { stopWhen: stepCountIs(effectiveMaxSteps) } : {}),
+      // Always bound tool loops when tools are registered — including passthrough
+      // (effectiveMaxSteps === 1) so we do not rely on AI SDK defaults alone.
+      ...(aiTools ? { stopWhen: stepCountIs(effectiveMaxSteps) } : {}),
       ...(params?.temperature != null ? { temperature: params.temperature } : {}),
       ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
