@@ -175,11 +175,11 @@ export function normalizeOpenAIChatMessage(raw: unknown): {
   tool_calls?: OpenAIToolCall[];
 } {
   const m = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
-  const role = typeof m.role === 'string' && m.role.trim() ? m.role : 'user';
+  const role = typeof m.role === 'string' && m.role.trim() ? m.role.trim() : 'user';
   const content = typeof m.content === 'string' ? m.content : '';
-  const name = typeof m.name === 'string' && m.name ? m.name : undefined;
-  const tool_call_id = typeof m.tool_call_id === 'string' && m.tool_call_id
-    ? m.tool_call_id
+  const name = typeof m.name === 'string' && m.name.trim() ? m.name.trim() : undefined;
+  const tool_call_id = typeof m.tool_call_id === 'string' && m.tool_call_id.trim()
+    ? m.tool_call_id.trim()
     : undefined;
   return {
     role,

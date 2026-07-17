@@ -425,6 +425,21 @@ describe('normalizeOpenAIChatMessage', () => {
     });
   });
 
+  it('trims role/name/tool_call_id whitespace', () => {
+    expect(normalizeOpenAIChatMessage({
+      role: 'assistant ',
+      content: 'hi',
+      name: ' bot ',
+      tool_call_id: ' call_1 ',
+    })).toEqual({
+      role: 'assistant',
+      content: 'hi',
+      name: 'bot',
+      tool_call_id: 'call_1',
+      tool_calls: undefined,
+    });
+  });
+
   it('tolerates non-object messages', () => {
     expect(normalizeOpenAIChatMessage(null)).toEqual({
       role: 'user',
