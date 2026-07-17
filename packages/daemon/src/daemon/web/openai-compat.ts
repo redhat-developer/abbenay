@@ -163,6 +163,33 @@ export function normalizeOpenAIToolCalls(toolCalls: unknown): OpenAIToolCall[] |
   return out.length > 0 ? out : undefined;
 }
 
+/**
+ * Coerce a single OpenAI chat message into Abbenay ChatMessage primitives.
+ * Non-string content/role/name/tool_call_id must not reach core `.trim()` paths.
+ */
+export function normalizeOpenAIChatMessage(raw: unknown): {
+  role: string;
+  content: string;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: OpenAIToolCall[];
+} {
+  const m = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const role = typeof m.role === 'string' && m.role.trim() ? m.role : 'user';
+  const content = typeof m.content === 'string' ? m.content : '';
+  const name = typeof m.name === 'string' && m.name ? m.name : undefined;
+  const tool_call_id = typeof m.tool_call_id === 'string' && m.tool_call_id
+    ? m.tool_call_id
+    : undefined;
+  return {
+    role,
+    content,
+    name,
+    tool_call_id,
+    tool_calls: normalizeOpenAIToolCalls(m.tool_calls),
+  };
+}
+
 export function buildStreamChunk(
   chunk: ChatChunk,
   opts: StreamChunkOptions,
@@ -313,16 +340,7 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
       return;
     }
 
-    const chatMessages = messages.map(
-      (m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown }) => ({
-        role: m.role || 'user',
-        content: m.content || '',
-        name: m.name || undefined,
-        tool_call_id: m.tool_call_id || undefined,
-        // Only pass sanitized tool_calls — never the raw request array.
-        tool_calls: normalizeOpenAIToolCalls(m.tool_calls),
-      }),
-    );
+    const chatMessages = messages.map((m: unknown) => normalizeOpenAIChatMessage(m));
 
     const requestParams: Record<string, unknown> = {};
     if (temperature != null) requestParams.temperature = temperature;

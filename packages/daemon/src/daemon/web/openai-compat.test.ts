@@ -16,6 +16,7 @@ import {
   resolveOpenAICompatToolsMode,
   mapOpenAIToolsToDefinitions,
   normalizeOpenAIToolCalls,
+  normalizeOpenAIChatMessage,
   type StreamChunkOptions,
 } from './openai-compat.js';
 import type { ModelInfo } from '../../core/state.js';
@@ -390,5 +391,47 @@ describe('normalizeOpenAIToolCalls', () => {
       { id: 'call_x', type: 'function', function: { name: '', arguments: '{}' } },
       { id: 'call_y', name: '   ', arguments: '{}' },
     ])).toBeUndefined();
+  });
+});
+
+describe('normalizeOpenAIChatMessage', () => {
+  it('keeps string primitives', () => {
+    expect(normalizeOpenAIChatMessage({
+      role: 'assistant',
+      content: 'hi',
+      name: 'bot',
+      tool_call_id: 'call_1',
+    })).toEqual({
+      role: 'assistant',
+      content: 'hi',
+      name: 'bot',
+      tool_call_id: 'call_1',
+      tool_calls: undefined,
+    });
+  });
+
+  it('coerces non-string content/role/name/tool_call_id', () => {
+    expect(normalizeOpenAIChatMessage({
+      role: 1,
+      content: { text: 'nope' },
+      name: ['x'],
+      tool_call_id: { id: 'y' },
+    })).toEqual({
+      role: 'user',
+      content: '',
+      name: undefined,
+      tool_call_id: undefined,
+      tool_calls: undefined,
+    });
+  });
+
+  it('tolerates non-object messages', () => {
+    expect(normalizeOpenAIChatMessage(null)).toEqual({
+      role: 'user',
+      content: '',
+      name: undefined,
+      tool_call_id: undefined,
+      tool_calls: undefined,
+    });
   });
 });
