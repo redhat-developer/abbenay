@@ -104,12 +104,45 @@ export function isLoopbackRemoteAddress(addr?: string | null): boolean {
 }
 
 /**
+ * Return true when the browser Host (or first X-Forwarded-Host) is loopback.
+ *
+ * Used so TLS-terminated reverse proxies (peer often loopback) cannot trigger
+ * auto-session cookies for public hostnames.
+ */
+export function isLocalDashboardHost(hostHeader?: string | string[] | null): boolean {
+  const raw = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
+  const first = (raw || '').split(',')[0]?.trim().toLowerCase() || '';
+  if (!first) return false;
+  // Strip port; handle [IPv6]:port
+  const hostname = first.startsWith('[')
+    ? (first.match(/^\[([^\]]+)\]/)?.[1] || first)
+    : first.replace(/:\d+$/, '');
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+/**
+ * Prefer X-Forwarded-Host (first value) then Host — same trust model as
+ * X-Forwarded-Proto for Secure cookies.
+ */
+export function requestDashboardHost(req: {
+  headers: { host?: string | string[]; 'x-forwarded-host'?: string | string[] };
+}): string | undefined {
+  const xf = req.headers['x-forwarded-host'];
+  if (typeof xf === 'string' && xf.trim()) return xf;
+  if (Array.isArray(xf) && xf[0]) return xf[0];
+  const host = req.headers.host;
+  if (typeof host === 'string') return host;
+  if (Array.isArray(host)) return host[0];
+  return undefined;
+}
+
+/**
  * Whether an unauthenticated dashboard HTML request should 302 to `/login`.
  *
- * Localhost-only binds and loopback clients keep auto-session cookies for
- * local use. Remote clients on a non-loopback bind must use `/login` first —
- * otherwise the SPA loads and `/api/*` returns 401, which looks like an empty
- * config ("No providers configured").
+ * Auto-session (skip redirect) only when the TCP peer is local **and** the
+ * browser Host / X-Forwarded-Host is localhost. That keeps `aby web` on
+ * 127.0.0.1 convenient, but forces `/login` when a reverse proxy presents a
+ * public hostname (peer is often loopback after TLS termination).
  *
  * No-op when auth is disabled (`ABBENAY_HTTP_AUTH=0`) or a valid auth cookie
  * is already present.
@@ -119,10 +152,28 @@ export function shouldRedirectDashboardToLogin(opts: {
   hasValidAuthCookie: boolean;
   bindHost: string;
   remoteAddress?: string | null;
+  hostHeader?: string | string[] | null;
 }): boolean {
   if (!opts.authEnabled || opts.hasValidAuthCookie) return false;
-  if (isLocalhostBind(opts.bindHost)) return false;
-  return !isLoopbackRemoteAddress(opts.remoteAddress);
+  const localPeer = isLocalhostBind(opts.bindHost) || isLoopbackRemoteAddress(opts.remoteAddress);
+  const localHost = isLocalDashboardHost(opts.hostHeader);
+  return !(localPeer && localHost);
+}
+
+/**
+ * Whether the dashboard may auto-establish session cookies without /login.
+ * Same locality rules as {@link shouldRedirectDashboardToLogin}.
+ */
+export function mayAutoEstablishDashboardSession(opts: {
+  authEnabled: boolean;
+  hasValidAuthCookie: boolean;
+  bindHost: string;
+  remoteAddress?: string | null;
+  hostHeader?: string | string[] | null;
+}): boolean {
+  if (!opts.authEnabled) return true;
+  if (opts.hasValidAuthCookie) return true;
+  return !shouldRedirectDashboardToLogin({ ...opts, hasValidAuthCookie: false });
 }
 
 /**

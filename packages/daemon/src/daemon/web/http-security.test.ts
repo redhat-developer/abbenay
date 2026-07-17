@@ -6,7 +6,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   isLocalhostBind,
   isLoopbackRemoteAddress,
+  isLocalDashboardHost,
   shouldRedirectDashboardToLogin,
+  mayAutoEstablishDashboardSession,
   isHttpAuthEnabled,
   assertHttpAuthBindAllowed,
   HttpAuthBindSecurityError,
@@ -56,6 +58,19 @@ describe('isLoopbackRemoteAddress', () => {
   });
 });
 
+describe('isLocalDashboardHost', () => {
+  it('accepts localhost Host values', () => {
+    expect(isLocalDashboardHost('localhost:8787')).toBe(true);
+    expect(isLocalDashboardHost('127.0.0.1:8787')).toBe(true);
+    expect(isLocalDashboardHost('[::1]:8787')).toBe(true);
+  });
+
+  it('rejects public hostnames', () => {
+    expect(isLocalDashboardHost('abbenay.20665.net')).toBe(false);
+    expect(isLocalDashboardHost('abbenay.example:443')).toBe(false);
+  });
+});
+
 describe('shouldRedirectDashboardToLogin', () => {
   it('does not redirect when auth is disabled', () => {
     expect(
@@ -64,6 +79,7 @@ describe('shouldRedirectDashboardToLogin', () => {
         hasValidAuthCookie: false,
         bindHost: '0.0.0.0',
         remoteAddress: '192.168.0.24',
+        hostHeader: 'abbenay.example',
       }),
     ).toBe(false);
   });
@@ -75,39 +91,62 @@ describe('shouldRedirectDashboardToLogin', () => {
         hasValidAuthCookie: true,
         bindHost: '0.0.0.0',
         remoteAddress: '192.168.0.24',
+        hostHeader: 'abbenay.example',
       }),
     ).toBe(false);
   });
 
-  it('does not redirect on localhost bind (local auto-session)', () => {
-    expect(
-      shouldRedirectDashboardToLogin({
-        authEnabled: true,
-        hasValidAuthCookie: false,
-        bindHost: '127.0.0.1',
-        remoteAddress: '127.0.0.1',
-      }),
-    ).toBe(false);
-  });
-
-  it('does not redirect for loopback clients on non-loopback bind', () => {
+  it('does not redirect for direct local access (loopback peer + local Host)', () => {
     expect(
       shouldRedirectDashboardToLogin({
         authEnabled: true,
         hasValidAuthCookie: false,
         bindHost: '0.0.0.0',
         remoteAddress: '127.0.0.1',
+        hostHeader: '127.0.0.1:8787',
+      }),
+    ).toBe(false);
+    expect(
+      mayAutoEstablishDashboardSession({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '127.0.0.1',
+        remoteAddress: '127.0.0.1',
+        hostHeader: 'localhost:8787',
+      }),
+    ).toBe(true);
+  });
+
+  it('redirects when reverse-proxy peer is loopback but Host is public', () => {
+    // Copilot: TLS-terminated proxy often appears as loopback remoteAddress
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '127.0.0.1',
+        hostHeader: 'abbenay.20665.net',
+      }),
+    ).toBe(true);
+    expect(
+      mayAutoEstablishDashboardSession({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '127.0.0.1',
+        hostHeader: 'abbenay.20665.net',
       }),
     ).toBe(false);
   });
 
-  it('redirects remote clients on non-loopback bind without a cookie', () => {
+  it('redirects remote clients without a cookie', () => {
     expect(
       shouldRedirectDashboardToLogin({
         authEnabled: true,
         hasValidAuthCookie: false,
         bindHost: '0.0.0.0',
         remoteAddress: '192.168.0.24',
+        hostHeader: '192.168.0.3:8787',
       }),
     ).toBe(true);
   });
