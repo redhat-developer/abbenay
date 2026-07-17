@@ -5,6 +5,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   isLocalhostBind,
+  isLoopbackRemoteAddress,
+  shouldRedirectDashboardToLogin,
   isHttpAuthEnabled,
   assertHttpAuthBindAllowed,
   HttpAuthBindSecurityError,
@@ -37,6 +39,77 @@ describe('isLocalhostBind', () => {
   it('rejects non-loopback', () => {
     expect(isLocalhostBind('0.0.0.0')).toBe(false);
     expect(isLocalhostBind('192.168.1.1')).toBe(false);
+  });
+});
+
+describe('isLoopbackRemoteAddress', () => {
+  it('accepts loopback peers', () => {
+    expect(isLoopbackRemoteAddress('127.0.0.1')).toBe(true);
+    expect(isLoopbackRemoteAddress('::1')).toBe(true);
+    expect(isLoopbackRemoteAddress('::ffff:127.0.0.1')).toBe(true);
+  });
+
+  it('rejects non-loopback peers', () => {
+    expect(isLoopbackRemoteAddress('192.168.0.24')).toBe(false);
+    expect(isLoopbackRemoteAddress('10.88.0.1')).toBe(false);
+    expect(isLoopbackRemoteAddress(undefined)).toBe(false);
+  });
+});
+
+describe('shouldRedirectDashboardToLogin', () => {
+  it('does not redirect when auth is disabled', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: false,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '192.168.0.24',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not redirect when a valid auth cookie is present', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: true,
+        bindHost: '0.0.0.0',
+        remoteAddress: '192.168.0.24',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not redirect on localhost bind (local auto-session)', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '127.0.0.1',
+        remoteAddress: '127.0.0.1',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not redirect for loopback clients on non-loopback bind', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '127.0.0.1',
+      }),
+    ).toBe(false);
+  });
+
+  it('redirects remote clients on non-loopback bind without a cookie', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '192.168.0.24',
+      }),
+    ).toBe(true);
   });
 });
 

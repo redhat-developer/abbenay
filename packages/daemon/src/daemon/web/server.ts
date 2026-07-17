@@ -35,6 +35,8 @@ import {
   API_TOKEN_COOKIE,
   CSRF_COOKIE,
   isLocalhostBind,
+  isLoopbackRemoteAddress,
+  shouldRedirectDashboardToLogin,
   assertHttpAuthBindAllowed,
   type WebSecurityOptions,
   type ResolvedHttpSecurity,
@@ -125,10 +127,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     next();
   });
 
-  const isLoopbackClient = (req: Request): boolean => {
-    const addr = req.socket.remoteAddress || '';
-    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
-  };
+  const isLoopbackClient = (req: Request): boolean =>
+    isLoopbackRemoteAddress(req.socket.remoteAddress);
 
   const cookieOpts = (req: Request) => ({ secure: cookieSecureFromRequest(req) });
 
@@ -192,6 +192,18 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     }
 
     const hasAuthCookie = hasValidAuthCookie(req);
+    if (
+      shouldRedirectDashboardToLogin({
+        authEnabled: security.authEnabled,
+        hasValidAuthCookie: hasAuthCookie,
+        bindHost: security.host,
+        remoteAddress: req.socket.remoteAddress,
+      })
+    ) {
+      res.redirect(302, '/login');
+      return;
+    }
+
     const mayEstablishSession = hasAuthCookie || isLoopbackClient(req) || isLocalhostBind(security.host);
 
     let csrf = getCookie(req, CSRF_COOKIE);

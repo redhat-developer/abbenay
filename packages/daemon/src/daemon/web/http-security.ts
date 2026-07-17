@@ -96,6 +96,36 @@ export function isLocalhostBind(host: string): boolean {
 }
 
 /**
+ * Return true when the TCP peer looks like loopback.
+ */
+export function isLoopbackRemoteAddress(addr?: string | null): boolean {
+  const a = (addr || '').trim();
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
+/**
+ * Whether an unauthenticated dashboard HTML request should 302 to `/login`.
+ *
+ * Localhost-only binds and loopback clients keep auto-session cookies for
+ * local use. Remote clients on a non-loopback bind must use `/login` first —
+ * otherwise the SPA loads and `/api/*` returns 401, which looks like an empty
+ * config ("No providers configured").
+ *
+ * No-op when auth is disabled (`ABBENAY_HTTP_AUTH=0`) or a valid auth cookie
+ * is already present.
+ */
+export function shouldRedirectDashboardToLogin(opts: {
+  authEnabled: boolean;
+  hasValidAuthCookie: boolean;
+  bindHost: string;
+  remoteAddress?: string | null;
+}): boolean {
+  if (!opts.authEnabled || opts.hasValidAuthCookie) return false;
+  if (isLocalhostBind(opts.bindHost)) return false;
+  return !isLoopbackRemoteAddress(opts.remoteAddress);
+}
+
+/**
  * Thrown when HTTP auth is disabled on a non-loopback bind (fail-closed).
  */
 export class HttpAuthBindSecurityError extends Error {

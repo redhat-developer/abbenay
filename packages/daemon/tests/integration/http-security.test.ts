@@ -370,6 +370,13 @@ describe('dashboard login', () => {
     expect(String(res.body)).toContain('action="/login"');
     expect(String(res.body)).toContain('name="token"');
   });
+
+  it('GET / on localhost bind still serves the dashboard without a prior cookie', async () => {
+    // Default test bind is 127.0.0.1 — auto-session for local use (no redirect).
+    const res = await httpRequest('GET', '/', { token: null });
+    expect(res.statusCode).toBe(200);
+    expect(String(res.body)).toContain('Abbenay');
+  });
 });
 
 describe('CORS allowlist', () => {

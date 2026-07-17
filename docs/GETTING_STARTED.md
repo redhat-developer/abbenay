@@ -288,9 +288,13 @@ aby web
 ```
 
 Open http://127.0.0.1:8787 in your browser (loopback clients get a session
-automatically). For remote binds, use http://127.0.0.1:8787/login or
-`POST /login` with the API token in the body — avoid putting the token in
-the query string (it can leak via history, Referer, and logs).
+automatically). For remote binds (`--host 0.0.0.0`), unauthenticated visits to
+`/` redirect to `/login` — sign in with the API token (or `POST /login` with
+the token in the body). Avoid putting the token in the query string (it can
+leak via history, Referer, and logs).
+
+For throwaway local development only, `ABBENAY_HTTP_AUTH=0` disables HTTP auth
+(loopback bind only; refused with `--host 0.0.0.0`).
 
 Use the dashboard to:
 
