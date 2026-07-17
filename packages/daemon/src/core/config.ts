@@ -45,6 +45,9 @@ export function isValidVirtualName(name: string): boolean {
  * - Key with `model_id` → the key is a virtual name, model_id is the actual engine model
  * - `{}` = enabled with all default params
  */
+/** Opt-in mode for OpenAI-compatible `/v1` tools (DR-032). */
+export type OpenAICompatToolsMode = 'off' | 'passthrough';
+
 export interface ModelConfig {
   /** Actual engine model ID — required when the key is a virtual name */
   model_id?: string;
@@ -64,6 +67,11 @@ export interface ModelConfig {
   max_tokens?: number;
   /** Request timeout in milliseconds */
   timeout?: number;
+  /**
+   * Per-model override for OpenAI-compatible `/v1` tools passthrough.
+   * When unset, inherits `openai_compat.tools` (default `off`).
+   */
+  openai_compat_tools?: OpenAICompatToolsMode;
 }
 
 /**
@@ -164,6 +172,15 @@ export interface ServerConfig {
  * Full configuration file structure.
  * Keys in `providers` are virtual provider names (user-defined IDs).
  */
+/**
+ * Global defaults for the OpenAI-compatible HTTP API (`/v1/*`).
+ * Secure-by-default: tools stay off unless opted in (DR-019 / DR-032).
+ */
+export interface OpenAICompatConfig {
+  /** `off` (default) | `passthrough` — forward client tools / return tool_calls */
+  tools?: OpenAICompatToolsMode;
+}
+
 export interface ConfigFile {
   providers?: Record<string, ProviderConfig>;
   /** External MCP servers for tool aggregation */
@@ -174,6 +191,8 @@ export interface ConfigFile {
   consumers?: Record<string, ConsumerConfig>;
   /** HTTP / web dashboard server security */
   server?: ServerConfig;
+  /** OpenAI-compatible `/v1` API defaults */
+  openai_compat?: OpenAICompatConfig;
 }
 
 // ── Path helpers ───────────────────────────────────────────────────────
@@ -352,6 +371,14 @@ export function mergeConfigs(userConfig: ConfigFile, workspaceConfig: ConfigFile
       require_approval: [...(up.require_approval || []), ...(wp.require_approval || [])],
       disabled_tools: [...(up.disabled_tools || []), ...(wp.disabled_tools || [])],
       aliases: { ...up.aliases, ...wp.aliases },
+    };
+  }
+
+  // openai_compat: workspace overrides user at field level
+  if (userConfig.openai_compat || workspaceConfig.openai_compat) {
+    merged.openai_compat = {
+      ...userConfig.openai_compat,
+      ...workspaceConfig.openai_compat,
     };
   }
   

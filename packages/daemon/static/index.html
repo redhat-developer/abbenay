@@ -1044,6 +1044,24 @@
                     </div>
                   </fieldset>
 
+                  <!-- OpenAI-compatible /v1 tools (DR-032) -->
+                  <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+                    <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">OpenAI-compatible API</legend>
+                    <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                      <input type="checkbox"
+                             style="margin-top: 2px;"
+                             :checked="cfg.openai_compat_tools === 'passthrough'"
+                             @change="updateModelParam(modelName, 'openai_compat_tools', $event.target.checked ? 'passthrough' : undefined)">
+                      <span>
+                        <span style="font-weight: 500;">Allow OpenAI tools on /v1</span>
+                        <span class="info-tip" data-tip="Checked: force tools passthrough for this model on /v1 (client executes tools; no Abbenay approval UI). Unchecked: clear the per-model override and inherit global openai_compat.tools — which defaults to off, but if global is passthrough this model stays enabled." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        <div style="font-size: 0.75rem; color: #6a6e73; margin-top: 4px;">
+                          Passthrough for client-executed tools (e.g. Open WebUI). Unchecked inherits global (default off).
+                        </div>
+                      </span>
+                    </label>
+                  </fieldset>
+
                   <!-- Add Variant removed — user can add same model again from Available list -->
                 </div>
               </div>
@@ -1548,6 +1566,7 @@ function dashboard() {
       if (params.top_k != null) parts.push(`top_k=${params.top_k}`);
       if (params.max_tokens != null) parts.push(`max=${params.max_tokens}`);
       if (params.system_prompt) parts.push('sys_prompt');
+      if (params.openai_compat_tools === 'passthrough') parts.push('v1_tools');
       return parts.length > 0 ? parts.join(', ') : 'default';
     },
     

@@ -272,6 +272,20 @@ describe('mergeConfigs', () => {
     expect(result.providers!.ollama).toBeDefined();
     expect(result.providers!.ollama.engine).toBe('ollama');
   });
+
+  it('should merge openai_compat with workspace overriding user fields', () => {
+    const userConfig: ConfigFile = {
+      providers: {},
+      openai_compat: { tools: 'off' },
+    };
+    const wsConfig: ConfigFile = {
+      providers: {},
+      openai_compat: { tools: 'passthrough' },
+    };
+
+    const result = mergeConfigs(userConfig, wsConfig);
+    expect(result.openai_compat?.tools).toBe('passthrough');
+  });
 });
 
 // ── mergeMultipleWorkspaceConfigs ────────────────────────────────────────────

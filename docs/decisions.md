@@ -470,3 +470,25 @@ access returns "not found".
 not isolate sessions between authenticated principals sharing one daemon.
 Ownership closes H9: HTTP clients, CLI, and named consumers cannot enumerate
 or read each other's conversation history.
+
+---
+
+## DR-032: Opt-in OpenAI-compatible tools passthrough on `/v1`
+
+**Date:** 2026-07-17
+**Decision:** `/v1/chat/completions` keeps tools disabled by default (DR-019).
+Operators may opt in to **passthrough** via global `openai_compat.tools` and/or
+per-model `openai_compat_tools` (YAML, or the dashboard checkbox which sets
+`passthrough` / clears the override; forcing per-model `off` is YAML-only).
+In passthrough,
+Abbenay forwards client-provided OpenAI `tools` to the model and returns
+structured `tool_calls` (streaming and non-streaming); the **client** executes
+tools and posts `role: tool` follow-ups. Abbenay does not run MCP/tool
+execution or the approval UI on `/v1`. Resolve order: model override → global →
+`off`.
+**Rationale:** Clients such as Open WebUI Native function calling need
+OpenAI-shaped tool schemas and `tool_calls` through a drop-in `/v1` endpoint.
+Forcing tools off forever breaks those clients; enabling Abbenay-side execution
+on `/v1` without an approval UI would weaken DR-019. Passthrough preserves the
+secure default while unblocking client-executed tools for explicitly opted-in
+models.

@@ -905,38 +905,53 @@ export async function* streamChat(
     // Convert messages to Vercel AI SDK format
     const aiMessages = convertMessages(messages);
 
-    // Convert ToolDefinition[] to Vercel AI SDK tool() objects
-    const hasTools = tools && tools.length > 0 && toolExecutor;
+    // Convert ToolDefinition[] to Vercel AI SDK tool() objects.
+    // With an executor: Abbenay runs tools (auto mode).
+    // Without an executor: schemas only (passthrough) — client executes tools.
+    const hasTools = !!(tools && tools.length > 0);
+    const effectiveMaxSteps = hasTools && !toolExecutor ? 1 : maxSteps;
     let aiTools: ToolSet | undefined;
 
     if (hasTools) {
       const toolRecord: ToolSet = {};
-      for (const t of tools) {
+      for (const t of tools!) {
         let schema: JSONSchema7;
         try {
-          schema = JSON.parse(t.inputSchema) as JSONSchema7;
+          const parsed: unknown = JSON.parse(t.inputSchema);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            schema = parsed as JSONSchema7;
+          } else {
+            schema = { type: 'object', properties: {} };
+          }
         } catch {
           schema = { type: 'object', properties: {} };
         }
         if (!schema.type) {
           schema.type = 'object';
         }
-        if (!schema.properties) {
+        if (!schema.properties || typeof schema.properties !== 'object') {
           schema.properties = {};
         }
 
-        toolRecord[t.name] = tool({
-          description: t.description,
-          inputSchema: jsonSchema(schema),
-          execute: async (args: Record<string, unknown>) => {
-            if (toolValidator) {
-              const decision = await toolValidator(t.name, args);
-              if (decision === 'deny') return { error: 'Tool execution denied by policy' };
-              if (decision === 'abort') throw new Error('Tool execution aborted by policy');
-            }
-            return toolExecutor!(t.name, args);
-          },
-        });
+        if (toolExecutor) {
+          toolRecord[t.name] = tool({
+            description: t.description,
+            inputSchema: jsonSchema(schema),
+            execute: async (args: Record<string, unknown>) => {
+              if (toolValidator) {
+                const decision = await toolValidator(t.name, args);
+                if (decision === 'deny') return { error: 'Tool execution denied by policy' };
+                if (decision === 'abort') throw new Error('Tool execution aborted by policy');
+              }
+              return toolExecutor(t.name, args);
+            },
+          });
+        } else {
+          toolRecord[t.name] = tool({
+            description: t.description,
+            inputSchema: jsonSchema(schema),
+          });
+        }
       }
       aiTools = toolRecord;
     }
@@ -945,7 +960,9 @@ export async function* streamChat(
       model,
       messages: aiMessages,
       ...(aiTools ? { tools: aiTools } : {}),
-      ...(maxSteps > 1 ? { stopWhen: stepCountIs(maxSteps) } : {}),
+      // Always bound tool loops when tools are registered — including passthrough
+      // (effectiveMaxSteps === 1) so we do not rely on AI SDK defaults alone.
+      ...(aiTools ? { stopWhen: stepCountIs(effectiveMaxSteps) } : {}),
       ...(params?.temperature != null ? { temperature: params.temperature } : {}),
       ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
@@ -1007,6 +1024,46 @@ export async function* streamChat(
 // ── Message conversion ─────────────────────────────────────────────────
 
 /**
+ * Normalize a tool-call entry from flat Abbenay shape or OpenAI nested shape.
+ * Flat: `{ id, name, arguments }`
+ * OpenAI: `{ id, type, function: { name, arguments } }`
+ */
+export function extractToolCallFields(tc: unknown): {
+  id: string;
+  name: string;
+  arguments: unknown;
+} {
+  const item = tc && typeof tc === 'object' ? tc as Record<string, unknown> : {};
+  const fn = item.function && typeof item.function === 'object'
+    ? item.function as Record<string, unknown>
+    : undefined;
+  const rawId = item.id;
+  const rawName = fn?.name ?? item.name;
+  return {
+    // Wire-protocol fields must be real strings — String(object) → "[object Object]".
+    id: typeof rawId === 'string' ? rawId : '',
+    name: typeof rawName === 'string' ? rawName : '',
+    arguments: fn?.arguments ?? item.arguments,
+  };
+}
+
+/** Coerce tool-call arguments to a plain object for the AI SDK `input` field. */
+export function coerceToolCallInput(args: unknown): Record<string, unknown> {
+  let value = args;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+/**
  * Convert our internal message format to Vercel AI SDK ModelMessage format.
  */
 function convertMessages(messages: ChatMessage[]): ModelMessage[] {
@@ -1025,13 +1082,17 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
         }
         if (m.tool_calls && m.tool_calls.length > 0) {
           for (const tc of m.tool_calls) {
-            const item = tc && typeof tc === 'object' ? tc as Record<string, unknown> : {};
-            const args = item.arguments;
+            const { id, name, arguments: args } = extractToolCallFields(tc);
+            const toolCallId = id.trim();
+            const toolName = name.trim();
+            if (!toolCallId || !toolName) {
+              continue;
+            }
             parts.push({
               type: 'tool-call',
-              toolCallId: String(item.id ?? ''),
-              toolName: String(item.name ?? ''),
-              input: typeof args === 'string' ? JSON.parse(args) as Record<string, unknown> : (args && typeof args === 'object' ? args as Record<string, unknown> : {}),
+              toolCallId,
+              toolName,
+              input: coerceToolCallInput(args),
             });
           }
         }

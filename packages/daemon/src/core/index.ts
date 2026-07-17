@@ -155,6 +155,7 @@ export {
 /** Shared constants */
 export { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from './constants.js';
 export type { ServerConfig } from './config.js';
+export type { OpenAICompatConfig, OpenAICompatToolsMode } from './config.js';
 
 /** Platform-aware path utilities */
 export {
