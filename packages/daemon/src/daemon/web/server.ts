@@ -159,7 +159,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * Serve dashboard HTML. Establishes SameSite auth cookies when auth is
    * enabled and:
    * - POST /login (preferred) or legacy ?token=<apiToken> succeeded, or
-   * - the client is loopback (safe with default 127.0.0.1 bind)
+   * - locality allows auto-session: local TCP peer/bind **and** every
+   *   Host / X-Forwarded-Host value is loopback (see
+   *   {@link mayAutoEstablishDashboardSession})
+   *
+   * Otherwise unauthenticated HTML requests redirect to `/login`.
    *
    * The API token is never embedded in HTML for remote clients; the dashboard
    * authenticates via HttpOnly cookie + CSRF header (and API clients use Bearer).

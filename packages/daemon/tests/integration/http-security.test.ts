@@ -375,7 +375,9 @@ describe('dashboard login', () => {
     // Default test bind is 127.0.0.1 — auto-session for local use (no redirect).
     const res = await httpRequest('GET', '/', { token: null });
     expect(res.statusCode).toBe(200);
-    expect(String(res.body)).toContain('Abbenay');
+    const body = String(res.body);
+    expect(body).toContain('window.__ABBENAY_CSRF__');
+    expect(body).not.toContain('action="/login"');
   });
 
   it('GET / redirects to /login when X-Forwarded-Host is a public hostname', async () => {
