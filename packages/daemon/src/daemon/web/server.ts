@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
-import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
+import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 import type { DaemonState } from '../state.js';
@@ -41,6 +41,29 @@ import {
   type RequestWithOwner,
 } from './http-security.js';
 import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
+import {
+  DiscoverModelsBodySchema,
+  EmptyBodySchema,
+  LoginBodySchema,
+  PostChatApproveBodySchema,
+  PostChatBodySchema,
+  PostConfigBodySchema,
+  PostMcpApprovalBodySchema,
+  PostMcpConnectionDecisionBodySchema,
+  PostPolicyBodySchema,
+  PostProviderConfigureBodySchema,
+  PostSecretBodySchema,
+  PostSecretByKeyBodySchema,
+  PostSessionBodySchema,
+  PostSessionChatBodySchema,
+} from './api-schemas.js';
+import {
+  parseRequestBody,
+  resolveConfigLocation,
+  checkWorkspaceLocation,
+  collectAllowlistedWorkspaces,
+  sendBadRequest,
+} from './validate-body.js';
 
 export type { WebSecurityOptions, ResolvedHttpSecurity } from './http-security.js';
 
@@ -185,11 +208,14 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     res.type('html').send(html);
   };
 
-  const extractLoginToken = (req: Request): string => {
-    const body = req.body as { token?: unknown; api_token?: unknown } | undefined;
-    if (typeof body?.token === 'string') return body.token;
-    if (typeof body?.api_token === 'string') return body.api_token;
-    return '';
+  const extractLoginToken = (req: Request): { ok: true; token: string } | { ok: false; error: string } => {
+    const parsed = parseRequestBody(LoginBodySchema, req.body);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error };
+    }
+    if (typeof parsed.data.token === 'string') return { ok: true, token: parsed.data.token };
+    if (typeof parsed.data.api_token === 'string') return { ok: true, token: parsed.data.api_token };
+    return { ok: true, token: '' };
   };
 
   app.get('/login', (req, res) => {
@@ -208,9 +234,19 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       res.redirect(302, '/');
       return;
     }
-    const token = extractLoginToken(req);
-    if (!timingSafeEqualString(token, security.apiToken)) {
-      const wantsJson = req.is('application/json') || (req.headers.accept || '').includes('application/json');
+    const wantsJson = req.is('application/json') || (req.headers.accept || '').includes('application/json');
+    const extracted = extractLoginToken(req);
+    if (!extracted.ok) {
+      if (wantsJson) {
+        sendBadRequest(res, extracted.error);
+        return;
+      }
+      res.status(400).type('html').send(
+        LOGIN_PAGE.replace('{{ERROR}}', `<p class="err">${extracted.error}</p>`),
+      );
+      return;
+    }
+    if (!timingSafeEqualString(extracted.token, security.apiToken)) {
       if (wantsJson) {
         res.status(401).json({ error: 'Invalid token' });
         return;
@@ -221,7 +257,6 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       return;
     }
     setAuthCookies(res, security.apiToken, cookieOpts(req));
-    const wantsJson = req.is('application/json') || (req.headers.accept || '').includes('application/json');
     if (wantsJson) {
       res.status(204).end();
       return;
@@ -356,12 +391,13 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * Body: { decision: 'allow' | 'deny', remember?: boolean }
    */
   app.post('/api/mcp/connections/:requestId', (req, res) => {
-    const { requestId } = req.params;
-    const { decision, remember } = req.body as { decision?: string; remember?: boolean };
-    if (!decision || !['allow', 'deny'].includes(decision)) {
-      res.status(400).json({ error: 'decision must be allow or deny' });
+    const parsed = parseRequestBody(PostMcpConnectionDecisionBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
+    const { requestId } = req.params;
+    const { decision, remember } = parsed.data;
     const pending = pendingMcpConnections.get(requestId);
     if (!pending) {
       res.status(404).json({ error: `No pending MCP connection with requestId "${requestId}"` });
@@ -375,7 +411,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     if (decision === 'allow' && remember && typeof state.mcpServer?.rememberClient === 'function') {
       state.mcpServer.rememberClient(pending.clientName);
     }
-    pending.resolve(decision as 'allow' | 'deny');
+    pending.resolve(decision);
     pendingMcpConnections.delete(requestId);
     res.json({ success: true });
   });
@@ -385,6 +421,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    */
   app.delete('/api/mcp/connections/sessions/:sessionId', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       if (typeof state.mcpServer?.revokeSession !== 'function') {
         res.status(404).json({ error: 'MCP server does not support session revoke' });
         return;
@@ -405,6 +446,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * DELETE /api/mcp/connections/remembered/:clientName — forget a remembered client
    */
   app.delete('/api/mcp/connections/remembered/:clientName', (req, res) => {
+    const parsed = parseRequestBody(EmptyBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
+      return;
+    }
     const clientName = decodeURIComponent(req.params.clientName || '').trim();
     if (!clientName) {
       res.status(400).json({ error: 'clientName is required' });
@@ -445,19 +491,20 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * Body: { decision: 'allow' | 'deny' | 'abort' }
    */
   app.post('/api/mcp/approvals/:requestId', (req, res) => {
-    const { requestId } = req.params;
-    const { decision } = req.body as { decision?: string };
-    if (!decision || !['allow', 'deny', 'abort'].includes(decision)) {
-      res.status(400).json({ error: 'decision must be allow, deny, or abort' });
+    const parsed = parseRequestBody(PostMcpApprovalBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
+    const { requestId } = req.params;
+    const { decision } = parsed.data;
     const pending = pendingMcpApprovals.get(requestId);
     if (!pending) {
       res.status(404).json({ error: `No pending MCP approval with requestId "${requestId}"` });
       return;
     }
     console.log(`[Web] MCP tool approval: ${pending.namespacedName || pending.toolName} → ${decision} (requestId=${requestId})`);
-    pending.resolve(decision as 'allow' | 'deny' | 'abort');
+    pending.resolve(decision);
     pendingMcpApprovals.delete(requestId);
     res.json({ success: true });
   });
@@ -544,27 +591,28 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
 
-      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
-        apiKey?: unknown;
-        baseUrl?: unknown;
-        providerId?: unknown;
-      };
+      const parsed = parseRequestBody(DiscoverModelsBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+      const body = parsed.data;
 
       const headerKey = req.headers['x-api-key'];
       const headerKeyStr = Array.isArray(headerKey) ? headerKey[0] : headerKey;
       let apiKey: string | undefined;
       if (typeof headerKeyStr === 'string' && headerKeyStr.length > 0) {
         apiKey = headerKeyStr;
-      } else if (typeof body.apiKey === 'string' && body.apiKey.length > 0) {
+      } else if (body.apiKey) {
         apiKey = body.apiKey;
       }
 
       let baseUrl =
-        (typeof body.baseUrl === 'string' && body.baseUrl) ||
+        body.baseUrl ||
         (typeof req.query.baseUrl === 'string' ? req.query.baseUrl : undefined) ||
         undefined;
       const providerId =
-        (typeof body.providerId === 'string' && body.providerId) ||
+        body.providerId ||
         (typeof req.query.providerId === 'string' ? req.query.providerId : undefined) ||
         undefined;
 
@@ -631,22 +679,30 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   /**
    * GET /api/config?location=user|<workspacePath> - Get configuration
    * Returns { config: ConfigFile, path: string }
+   * Workspace locations must be allowlisted (same rules as POST).
    */
   app.get('/api/config', (req, res) => {
     try {
-      const location = (req.query.location as string) || 'user';
+      const location = typeof req.query.location === 'string' && req.query.location
+        ? req.query.location
+        : 'user';
+      const loc = resolveConfigLocation(location, state);
+      if (!loc.ok) {
+        res.status(loc.status).json({ error: loc.error });
+        return;
+      }
+
       let config: ConfigFile;
       let configPath: string;
-      
-      if (location === 'user') {
+
+      if (loc.kind === 'user') {
         config = loadConfig() || { providers: {} };
         configPath = getUserConfigPath();
       } else {
-        // location is a workspace path
-        config = loadWorkspaceConfig(location) || { providers: {} };
-        configPath = getWorkspaceConfigPath(location);
+        config = loadWorkspaceConfig(loc.resolved) || { providers: {} };
+        configPath = getWorkspaceConfigPath(loc.resolved);
       }
-      
+
       res.json({ config, path: configPath });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -654,25 +710,37 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * POST /api/config - Save configuration
    * Accepts { location: 'user' | workspacePath, config: ConfigFile }
+   * Body is Zod-validated; workspace locations must be allowlisted.
    */
   app.post('/api/config', (req, res) => {
     try {
-      const { location, config } = req.body;
-      const loc = location || 'user';
+      const parsed = parseRequestBody(PostConfigBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+
+      const { config } = parsed.data;
+      const location = parsed.data.location ?? 'user';
+      const loc = resolveConfigLocation(location, state);
+      if (!loc.ok) {
+        res.status(loc.status).json({ error: loc.error });
+        return;
+      }
+
       let savedPath: string;
-      
-      if (loc === 'user') {
+      if (loc.kind === 'user') {
         saveConfig(config);
         savedPath = getUserConfigPath();
       } else {
-        saveWorkspaceConfig(loc, config);
-        savedPath = getWorkspaceConfigPath(loc);
+        saveWorkspaceConfig(loc.resolved, config);
+        savedPath = getWorkspaceConfigPath(loc.resolved);
       }
-      
+
       res.json({ success: true, path: savedPath });
       state.notifyModelsChanged('config_changed');
       state.refreshMcpConnections().catch((err: unknown) => {
@@ -782,12 +850,12 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   app.post('/api/secrets/:key', async (req, res) => {
     try {
       const key = req.params.key;
-      const { value } = req.body;
-      if (!value) {
-        res.status(400).json({ error: 'value required' });
+      const parsed = parseRequestBody(PostSecretByKeyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
-      await state.secretStore.set(key, value);
+      await state.secretStore.set(key, parsed.data.value);
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -796,19 +864,19 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * POST /api/secrets - Set a secret (API key) — legacy route
    * Body: { key: string, value: string }
    */
   app.post('/api/secrets', async (req, res) => {
     try {
-      const { key, value } = req.body;
-      if (!key || !value) {
-        res.status(400).json({ error: 'key and value required' });
+      const parsed = parseRequestBody(PostSecretBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
-      await state.secretStore.set(key, value);
+      await state.secretStore.set(parsed.data.key, parsed.data.value);
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -817,12 +885,17 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * DELETE /api/secrets/:key - Delete a secret
    */
   app.delete('/api/secrets/:key', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       await state.secretStore.delete(req.params.key);
       res.json({ success: true });
       state.notifyModelsChanged('secret_deleted');
@@ -876,15 +949,12 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * Body: { requestId: string, decision: 'allow' | 'deny' | 'abort' }
    */
   app.post('/api/chat/:chatId/approve', (req, res) => {
-    const { requestId, decision } = req.body;
-    if (!requestId || !decision) {
-      res.status(400).json({ error: 'requestId and decision required' });
+    const parsed = parseRequestBody(PostChatApproveBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
-    if (!['allow', 'deny', 'abort'].includes(decision)) {
-      res.status(400).json({ error: 'decision must be allow, deny, or abort' });
-      return;
-    }
+    const { requestId, decision } = parsed.data;
 
     const pending = pendingApprovals.get(requestId);
     if (!pending) {
@@ -910,12 +980,23 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * emitted and the stream pauses until POST /api/chat/:chatId/approve resolves it.
    */
   app.post('/api/chat', (req, res) => {
-    const { model, messages, temperature, top_p, top_k, max_tokens, timeout: reqTimeout, tools, tool_mode } = req.body;
-
-    if (!model || !messages) {
-      res.status(400).json({ error: 'model and messages required' });
+    const parsed = parseRequestBody(PostChatBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
+
+    const {
+      model,
+      messages,
+      temperature,
+      top_p,
+      top_k,
+      max_tokens,
+      timeout: reqTimeout,
+      tools,
+      tool_mode,
+    } = parsed.data;
 
     const chatId = crypto.randomUUID();
 
@@ -943,7 +1024,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     };
 
     // Convert web messages to the format state.chat() expects
-    const chatMessages = messages.map((m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }) => ({
+    const chatMessages = messages.map((m) => ({
       role: m.role || 'user',
       content: m.content ?? '',
       name: m.name || undefined,
@@ -961,11 +1042,15 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     const hasParams = Object.keys(requestParams).length > 0;
 
     // Build tool options
-    const toolDefs = Array.isArray(tools) ? tools.map((t: { name?: string; description?: string; input_schema?: string | Record<string, unknown> }) => ({
-      name: t.name || '',
-      description: t.description || '',
-      inputSchema: typeof t.input_schema === 'string' ? t.input_schema : JSON.stringify(t.input_schema || {}),
-    })).filter((t) => t.name) : undefined;
+    const toolDefs = tools
+      ? tools.map((t) => ({
+          name: t.name || '',
+          description: t.description || '',
+          inputSchema: typeof t.input_schema === 'string'
+            ? t.input_schema
+            : JSON.stringify(t.input_schema || {}),
+        })).filter((t) => t.name)
+      : undefined;
 
     const toolOptions: ChatToolOptions = {
       toolMode: tool_mode || 'auto',
@@ -1044,20 +1129,35 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   app.post('/api/provider/:id/configure', async (req, res) => {
     try {
       const providerId = req.params.id;
-      const { engine, apiKey, envVarName, baseUrl, target, workspacePath } = req.body;
-      
-      const config: ConfigFile = (target === 'workspace' && workspacePath
-        ? loadWorkspaceConfig(workspacePath)
+      const parsed = parseRequestBody(PostProviderConfigureBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+      const { engine, apiKey, envVarName, baseUrl, target, workspacePath } = parsed.data;
+
+      let resolvedWorkspace: string | undefined;
+      if (target === 'workspace' && workspacePath) {
+        const check = checkWorkspaceLocation(workspacePath, collectAllowlistedWorkspaces(state));
+        if (!check.ok) {
+          res.status(check.status).json({ error: check.error });
+          return;
+        }
+        resolvedWorkspace = check.resolved;
+      }
+
+      const config: ConfigFile = (resolvedWorkspace
+        ? loadWorkspaceConfig(resolvedWorkspace)
         : loadConfig()) || { providers: {} };
-      
+
       if (!config.providers) config.providers = {};
-      
+
       // Initialize or update provider config
       const existing: Partial<ProviderConfig> & { display_name?: string } = config.providers[providerId] ? { ...config.providers[providerId] } : {};
       if (engine) existing.engine = engine;
       delete existing.display_name;
       config.providers[providerId] = existing as ProviderConfig;
-      
+
       if (apiKey) {
         const keychainName = `${providerId.toUpperCase()}_API_KEY`;
         await state.secretStore.set(keychainName, apiKey);
@@ -1067,17 +1167,17 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         config.providers[providerId].api_key_env_var_name = envVarName;
         delete config.providers[providerId].api_key_keychain_name;
       }
-      
+
       if (baseUrl) {
         config.providers[providerId].base_url = baseUrl;
       }
-      
-      if (target === 'workspace' && workspacePath) {
-        saveWorkspaceConfig(workspacePath, config);
+
+      if (resolvedWorkspace) {
+        saveWorkspaceConfig(resolvedWorkspace, config);
       } else {
         saveConfig(config);
       }
-      
+
       res.json({ success: true });
       state.notifyModelsChanged('provider_configured');
     } catch (err: unknown) {
@@ -1086,35 +1186,55 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * DELETE /api/provider/:id - Remove a provider configuration
    */
   app.delete('/api/provider/:id', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+
       const providerId = req.params.id;
-      const target = req.query.target as string || 'user';
-      const workspacePath = req.query.workspacePath as string;
-      
-      const config: ConfigFile = (target === 'workspace' && workspacePath
-        ? loadWorkspaceConfig(workspacePath)
+      const target = typeof req.query.target === 'string' ? req.query.target : 'user';
+      const workspacePath = typeof req.query.workspacePath === 'string' ? req.query.workspacePath : undefined;
+
+      let resolvedWorkspace: string | undefined;
+      if (target === 'workspace') {
+        if (!workspacePath) {
+          sendBadRequest(res, 'workspacePath query param is required when target is "workspace"');
+          return;
+        }
+        const check = checkWorkspaceLocation(workspacePath, collectAllowlistedWorkspaces(state));
+        if (!check.ok) {
+          res.status(check.status).json({ error: check.error });
+          return;
+        }
+        resolvedWorkspace = check.resolved;
+      }
+
+      const config: ConfigFile = (resolvedWorkspace
+        ? loadWorkspaceConfig(resolvedWorkspace)
         : loadConfig()) || { providers: {} };
-      
+
       if (config.providers && config.providers[providerId]) {
         const keychainName = config.providers[providerId].api_key_keychain_name;
         if (keychainName) {
           try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
         }
-        
+
         delete config.providers[providerId];
-        
-        if (target === 'workspace' && workspacePath) {
-          saveWorkspaceConfig(workspacePath, config);
+
+        if (resolvedWorkspace) {
+          saveWorkspaceConfig(resolvedWorkspace, config);
         } else {
           saveConfig(config);
         }
       }
-      
+
       res.json({ success: true });
       state.notifyModelsChanged('provider_removed');
     } catch (err: unknown) {
@@ -1172,6 +1292,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // POST /api/mcp-servers/:id/reconnect — reconnect a failed MCP server
   app.post('/api/mcp-servers/:id/reconnect', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       await state.mcpClientPool.reconnect(req.params.id);
       res.json({ success: true });
     } catch (err: unknown) {
@@ -1216,26 +1341,19 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // POST /api/policies — upsert a custom policy
   app.post('/api/policies', (req, res) => {
     try {
-      const { name, config } = req.body as { name: string; config: PolicyConfig };
-      if (!name || typeof name !== 'string') {
-        res.status(400).json({ error: 'Policy name is required' });
+      const parsed = parseRequestBody(PostPolicyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
-      if (!isValidVirtualName(name)) {
-        res.status(400).json({ error: 'Policy name must be lowercase alphanumeric with dots, hyphens, or underscores' });
-        return;
-      }
+      const { name, config } = parsed.data;
       if (BUILTIN_POLICY_NAMES.includes(name)) {
         res.status(400).json({ error: `Cannot overwrite built-in policy "${name}". Duplicate it with a different name.` });
         return;
       }
-      if (!config || typeof config !== 'object') {
-        res.status(400).json({ error: 'Policy config is required' });
-        return;
-      }
 
       const custom = loadCustomPolicies();
-      custom[name] = config;
+      custom[name] = config as PolicyConfig;
       saveCustomPolicies(custom);
       res.json({ success: true, name });
     } catch (err: unknown) {
@@ -1247,6 +1365,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // DELETE /api/policies/:name — delete a custom policy
   app.delete('/api/policies/:name', (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       const { name } = req.params;
       if (BUILTIN_POLICY_NAMES.includes(name)) {
         res.status(400).json({ error: `Cannot delete built-in policy "${name}"` });
@@ -1274,8 +1397,13 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   });
 
   // POST /api/mcp-server/start — start the MCP server on this Express app
-  app.post('/api/mcp-server/start', async (_req, res) => {
+  app.post('/api/mcp-server/start', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       if (state.mcpServer.isRunning) {
         res.json({ success: true, message: 'MCP server already running' });
         return;
@@ -1289,8 +1417,13 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   });
 
   // POST /api/mcp-server/stop — stop the MCP server
-  app.post('/api/mcp-server/stop', async (_req, res) => {
+  app.post('/api/mcp-server/stop', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       await state.mcpServer.stop();
       res.json({ success: true });
     } catch (err: unknown) {
@@ -1306,11 +1439,12 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
   app.post('/api/sessions', async (req, res) => {
     try {
-      const { model, title, policy, metadata } = req.body;
-      if (!model) {
-        res.status(400).json({ error: 'model is required' });
+      const parsed = parseRequestBody(PostSessionBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
+      const { model, title, policy, metadata } = parsed.data;
       const session = await state.sessionStore.create(
         model,
         title,
@@ -1384,6 +1518,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
   app.delete('/api/sessions/:id', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       await state.sessionStore.deleteOwned(req.params.id, sessionOwner(req));
       res.json({ success: true });
     } catch (err: unknown) {
@@ -1426,17 +1565,17 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
   app.post('/api/sessions/:id/chat', async (req, res) => {
     const sessionId = req.params.id;
-    const { message } = req.body;
     const owner = sessionOwner(req);
 
-    if (!message || !message.content) {
-      res.status(400).json({ error: 'message with content is required' });
+    const parsed = parseRequestBody(PostSessionChatBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
 
     const chatMessage = {
-      role: (message.role as string) || 'user',
-      content: message.content as string,
+      role: parsed.data.message.role || 'user',
+      content: parsed.data.message.content,
     };
 
     let session;

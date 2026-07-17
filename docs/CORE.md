@@ -124,6 +124,21 @@ config.providers!['my-openai'].models!['gpt-4o'] = { temperature: 0.7 };
 saveConfig(config);
 ```
 
+### Config validation (Zod)
+
+`ConfigFileSchema` and `PolicyConfigSchema` (plus `parseConfigFile`) validate
+config-shaped objects before persistence. The daemon HTTP API uses the same
+schemas for `POST /api/config` and related routes.
+
+```typescript
+import { parseConfigFile } from '@abbenay/core';
+
+const result = parseConfigFile(raw);
+if (!result.success) {
+  console.error(result.error.issues);
+}
+```
+
 ## API Reference
 
 ### CoreState

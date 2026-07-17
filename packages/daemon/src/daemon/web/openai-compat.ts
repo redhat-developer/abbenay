@@ -20,6 +20,8 @@ import {
   type ConfigFile,
   type OpenAICompatToolsMode,
 } from '../../core/config.js';
+import { PostOpenAIChatCompletionsBodySchema } from './api-schemas.js';
+import { parseRequestBody } from './validate-body.js';
 
 // ── Format helpers (exported for unit testing) ──────────────────────────
 
@@ -323,6 +325,12 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
    * POST /v1/chat/completions — chat with streaming or non-streaming response.
    */
   app.post('/v1/chat/completions', (req: Request, res: Response) => {
+    const parsed = parseRequestBody(PostOpenAIChatCompletionsBodySchema, req.body);
+    if (!parsed.success) {
+      openAIError(res, 400, parsed.error, 'invalid_request_error');
+      return;
+    }
+
     const {
       model,
       messages,
@@ -332,18 +340,9 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
       max_tokens,
       max_completion_tokens,
       tools,
-    } = req.body;
+    } = parsed.data;
 
-    if (!model) {
-      openAIError(res, 400, 'model is required', 'invalid_request_error');
-      return;
-    }
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      openAIError(res, 400, 'messages is required and must be a non-empty array', 'invalid_request_error');
-      return;
-    }
-
-    const chatMessages = messages.map((m: unknown) => normalizeOpenAIChatMessage(m));
+    const chatMessages = messages.map((m) => normalizeOpenAIChatMessage(m));
 
     const requestParams: Record<string, unknown> = {};
     if (temperature != null) requestParams.temperature = temperature;

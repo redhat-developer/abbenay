@@ -149,8 +149,21 @@ export {
   getConfiguredProviders,
   resolveEngineModelId,
   getEnabledModelNames,
-  isValidVirtualName,
 } from './config.js';
+
+/** Zod schemas for ConfigFile / PolicyConfig validation */
+export {
+  ConfigFileSchema,
+  PolicyConfigSchema,
+  ModelConfigSchema,
+  ProviderConfigSchema,
+  OpenAICompatConfigSchema,
+  OpenAICompatToolsModeSchema,
+  VirtualNameSchema,
+  VIRTUAL_NAME_REGEX,
+  isValidVirtualName,
+  parseConfigFile,
+} from './config-schema.js';
 
 /** Policy management */
 export {

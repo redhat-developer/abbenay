@@ -17,23 +17,9 @@ import {
   getWorkspaceConfigPath as _getWorkspaceConfigPath,
 } from './paths.js';
 
-// ── Name validation ────────────────────────────────────────────────────
+// ── Name validation (canonical implementation in config-schema.ts) ─────
 
-/**
- * Regex for virtual provider and model names.
- * Lowercase alphanumeric, dots, hyphens, underscores. No slashes, no spaces.
- * Engine model IDs from discovery (which may contain slashes) are exempt.
- */
-const VIRTUAL_NAME_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
-
-/**
- * Validate a virtual name (provider or model).
- * Returns true if valid, false otherwise.
- * Engine model IDs (containing slashes) are NOT validated by this — they pass through.
- */
-export function isValidVirtualName(name: string): boolean {
-  return VIRTUAL_NAME_REGEX.test(name);
-}
+export { isValidVirtualName, VIRTUAL_NAME_REGEX } from './config-schema.js';
 
 // ── Config interfaces ──────────────────────────────────────────────────
 

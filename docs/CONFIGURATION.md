@@ -309,6 +309,11 @@ Click the settings icon to choose where config is saved:
 - **User**: `~/.config/abbenay/config.yaml` (default)
 - **Workspace**: `<workspace>/.config/abbenay/config.yaml` (requires VS Code connection)
 
+HTTP `POST /api/config` validates the body with Zod (`ConfigFile` shape) and
+only allows workspace `location` values that match a currently connected /
+allowlisted workspace path. Path traversal (`..`) and unknown locations are
+rejected with no file write.
+
 ## VS Code Extension
 
 The VS Code extension:

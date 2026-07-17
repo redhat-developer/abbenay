@@ -556,3 +556,30 @@ query-secret patterns (`?key=`, `query.apiKey` / `query['apiKey']`,
 **Rationale:** Query-string secrets leak into access logs, reverse proxies,
 browser history, and `Referer` headers. Header/body transport matches other
 engines (Bearer / `x-api-key`) and closes findings H2/H3.
+
+---
+
+## DR-036: Zod validation for all HTTP API request bodies
+
+**Date:** 2026-07-17
+**Decision:** Validate every mutating HTTP web API request body with a Zod
+schema before business logic runs. Invalid bodies return HTTP 400. Config
+writes (`POST /api/config`, provider configure/delete with workspace target)
+additionally require `location` / `workspacePath` to be `'user'` or an
+allowlisted connected workspace path; path segments containing `..` are
+rejected (400) and non-allowlisted paths return 403 with no file write.
+Shared `ConfigFile` / `PolicyConfig` schemas live in `@abbenay/core`
+(`config-schema.ts`) and are reused by the web layer (`api-schemas.ts`).
+Most schemas use `.strict()` so unexpected fields are rejected
+(field-injection defense). OpenAI `/v1/chat/completions` instead **strips**
+unknown client fields (e.g. `stream_options`, `user`) so DR-020 SDKs keep
+working, while still requiring `model` / non-empty `messages` and allowing
+optional `tools` for DR-032 passthrough. `ConfigFileSchema` /
+`ModelConfigSchema` include `openai_compat` and `openai_compat_tools` so
+dashboard/`POST /api/config` can persist DR-032 settings without 400s.
+Workspace location checks also reject NUL bytes and compare `realpath` when
+the path exists.
+**Rationale:** Unvalidated `req.body` destructuring allowed arbitrary config
+writes, path traversal into workspace config paths, type confusion, and
+field injection (findings H4/H5). Auth (DR-030) authenticates the caller but
+does not constrain payload shape or write targets.

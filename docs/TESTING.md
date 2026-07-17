@@ -68,12 +68,14 @@ Pure unit tests with no I/O, no network, no processes.
 |------|----------------|
 | `src/core/mock.test.ts` | Mock engine: echo, fixed, error, empty, slow modes |
 | `src/core/config.test.ts` | Config loading, merging, validation |
+| `src/core/config-schema.test.ts` | Zod ConfigFile / PolicyConfig schemas (types, field injection) |
 | `src/core/tool-registry.test.ts` | Glob matching, tool registration, resolution, policy filtering |
 | `src/core/tool-approval.test.ts` | Shared validator: disabled / auto_approve / require_approval / default ask |
 | `src/daemon/mcp-server.test.ts` | MCP authorizeAndExecute honors tool_policy (no bypass) |
 | `src/state.test.ts` | DaemonState: provider listing, model listing, chat flow |
 | `src/daemon/chat-prompt.test.ts` | `parseApprovalInput` case-sensitive routing |
 | `src/daemon/web/openai-compat.test.ts` | OpenAI format mapping: models, finish reasons, stream chunks, complete responses |
+| `src/daemon/web/validate-body.test.ts` | HTTP body parse helpers + workspace path allowlist / traversal |
 | `src/core/session-store.test.ts` | SessionStore: CRUD, appendMessage, updateTitle, updateSummary, index consistency |
 | `src/core/session-summarizer.test.ts` | generateSessionSummary, maybeSummarize interval logic, error handling |
 
@@ -86,7 +88,7 @@ Tests that start real servers, make real HTTP/gRPC calls.
 | `tests/integration/grpc-streaming.test.ts` | gRPC unary RPCs + streaming + cancellation + concurrency |
 | `tests/integration/grpc-tls.test.ts` | gRPC TLS bind policy + SetSecret/GetSecret over TLS |
 | `tests/integration/grpc-bind-e2e.test.ts` | Subprocess E2E: localhost OK, 0.0.0.0 refuse, TLS/insecure OK |
-| `tests/integration/web-sse.test.ts` | Web API endpoints + SSE chat streaming + errors + disconnect |
+| `tests/integration/web-sse.test.ts` | Web API endpoints + SSE chat + config Zod validation / workspace allowlist |
 | `tests/integration/openai-compat.test.ts` | OpenAI-compatible API: /v1/models, streaming, non-streaming, errors, tool calls |
 | `tests/integration/sessions.test.ts` | Session REST API: CRUD endpoints, session chat SSE streaming + persistence |
 | `tests/integration/mcp-http-policy.test.ts` | `/mcp` auth + connection consent + tool_policy E2E |

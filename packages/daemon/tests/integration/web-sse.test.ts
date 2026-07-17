@@ -23,6 +23,7 @@ import * as path from 'node:path';
 
 // Mock config paths so POST /api/config writes to a temp dir, not the real user config
 const tmpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-web-test-'));
+const tmpWorkspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-web-ws-'));
 vi.mock('../../src/core/paths.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/core/paths.js')>();
   return {
@@ -89,7 +90,7 @@ function createMockState(): DaemonState {
     },
     
     getVSCodeWorkspaces(): string[] {
-      return ['/home/test/project'];
+      return [tmpWorkspaceDir];
     },
     
     notifyModelsChanged(_reason: string): void {
@@ -158,6 +159,7 @@ afterAll(async () => {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   }
   fs.rmSync(tmpConfigDir, { recursive: true, force: true });
+  fs.rmSync(tmpWorkspaceDir, { recursive: true, force: true });
 });
 
 // ─── HTTP Helpers ───────────────────────────────────────────────────────
@@ -319,7 +321,7 @@ describe('Web API - Unary Endpoints (direct DaemonState)', () => {
   it('should list workspaces from DaemonState (wrapped)', async () => {
     const { statusCode, body } = await httpRequest('GET', `${baseUrl}/api/workspaces`);
     expect(statusCode).toBe(200);
-    expect(body.workspaces).toContain('/home/test/project');
+    expect(body.workspaces).toContain(tmpWorkspaceDir);
   });
   
   it('should get daemon status from DaemonState (camelCase)', async () => {
@@ -342,13 +344,22 @@ describe('Web API - Unary Endpoints (direct DaemonState)', () => {
     expect(statusCode).toBe(400);
     expect(body.error).toContain('model');
   });
-  
+
   it('should return 400 for POST /api/chat without messages', async () => {
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/chat`, {
       model: 'openai/gpt-4o',
     });
     expect(statusCode).toBe(400);
     expect(body.error).toContain('messages');
+  });
+
+  it('should return 400 for POST /api/chat with malformed body (wrong types)', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/chat`, {
+      model: 123,
+      messages: 'not-an-array',
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/Invalid request body/);
   });
 });
 
@@ -378,6 +389,67 @@ describe('Web API - Config Endpoints', () => {
     expect(statusCode).toBe(200);
     expect(body.success).toBe(true);
     expect(body).toHaveProperty('path');
+    expect(fs.existsSync(body.path)).toBe(true);
+  });
+
+  it('POST /api/config with allowlisted workspace location saves config', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/config`, {
+      location: tmpWorkspaceDir,
+      config: {
+        providers: {
+          openai: { engine: 'openai', models: { 'gpt-4o': {} } },
+        },
+      },
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    const savedPath = path.join(tmpWorkspaceDir, '.config', 'abbenay', 'config.yaml');
+    expect(body.path).toBe(savedPath);
+    expect(fs.existsSync(savedPath)).toBe(true);
+    expect(fs.readFileSync(savedPath, 'utf-8')).toContain('openai');
+  });
+
+  it('POST /api/config rejects path traversal location and writes nothing', async () => {
+    const before = fs.existsSync(path.join(tmpConfigDir, 'config.yaml'))
+      ? fs.readFileSync(path.join(tmpConfigDir, 'config.yaml'), 'utf-8')
+      : null;
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/config`, {
+      location: '../../etc/passwd',
+      config: { providers: { evil: { engine: 'openai' } } },
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/traversal/i);
+    // Must not create a workspace config under a traversal target
+    expect(fs.existsSync(path.join(process.cwd(), '../../etc/passwd', '.config', 'abbenay', 'config.yaml'))).toBe(false);
+    const after = fs.existsSync(path.join(tmpConfigDir, 'config.yaml'))
+      ? fs.readFileSync(path.join(tmpConfigDir, 'config.yaml'), 'utf-8')
+      : null;
+    expect(after).toBe(before);
+  });
+
+  it('POST /api/config rejects location outside allowlist', async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-outside-'));
+    try {
+      const target = path.join(outside, '.config', 'abbenay', 'config.yaml');
+      const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/config`, {
+        location: outside,
+        config: { providers: { x: { engine: 'openai' } } },
+      });
+      expect(statusCode).toBe(403);
+      expect(body.error).toMatch(/allowlisted/i);
+      expect(fs.existsSync(target)).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('POST /api/config rejects invalid config schema', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/config`, {
+      location: 'user',
+      config: { providers: { openai: { engine: 123 } }, unexpected_top_level: true },
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/Invalid request body/);
   });
 });
 

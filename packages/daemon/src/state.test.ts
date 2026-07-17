@@ -21,13 +21,17 @@ const mockResolveEngineModelId = vi.fn().mockImplementation(
   (name: string, cfg: ModelConfig) => cfg.model_id || name
 );
 
-vi.mock('./core/config.js', () => ({
-  loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
-  loadWorkspaceConfig: (...a: unknown[]) => mockLoadWorkspaceConfig(...a),
-  mergeConfigs: (...a: unknown[]) => mockMergeConfigs(...a),
-  mergeMultipleWorkspaceConfigs: (...a: unknown[]) => mockMergeMultipleWorkspaceConfigs(...a),
-  resolveEngineModelId: (...a: unknown[]) => mockResolveEngineModelId(...a),
-}));
+vi.mock('./core/config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./core/config.js')>();
+  return {
+    ...actual,
+    loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
+    loadWorkspaceConfig: (...a: unknown[]) => mockLoadWorkspaceConfig(...a),
+    mergeConfigs: (...a: unknown[]) => mockMergeConfigs(...a),
+    mergeMultipleWorkspaceConfigs: (...a: unknown[]) => mockMergeMultipleWorkspaceConfigs(...a),
+    resolveEngineModelId: (...a: unknown[]) => mockResolveEngineModelId(...a),
+  };
+});
 
 // ── Mock: core/engines ───────────────────────────────────────────────────────
 
