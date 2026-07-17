@@ -1037,9 +1037,12 @@ export function extractToolCallFields(tc: unknown): {
   const fn = item.function && typeof item.function === 'object'
     ? item.function as Record<string, unknown>
     : undefined;
+  const rawId = item.id;
+  const rawName = fn?.name ?? item.name;
   return {
-    id: String(item.id ?? ''),
-    name: String(fn?.name ?? item.name ?? ''),
+    // Wire-protocol fields must be real strings — String(object) → "[object Object]".
+    id: typeof rawId === 'string' ? rawId : '',
+    name: typeof rawName === 'string' ? rawName : '',
     arguments: fn?.arguments ?? item.arguments,
   };
 }

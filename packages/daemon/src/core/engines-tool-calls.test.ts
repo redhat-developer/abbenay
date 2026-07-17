@@ -37,6 +37,17 @@ describe('extractToolCallFields', () => {
       arguments: undefined,
     });
   });
+
+  it('rejects non-string id/name instead of String(object)', () => {
+    expect(extractToolCallFields({
+      id: { nested: true },
+      function: { name: { bad: true }, arguments: '{}' },
+    })).toEqual({
+      id: '',
+      name: '',
+      arguments: '{}',
+    });
+  });
 });
 
 describe('coerceToolCallInput', () => {

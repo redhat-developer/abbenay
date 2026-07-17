@@ -420,14 +420,14 @@ function handleStreaming(
       for await (const chunk of state.chat(model, messages, params, toolOptions)) {
         if (ended) break;
 
-        if (chunk.type === 'tool' && chunk.state === 'running') {
-          toolCallIndex++;
-        }
-
-        const mapped = buildStreamChunk(chunk, opts, toolCallIndex - 1, isFirstChunk);
+        const mapped = buildStreamChunk(chunk, opts, toolCallIndex, isFirstChunk);
         if (mapped) {
           safeWrite(`data: ${JSON.stringify(mapped)}\n\n`);
           isFirstChunk = false;
+          // Only advance after a tool_calls delta is actually emitted (empty names return null).
+          if (chunk.type === 'tool' && chunk.state === 'running') {
+            toolCallIndex++;
+          }
         }
 
         if (chunk.type === 'error') {
