@@ -104,48 +104,70 @@ export function isLoopbackRemoteAddress(addr?: string | null): boolean {
 }
 
 /**
- * Return true when the browser Host (or first X-Forwarded-Host) is loopback.
+ * Normalize a single Host / X-Forwarded-Host token to a hostname.
  *
- * Used so TLS-terminated reverse proxies (peer often loopback) cannot trigger
- * auto-session cookies for public hostnames.
+ * Strips port for hostname / IPv4 and `[IPv6]:port`. Does not strip from bare
+ * IPv6 (e.g. `::1`) — trailing `:digits` would mangle it to `::`.
  */
-export function isLocalDashboardHost(hostHeader?: string | string[] | null): boolean {
-  const raw = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
-  const first = (raw || '').split(',')[0]?.trim().toLowerCase() || '';
-  if (!first) return false;
-  // Strip port for hostname / IPv4; handle [IPv6]:port. Do not strip from
-  // bare IPv6 (e.g. ::1) — trailing :digits would mangle it to ::.
-  let hostname: string;
+function dashboardHostname(hostToken: string): string {
+  const first = hostToken.trim().toLowerCase();
+  if (!first) return '';
   if (first.startsWith('[')) {
-    hostname = first.match(/^\[([^\]]+)\]/)?.[1] || first;
-  } else if ((first.match(/:/g) || []).length > 1) {
-    hostname = first;
-  } else {
-    hostname = first.replace(/:\d+$/, '');
+    return first.match(/^\[([^\]]+)\]/)?.[1] || first;
   }
+  if ((first.match(/:/g) || []).length > 1) {
+    return first;
+  }
+  return first.replace(/:\d+$/, '');
+}
+
+function isLoopbackHostname(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 }
 
 /**
- * Prefer X-Forwarded-Host (first value) then Host — same trust model as
- * X-Forwarded-Proto for Secure cookies.
+ * Return true when every Host / X-Forwarded-Host value is loopback.
+ *
+ * Fail-closed: if a proxy appends a public hostname after a client-spoofed
+ * `localhost`, the chain is not treated as local (auto-session must not skip
+ * `/login`).
+ */
+export function isLocalDashboardHost(hostHeader?: string | string[] | null): boolean {
+  const tokens: string[] = [];
+  const parts = Array.isArray(hostHeader) ? hostHeader : hostHeader ? [hostHeader] : [];
+  for (const part of parts) {
+    for (const token of String(part).split(',')) {
+      const trimmed = token.trim();
+      if (trimmed) tokens.push(trimmed);
+    }
+  }
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => isLoopbackHostname(dashboardHostname(token)));
+}
+
+/**
+ * Prefer X-Forwarded-Host then Host for dashboard locality checks.
+ *
+ * Returns the full header value (comma-separated / multi-value preserved) so
+ * {@link isLocalDashboardHost} can require every hop to be loopback.
  */
 export function requestDashboardHost(req: {
   headers: { host?: string | string[]; 'x-forwarded-host'?: string | string[] };
-}): string | undefined {
-  const firstHeaderValue = (value?: string | string[]): string | undefined => {
-    const raw = Array.isArray(value) ? value[0] : value;
-    if (typeof raw !== 'string' || !raw.trim()) return undefined;
-    return raw.split(',')[0]?.trim() || undefined;
-  };
-  return firstHeaderValue(req.headers['x-forwarded-host']) ?? firstHeaderValue(req.headers.host);
+}): string | string[] | undefined {
+  const xf = req.headers['x-forwarded-host'];
+  if (typeof xf === 'string' && xf.trim()) return xf;
+  if (Array.isArray(xf) && xf.length > 0) return xf;
+  const host = req.headers.host;
+  if (typeof host === 'string' && host.trim()) return host;
+  if (Array.isArray(host) && host.length > 0) return host;
+  return undefined;
 }
 
 /**
  * Whether an unauthenticated dashboard HTML request should 302 to `/login`.
  *
- * Auto-session (skip redirect) only when the TCP peer is local **and** the
- * browser Host / X-Forwarded-Host is localhost. That keeps `aby web` on
+ * Auto-session (skip redirect) only when the TCP peer is local **and** every
+ * Host / X-Forwarded-Host value is localhost. That keeps `aby web` on
  * 127.0.0.1 convenient, but forces `/login` when a reverse proxy presents a
  * public hostname (peer is often loopback after TLS termination).
  *

@@ -71,18 +71,25 @@ describe('isLocalDashboardHost', () => {
     expect(isLocalDashboardHost('abbenay.20665.net')).toBe(false);
     expect(isLocalDashboardHost('abbenay.example:443')).toBe(false);
   });
+
+  it('rejects when any comma-separated or multi-header value is public', () => {
+    expect(isLocalDashboardHost('localhost, abbenay.example')).toBe(false);
+    expect(isLocalDashboardHost('abbenay.example, localhost')).toBe(false);
+    expect(isLocalDashboardHost(['localhost', 'abbenay.example'])).toBe(false);
+    expect(isLocalDashboardHost('localhost, 127.0.0.1')).toBe(true);
+  });
 });
 
 describe('requestDashboardHost', () => {
-  it('prefers the first X-Forwarded-Host value', () => {
+  it('prefers the full X-Forwarded-Host value over Host', () => {
     expect(
       requestDashboardHost({
         headers: {
           host: '127.0.0.1:8787',
-          'x-forwarded-host': 'abbenay.example, internal.local',
+          'x-forwarded-host': 'localhost, abbenay.example',
         },
       }),
-    ).toBe('abbenay.example');
+    ).toBe('localhost, abbenay.example');
   });
 
   it('falls back to Host when X-Forwarded-Host is absent', () => {

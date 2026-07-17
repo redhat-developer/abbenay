@@ -377,6 +377,17 @@ describe('dashboard login', () => {
     expect(res.statusCode).toBe(200);
     expect(String(res.body)).toContain('Abbenay');
   });
+
+  it('GET / redirects to /login when X-Forwarded-Host is a public hostname', async () => {
+    // Loopback peer + public forwarded host (TLS-terminated proxy) must not
+    // auto-establish a session.
+    const res = await httpRequest('GET', '/', {
+      token: null,
+      headers: { 'X-Forwarded-Host': 'abbenay.example' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/login');
+  });
 });
 
 describe('CORS allowlist', () => {
