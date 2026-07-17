@@ -159,6 +159,8 @@ export {
   ModelConfigSchema,
   ProviderConfigSchema,
   VirtualNameSchema,
+  VIRTUAL_NAME_REGEX,
+  isValidVirtualName,
   parseConfigFile,
 } from './config-schema.js';
 

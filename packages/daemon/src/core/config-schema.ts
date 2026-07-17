@@ -4,10 +4,26 @@
  * Shared by the HTTP API (request validation) and any core callers that need
  * typed config parsing. Keep in sync with the interfaces in config.ts /
  * policies.ts / tool-registry.ts.
+ *
+ * Name validation lives here (not in config.ts) so schema loading does not
+ * depend on the config I/O module — tests often mock config.js shallowly.
  */
 
 import { z } from 'zod';
-import { isValidVirtualName } from './config.js';
+
+/**
+ * Regex for virtual provider and model names.
+ * Lowercase alphanumeric, dots, hyphens, underscores. No slashes, no spaces.
+ */
+export const VIRTUAL_NAME_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
+
+/**
+ * Validate a virtual name (provider or model).
+ * Engine model IDs (containing slashes) are NOT validated by this.
+ */
+export function isValidVirtualName(name: string): boolean {
+  return VIRTUAL_NAME_REGEX.test(name);
+}
 
 /** Virtual provider/model/policy name (lowercase alphanumeric + ._-). */
 export const VirtualNameSchema = z

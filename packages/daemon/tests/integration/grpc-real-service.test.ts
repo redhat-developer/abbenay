@@ -34,13 +34,17 @@ const mockResolveEngineModelId = vi.fn().mockImplementation(
   (name: string, cfg: { model_id?: string }) => cfg.model_id || name,
 );
 
-vi.mock('../../src/core/config.js', () => ({
-  loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
-  loadWorkspaceConfig: (...a: unknown[]) => mockLoadWorkspaceConfig(...a),
-  mergeConfigs: (...a: unknown[]) => mockMergeConfigs(...a),
-  mergeMultipleWorkspaceConfigs: (...a: unknown[]) => mockMergeMultipleWorkspaceConfigs(...a),
-  resolveEngineModelId: (...a: unknown[]) => mockResolveEngineModelId(...a),
-}));
+vi.mock('../../src/core/config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/core/config.js')>();
+  return {
+    ...actual,
+    loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
+    loadWorkspaceConfig: (...a: unknown[]) => mockLoadWorkspaceConfig(...a),
+    mergeConfigs: (...a: unknown[]) => mockMergeConfigs(...a),
+    mergeMultipleWorkspaceConfigs: (...a: unknown[]) => mockMergeMultipleWorkspaceConfigs(...a),
+    resolveEngineModelId: (...a: unknown[]) => mockResolveEngineModelId(...a),
+  };
+});
 
 const mockGetEngines = vi.fn().mockReturnValue([
   { id: 'mock', requiresKey: false, supportsTools: false, createModel: () => { throw new Error('mock'); } },
