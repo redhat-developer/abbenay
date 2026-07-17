@@ -96,6 +96,114 @@ export function isLocalhostBind(host: string): boolean {
 }
 
 /**
+ * Return true when the TCP peer looks like loopback.
+ */
+export function isLoopbackRemoteAddress(addr?: string | null): boolean {
+  const a = (addr || '').trim();
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
+/**
+ * Normalize a single Host / X-Forwarded-Host token to a hostname.
+ *
+ * Strips port for hostname / IPv4 and `[IPv6]:port`. Does not strip from bare
+ * IPv6 (e.g. `::1`) — trailing `:digits` would mangle it to `::`.
+ */
+function dashboardHostname(hostToken: string): string {
+  const first = hostToken.trim().toLowerCase();
+  if (!first) return '';
+  if (first.startsWith('[')) {
+    return first.match(/^\[([^\]]+)\]/)?.[1] || first;
+  }
+  if ((first.match(/:/g) || []).length > 1) {
+    return first;
+  }
+  return first.replace(/:\d+$/, '');
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+/**
+ * Return true when every Host / X-Forwarded-Host value is loopback.
+ *
+ * Fail-closed: if a proxy appends a public hostname after a client-spoofed
+ * `localhost`, the chain is not treated as local (auto-session must not skip
+ * `/login`).
+ */
+export function isLocalDashboardHost(hostHeader?: string | string[] | null): boolean {
+  const tokens: string[] = [];
+  const parts = Array.isArray(hostHeader) ? hostHeader : hostHeader ? [hostHeader] : [];
+  for (const part of parts) {
+    for (const token of String(part).split(',')) {
+      const trimmed = token.trim();
+      if (trimmed) tokens.push(trimmed);
+    }
+  }
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => isLoopbackHostname(dashboardHostname(token)));
+}
+
+/**
+ * Prefer X-Forwarded-Host then Host for dashboard locality checks.
+ *
+ * Returns the full header value (comma-separated / multi-value preserved) so
+ * {@link isLocalDashboardHost} can require every hop to be loopback.
+ */
+export function requestDashboardHost(req: {
+  headers: { host?: string | string[]; 'x-forwarded-host'?: string | string[] };
+}): string | string[] | undefined {
+  const xf = req.headers['x-forwarded-host'];
+  if (typeof xf === 'string' && xf.trim()) return xf;
+  if (Array.isArray(xf) && xf.length > 0) return xf;
+  const host = req.headers.host;
+  if (typeof host === 'string' && host.trim()) return host;
+  if (Array.isArray(host) && host.length > 0) return host;
+  return undefined;
+}
+
+/**
+ * Whether an unauthenticated dashboard HTML request should 302 to `/login`.
+ *
+ * Auto-session (skip redirect) only when the TCP peer is local **and** every
+ * Host / X-Forwarded-Host value is localhost. That keeps `aby web` on
+ * 127.0.0.1 convenient, but forces `/login` when a reverse proxy presents a
+ * public hostname (peer is often loopback after TLS termination).
+ *
+ * No-op when auth is disabled (`ABBENAY_HTTP_AUTH=0`) or a valid auth cookie
+ * is already present.
+ */
+export function shouldRedirectDashboardToLogin(opts: {
+  authEnabled: boolean;
+  hasValidAuthCookie: boolean;
+  bindHost: string;
+  remoteAddress?: string | null;
+  hostHeader?: string | string[] | null;
+}): boolean {
+  if (!opts.authEnabled || opts.hasValidAuthCookie) return false;
+  const localPeer = isLocalhostBind(opts.bindHost) || isLoopbackRemoteAddress(opts.remoteAddress);
+  const localHost = isLocalDashboardHost(opts.hostHeader);
+  return !(localPeer && localHost);
+}
+
+/**
+ * Whether the dashboard may auto-establish session cookies without /login.
+ * Same locality rules as {@link shouldRedirectDashboardToLogin}.
+ */
+export function mayAutoEstablishDashboardSession(opts: {
+  authEnabled: boolean;
+  hasValidAuthCookie: boolean;
+  bindHost: string;
+  remoteAddress?: string | null;
+  hostHeader?: string | string[] | null;
+}): boolean {
+  if (!opts.authEnabled) return true;
+  if (opts.hasValidAuthCookie) return true;
+  return !shouldRedirectDashboardToLogin({ ...opts, hasValidAuthCookie: false });
+}
+
+/**
  * Thrown when HTTP auth is disabled on a non-loopback bind (fail-closed).
  */
 export class HttpAuthBindSecurityError extends Error {

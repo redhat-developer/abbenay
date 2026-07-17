@@ -35,6 +35,9 @@ import {
   API_TOKEN_COOKIE,
   CSRF_COOKIE,
   isLocalhostBind,
+  shouldRedirectDashboardToLogin,
+  mayAutoEstablishDashboardSession,
+  requestDashboardHost,
   assertHttpAuthBindAllowed,
   type WebSecurityOptions,
   type ResolvedHttpSecurity,
@@ -125,11 +128,6 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     next();
   });
 
-  const isLoopbackClient = (req: Request): boolean => {
-    const addr = req.socket.remoteAddress || '';
-    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
-  };
-
   const cookieOpts = (req: Request) => ({ secure: cookieSecureFromRequest(req) });
 
   const hasValidAuthCookie = (req: Request): boolean => {
@@ -161,12 +159,20 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * Serve dashboard HTML. Establishes SameSite auth cookies when auth is
    * enabled and:
    * - POST /login (preferred) or legacy ?token=<apiToken> succeeded, or
-   * - the client is loopback (safe with default 127.0.0.1 bind)
+   * - locality allows auto-session: local TCP peer/bind **and** every
+   *   Host / X-Forwarded-Host value is loopback (see
+   *   {@link mayAutoEstablishDashboardSession})
+   *
+   * Otherwise unauthenticated HTML requests redirect to `/login`.
    *
    * The API token is never embedded in HTML for remote clients; the dashboard
    * authenticates via HttpOnly cookie + CSRF header (and API clients use Bearer).
    */
   const serveDashboardHtml = (req: Request, res: Response): void => {
+    // All HTML entry points (/, /index.html, SPA deep-links) must be
+    // non-cacheable — embedded window.__ABBENAY_CSRF__ must stay fresh.
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
     const indexPath = path.join(STATIC_PATH, 'index.html');
     if (!fs.existsSync(indexPath)) {
       res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);
@@ -192,7 +198,20 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     }
 
     const hasAuthCookie = hasValidAuthCookie(req);
-    const mayEstablishSession = hasAuthCookie || isLoopbackClient(req) || isLocalhostBind(security.host);
+    const hostHeader = requestDashboardHost(req);
+    const locality = {
+      authEnabled: security.authEnabled,
+      hasValidAuthCookie: hasAuthCookie,
+      bindHost: security.host,
+      remoteAddress: req.socket.remoteAddress,
+      hostHeader,
+    };
+    if (shouldRedirectDashboardToLogin(locality)) {
+      res.redirect(302, '/login');
+      return;
+    }
+
+    const mayEstablishSession = mayAutoEstablishDashboardSession(locality);
 
     let csrf = getCookie(req, CSRF_COOKIE);
     if (mayEstablishSession && (!hasAuthCookie || !csrf)) {
@@ -1680,6 +1699,21 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // ── OpenAI-compatible API (/v1/*) ─────────────────────────────────────
   registerOpenAIRoutes(app, state);
 
+  // Unknown API/OpenAI/MCP GETs stay JSON 404s — never SPA HTML or /login.
+  const isApiStylePath = (p: string): boolean =>
+    p === '/api' || p.startsWith('/api/') ||
+    p === '/v1' || p.startsWith('/v1/') ||
+    p === '/mcp' || p.startsWith('/mcp/');
+
+  app.get('*', (req, res) => {
+    if (isApiStylePath(req.path)) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    // SPA fallback — same locality /login policy as `/` and `/index.html`.
+    serveDashboardHtml(req, res);
+  });
+
   return app;
 }
 
@@ -1723,35 +1757,6 @@ export async function startEmbeddedWebServer(
     host: bindHost,
     corsOrigins: security.corsOrigins,
     skipConfig: true,
-  });
-
-  // SPA fallback (serve index.html for non-API routes)
-  app.get('*', (req, res) => {
-    const indexPath = path.join(STATIC_PATH, 'index.html');
-    if (!fs.existsSync(indexPath)) {
-      res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);
-      return;
-    }
-    if (!security.authEnabled) {
-      res.type('html').send(fs.readFileSync(indexPath, 'utf-8'));
-      return;
-    }
-    const addr = req.socket.remoteAddress || '';
-    const loopback = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
-    const cookieToken = getCookie(req, API_TOKEN_COOKIE);
-    const hasAuthCookie =
-      cookieToken !== null && timingSafeEqualString(cookieToken, security.apiToken);
-    const mayEstablish = hasAuthCookie || loopback || isLocalhostBind(bindHost);
-    let csrf = getCookie(req, CSRF_COOKIE);
-    if (mayEstablish && (!hasAuthCookie || !csrf)) {
-      csrf = setAuthCookies(res, security.apiToken, { secure: cookieSecureFromRequest(req) });
-    }
-    let html = fs.readFileSync(indexPath, 'utf-8');
-    const inject = `<script>window.__ABBENAY_CSRF__=${JSON.stringify(csrf || '')};</script>`;
-    html = html.includes('</head>')
-      ? html.replace('</head>', `${inject}</head>`)
-      : `${inject}${html}`;
-    res.type('html').send(html);
   });
 
   _webPort = port;

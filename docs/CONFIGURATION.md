@@ -131,6 +131,13 @@ Binding to `0.0.0.0` requires an explicit opt-in and logs a warning — only
 do this when you intentionally expose the HTTP API (e.g. containers) and
 have set a strong token.
 
+When auth is enabled, unauthenticated browser requests to `/` (or `/index.html`)
+redirect to `/login` unless both the TCP peer and the browser `Host` /
+`X-Forwarded-Host` are localhost (direct local use). That way a reverse proxy
+that connects over loopback still cannot auto-establish a session for a public
+hostname. API routes (`/api/*`, `/v1/*`, `/mcp`) continue to return `401` JSON
+when unauthenticated.
+
 > **WARNING — disabling HTTP auth:** Auth is **on by default**. For throwaway
 > local development only you may set `ABBENAY_HTTP_AUTH=0`. That allows any
 > process (and any website that can reach the bind address) to call the

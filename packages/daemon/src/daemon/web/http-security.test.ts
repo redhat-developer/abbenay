@@ -5,6 +5,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   isLocalhostBind,
+  isLoopbackRemoteAddress,
+  isLocalDashboardHost,
+  requestDashboardHost,
+  shouldRedirectDashboardToLogin,
+  mayAutoEstablishDashboardSession,
   isHttpAuthEnabled,
   assertHttpAuthBindAllowed,
   HttpAuthBindSecurityError,
@@ -37,6 +42,143 @@ describe('isLocalhostBind', () => {
   it('rejects non-loopback', () => {
     expect(isLocalhostBind('0.0.0.0')).toBe(false);
     expect(isLocalhostBind('192.168.1.1')).toBe(false);
+  });
+});
+
+describe('isLoopbackRemoteAddress', () => {
+  it('accepts loopback peers', () => {
+    expect(isLoopbackRemoteAddress('127.0.0.1')).toBe(true);
+    expect(isLoopbackRemoteAddress('::1')).toBe(true);
+    expect(isLoopbackRemoteAddress('::ffff:127.0.0.1')).toBe(true);
+  });
+
+  it('rejects non-loopback peers', () => {
+    expect(isLoopbackRemoteAddress('192.168.0.24')).toBe(false);
+    expect(isLoopbackRemoteAddress('10.88.0.1')).toBe(false);
+    expect(isLoopbackRemoteAddress(undefined)).toBe(false);
+  });
+});
+
+describe('isLocalDashboardHost', () => {
+  it('accepts localhost Host values', () => {
+    expect(isLocalDashboardHost('localhost:8787')).toBe(true);
+    expect(isLocalDashboardHost('127.0.0.1:8787')).toBe(true);
+    expect(isLocalDashboardHost('[::1]:8787')).toBe(true);
+    expect(isLocalDashboardHost('::1')).toBe(true);
+  });
+
+  it('rejects public hostnames', () => {
+    expect(isLocalDashboardHost('abbenay.20665.net')).toBe(false);
+    expect(isLocalDashboardHost('abbenay.example:443')).toBe(false);
+  });
+
+  it('rejects when any comma-separated or multi-header value is public', () => {
+    expect(isLocalDashboardHost('localhost, abbenay.example')).toBe(false);
+    expect(isLocalDashboardHost('abbenay.example, localhost')).toBe(false);
+    expect(isLocalDashboardHost(['localhost', 'abbenay.example'])).toBe(false);
+    expect(isLocalDashboardHost('localhost, 127.0.0.1')).toBe(true);
+  });
+});
+
+describe('requestDashboardHost', () => {
+  it('prefers the full X-Forwarded-Host value over Host', () => {
+    expect(
+      requestDashboardHost({
+        headers: {
+          host: '127.0.0.1:8787',
+          'x-forwarded-host': 'localhost, abbenay.example',
+        },
+      }),
+    ).toBe('localhost, abbenay.example');
+  });
+
+  it('falls back to Host when X-Forwarded-Host is absent', () => {
+    expect(
+      requestDashboardHost({
+        headers: { host: 'localhost:8787' },
+      }),
+    ).toBe('localhost:8787');
+  });
+});
+
+describe('shouldRedirectDashboardToLogin', () => {
+  it('does not redirect when auth is disabled', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: false,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '192.168.0.24',
+        hostHeader: 'abbenay.example',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not redirect when a valid auth cookie is present', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: true,
+        bindHost: '0.0.0.0',
+        remoteAddress: '192.168.0.24',
+        hostHeader: 'abbenay.example',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not redirect for direct local access (loopback peer + local Host)', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '127.0.0.1',
+        hostHeader: '127.0.0.1:8787',
+      }),
+    ).toBe(false);
+    expect(
+      mayAutoEstablishDashboardSession({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '127.0.0.1',
+        remoteAddress: '127.0.0.1',
+        hostHeader: 'localhost:8787',
+      }),
+    ).toBe(true);
+  });
+
+  it('redirects when reverse-proxy peer is loopback but Host is public', () => {
+    // TLS-terminated proxies often present as loopback remoteAddress
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '127.0.0.1',
+        hostHeader: 'abbenay.20665.net',
+      }),
+    ).toBe(true);
+    expect(
+      mayAutoEstablishDashboardSession({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '127.0.0.1',
+        hostHeader: 'abbenay.20665.net',
+      }),
+    ).toBe(false);
+  });
+
+  it('redirects remote clients without a cookie', () => {
+    expect(
+      shouldRedirectDashboardToLogin({
+        authEnabled: true,
+        hasValidAuthCookie: false,
+        bindHost: '0.0.0.0',
+        remoteAddress: '192.168.0.24',
+        hostHeader: '192.168.0.3:8787',
+      }),
+    ).toBe(true);
   });
 });
 

@@ -370,6 +370,56 @@ describe('dashboard login', () => {
     expect(String(res.body)).toContain('action="/login"');
     expect(String(res.body)).toContain('name="token"');
   });
+
+  it('GET / on localhost bind still serves the dashboard without a prior cookie', async () => {
+    // Default test bind is 127.0.0.1 — auto-session for local use (no redirect).
+    const res = await httpRequest('GET', '/', { token: null });
+    expect(res.statusCode).toBe(200);
+    const body = String(res.body);
+    expect(body).toContain('window.__ABBENAY_CSRF__');
+    expect(body).not.toContain('action="/login"');
+  });
+
+  it('GET / redirects to /login when X-Forwarded-Host is a public hostname', async () => {
+    // Loopback peer + public forwarded host (TLS-terminated proxy) must not
+    // auto-establish a session.
+    const res = await httpRequest('GET', '/', {
+      token: null,
+      headers: { 'X-Forwarded-Host': 'abbenay.example' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/login');
+  });
+
+  it('SPA fallback paths also redirect when X-Forwarded-Host is public', async () => {
+    const res = await httpRequest('GET', '/providers', {
+      token: null,
+      headers: { 'X-Forwarded-Host': 'abbenay.example' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/login');
+  });
+
+  it('SPA fallback dashboard HTML is non-cacheable', async () => {
+    const res = await httpRequest('GET', '/providers', { token: null });
+    expect(res.statusCode).toBe(200);
+    expect(String(res.headers['cache-control'] || '')).toMatch(/no-store/i);
+  });
+
+  it('unknown API GET returns JSON 404, not SPA HTML or /login', async () => {
+    const res = await httpRequest('GET', '/api/does-not-exist', {
+      token: null,
+      headers: { 'X-Forwarded-Host': 'abbenay.example' },
+    });
+    // Auth runs first → 401 for unauthenticated; with auth, unknown → JSON 404.
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ error: 'Unauthorized' });
+
+    const authed = await httpRequest('GET', '/api/does-not-exist');
+    expect(authed.statusCode).toBe(404);
+    expect(authed.body).toEqual({ error: 'Not found' });
+    expect(String(authed.headers.location || '')).toBe('');
+  });
 });
 
 describe('CORS allowlist', () => {
