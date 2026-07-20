@@ -1151,6 +1151,9 @@ export async function startEmbeddedWebServer(
   });
   
   _webPort = port;
+
+  // Keep MCP self-connection guard in sync with the live HTTP listen port
+  state.mcpClientPool.setListenEndpoints({ httpPorts: [port] });
   
   await new Promise<void>((resolve, reject) => {
     _httpServer = app.listen(port, () => {

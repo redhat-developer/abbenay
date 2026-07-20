@@ -7,6 +7,7 @@
  * Uses @ai-sdk/mcp for the MCP client implementation.
  */
 
+import * as os from 'node:os';
 import { createMCPClient, type MCPClient } from '@ai-sdk/mcp';
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
 import type { ToolRegistry } from '../core/tool-registry.js';
@@ -32,6 +33,83 @@ export interface McpServerStatus {
   scope?: DynamicScope;
 }
 
+/**
+ * Ports this daemon is listening on. Used to refuse MCP client connections
+ * that would recurse into our own HTTP/MCP or gRPC endpoints.
+ */
+export interface DaemonListenEndpoints {
+  httpPorts?: readonly number[];
+  grpcPorts?: readonly number[];
+}
+
+const LOOPBACK_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+  '0.0.0.0',
+  '::',
+]);
+
+/** Normalize a hostname for comparison (lowercase, strip brackets / zone id). */
+export function normalizeHost(host: string): string {
+  let h = host.toLowerCase().replace(/\.$/, '');
+  if (h.startsWith('[') && h.endsWith(']')) {
+    h = h.slice(1, -1);
+  }
+  const zoneIdx = h.indexOf('%');
+  if (zoneIdx !== -1) {
+    h = h.slice(0, zoneIdx);
+  }
+  return h;
+}
+
+/** Collect loopback aliases, hostname, and local interface addresses. */
+export function localHostAddresses(): Set<string> {
+  const addrs = new Set<string>(LOOPBACK_HOSTS);
+  addrs.add(normalizeHost(os.hostname()));
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    if (!ifaces) continue;
+    for (const iface of ifaces) {
+      addrs.add(normalizeHost(iface.address));
+    }
+  }
+  return addrs;
+}
+
+/**
+ * Return true when `urlString` targets a local host and a port this daemon
+ * is listening on (HTTP/web/MCP or gRPC TCP).
+ *
+ * Exported for direct unit tests so the guard cannot silently become a no-op.
+ */
+export function isSelfConnectionUrl(
+  urlString: string,
+  endpoints: { httpPorts: Iterable<number>; grpcPorts: Iterable<number> },
+): boolean {
+  let url: URL;
+  try {
+    url = new URL(urlString);
+  } catch {
+    return false;
+  }
+
+  const defaultPort = url.protocol === 'https:' ? 443 : 80;
+  const port = url.port ? Number(url.port) : defaultPort;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return false;
+  }
+
+  const listenPorts = new Set<number>([
+    ...endpoints.httpPorts,
+    ...endpoints.grpcPorts,
+  ]);
+  if (!listenPorts.has(port)) {
+    return false;
+  }
+
+  return localHostAddresses().has(normalizeHost(url.hostname));
+}
+
 // ── McpClientPool ──────────────────────────────────────────────────────
 
 export class McpClientPool {
@@ -42,7 +120,31 @@ export class McpClientPool {
   /** Max dynamic MCP servers allowed (configurable via config.yaml) */
   private maxDynamicServers = 10;
 
+  private httpPorts = new Set<number>();
+  private grpcPorts = new Set<number>();
+
   constructor(private registry: ToolRegistry) {}
+
+  /**
+   * Update the daemon listen ports used for self-connection detection.
+   * Omitted fields are left unchanged.
+   */
+  setListenEndpoints(endpoints: DaemonListenEndpoints): void {
+    if (endpoints.httpPorts !== undefined) {
+      this.httpPorts = new Set(endpoints.httpPorts);
+    }
+    if (endpoints.grpcPorts !== undefined) {
+      this.grpcPorts = new Set(endpoints.grpcPorts);
+    }
+  }
+
+  /** Current listen endpoints (for tests / diagnostics). */
+  getListenEndpoints(): { httpPorts: number[]; grpcPorts: number[] } {
+    return {
+      httpPorts: [...this.httpPorts],
+      grpcPorts: [...this.grpcPorts],
+    };
+  }
 
   /**
    * Connect to a single config-based MCP server and register its tools.
@@ -53,10 +155,7 @@ export class McpClientPool {
       return;
     }
 
-    if (this.isSelfConnection(config)) {
-      console.warn(`[McpClientPool] Skipping self-connection: ${serverId}`);
-      return;
-    }
+    this.assertNotSelfConnection(serverId, config);
 
     // Disconnect existing connection if any
     if (this.clients.has(serverId)) {
@@ -116,6 +215,8 @@ export class McpClientPool {
     if (this.clients.has(serverId)) {
       throw new Error(`MCP server '${serverId}' is already registered`);
     }
+
+    this.assertNotSelfConnection(serverId, config);
 
     const dynamicCount = Array.from(this.statuses.values())
       .filter(s => s.source === 'dynamic').length;
@@ -415,18 +516,26 @@ export class McpClientPool {
   }
 
   /**
-   * Guard against connecting to our own MCP server.
+   * Guard against connecting to our own MCP/HTTP/gRPC endpoints.
    */
-  private isSelfConnection(config: McpServerConfig): boolean {
-    if (config.transport === 'http' && config.url) {
-      const url = config.url.toLowerCase();
-      // Check for obvious self-referential URLs
-      if (url.includes('localhost') || url.includes('127.0.0.1')) {
-        // TODO: compare against our own MCP server port when Phase 4 is implemented
-        return false;
-      }
+  isSelfConnection(config: McpServerConfig): boolean {
+    if ((config.transport === 'http' || config.transport === 'sse') && config.url) {
+      return isSelfConnectionUrl(config.url, {
+        httpPorts: this.httpPorts,
+        grpcPorts: this.grpcPorts,
+      });
     }
     return false;
+  }
+
+  private assertNotSelfConnection(serverId: string, config: McpServerConfig): void {
+    if (!this.isSelfConnection(config)) return;
+    const url = config.url ?? '';
+    const msg =
+      `Refusing self-connection for MCP server '${serverId}': ` +
+      `URL '${url}' points at this daemon's own listening address/port`;
+    console.warn(`[McpClientPool] ${msg}`);
+    throw new Error(msg);
   }
 
   /**

@@ -85,6 +85,11 @@ export interface DaemonOptions {
   grpcPort?: number;
   /** Host/IP to bind the TCP gRPC listener to (default: 127.0.0.1). */
   grpcHost?: string;
+  /**
+   * Expected HTTP/web port for self-connection detection.
+   * Set even before the web server binds so MCP init cannot recurse into /mcp.
+   */
+  httpPort?: number;
 }
 
 /**
@@ -110,7 +115,13 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
   
   // Create state
   state = new DaemonState();
-  
+
+  // Register known listen ports before MCP init so self-connections are blocked
+  state.mcpClientPool.setListenEndpoints({
+    httpPorts: opts?.httpPort != null ? [opts.httpPort] : [],
+    grpcPorts: opts?.grpcPort != null ? [opts.grpcPort] : [],
+  });
+
   // Load proto and create server
   const proto = loadProto();
   const abbenayProto = (proto as unknown as { abbenay: { v1: { Abbenay: { service: grpc.ServiceDefinition } } } }).abbenay.v1;

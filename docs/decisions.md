@@ -407,3 +407,21 @@ fine for early adopters but a barrier to organic adoption. Publishing to both
 VS Code Marketplace and OpenVSX ensures coverage for VS Code and compatible
 editors (Eclipse Theia, VSCodium, Gitpod). Gating alpha releases prevents
 incomplete builds from reaching end users.
+
+---
+
+## DR-029: Block MCP self-connections to the daemon's own endpoints
+
+**Date:** 2026-07-20
+**Decision:** `McpClientPool` tracks the daemon's HTTP and gRPC listen ports
+via `setListenEndpoints()` and rejects HTTP/SSE MCP server URLs whose host is
+a local address (loopback, hostname, or any local interface IP) and whose port
+matches a tracked listen port. Both config `connect()` and dynamic
+`connectDynamic()` throw a clear self-connection error. Listen ports are
+registered at daemon start (`httpPort` / `grpcPort` options) and when the
+embedded web server binds.
+**Rationale:** `isSelfConnection()` previously always returned `false`, so the
+daemon could register its own `/mcp` HTTP endpoint as an external MCP server
+and amplify tool calls recursively. Comparing target URL host+port against
+known listen endpoints closes that loop without blocking legitimate remote or
+other-localhost MCP servers on different ports.

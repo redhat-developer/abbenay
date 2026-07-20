@@ -158,7 +158,7 @@ async function runServer(opts: ServerOptions): Promise<void> {
     });
   } else {
     console.log('No daemon running, starting in-process...');
-    const daemonState = await startDaemon({ keepAlive: false, grpcPort, grpcHost });
+    const daemonState = await startDaemon({ keepAlive: false, grpcPort, grpcHost, httpPort: port });
     const { url, app } = await startEmbeddedWebServer(daemonState, port);
 
     if (mcp && app) {
