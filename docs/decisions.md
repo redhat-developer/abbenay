@@ -603,3 +603,23 @@ gated, and empty consumers meant allow-all even on `0.0.0.0` — findings H8/H10
 Fail-closed on network exposure closes unauthenticated secret/config/shutdown
 access while keeping single-user local workflows frictionless. Timing-safe
 compare closes token oracle leaks.
+
+---
+
+## DR-038: Stdio MCP spawn allowlist + operator approval
+
+**Date:** 2026-07-20
+**Decision:** Dynamic `RegisterMcpServer` with `transport: stdio` must not spawn
+arbitrary commands. Before `StdioMCPTransport` is constructed: (1) `command`
+must match configurable `security.stdio_command_allowlist` (empty allowlist
+denies all dynamic stdio); (2) an interactive operator approval is required by
+default (`stdio_require_approval`, dashboard / `GET|POST /api/mcp/stdio-spawns`);
+(3) when `consumers` is configured, stdio `command`/`args` are rejected unless
+the caller authenticates as a consumer with `mcp_register`. Denials are logged
+clearly and surfaced in the API/UI. Config-file `mcp_servers` remain
+admin-trusted and skip these gates. Prefer caller-spawned HTTP/SSE for dynamic
+registration (DR-025).
+**Rationale:** Finding H6 — `mcp-client-pool` previously spawned
+`config.command` / `config.args` for any caller with `mcp_register` (or anyone
+when consumers were unset). Allowlist + approval + auth closes arbitrary
+command execution while keeping trusted MCP binaries usable.

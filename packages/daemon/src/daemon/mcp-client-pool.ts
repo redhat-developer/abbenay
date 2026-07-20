@@ -4,13 +4,22 @@
  * Connects to MCP servers defined in config (stdio or HTTP/SSE transport),
  * discovers their tools, and registers them in the ToolRegistry.
  *
+ * Dynamic stdio registration is gated (DR-038 / H6): command allowlist +
+ * explicit operator approval before any process is spawned.
+ *
  * Uses @ai-sdk/mcp for the MCP client implementation.
  */
 
+import { randomUUID } from 'node:crypto';
 import { createMCPClient, type MCPClient } from '@ai-sdk/mcp';
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
 import type { ToolRegistry } from '../core/tool-registry.js';
-import type { McpServerConfig } from '../core/config.js';
+import type { McpServerConfig, SecurityConfig } from '../core/config.js';
+import {
+  assertStdioCommandAllowlisted,
+  formatStdioDenial,
+  StdioCommandDeniedError,
+} from './stdio-command-policy.js';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -32,6 +41,35 @@ export interface McpServerStatus {
   scope?: DynamicScope;
 }
 
+/** Pending stdio spawn awaiting operator approval. */
+export interface PendingStdioSpawn {
+  requestId: string;
+  serverId: string;
+  command: string;
+  args: string[];
+  consumer?: string;
+  createdAt: number;
+}
+
+export type StdioSpawnApprovalDecision = 'allow' | 'deny';
+
+/**
+ * Callback when an allowlisted dynamic stdio spawn needs interactive approval.
+ * Must resolve to allow/deny; abandoned requests should time out to deny.
+ */
+export type OnStdioSpawnApprovalNeeded = (
+  request: PendingStdioSpawn,
+) => Promise<StdioSpawnApprovalDecision>;
+
+export class StdioSpawnApprovalDeniedError extends Error {
+  readonly code = 'STDIO_SPAWN_APPROVAL_DENIED' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'StdioSpawnApprovalDeniedError';
+  }
+}
+
 // ── McpClientPool ──────────────────────────────────────────────────────
 
 export class McpClientPool {
@@ -42,7 +80,42 @@ export class McpClientPool {
   /** Max dynamic MCP servers allowed (configurable via config.yaml) */
   private maxDynamicServers = 10;
 
+  /** Allowed binaries for dynamic stdio (empty = deny all dynamic stdio) */
+  private stdioCommandAllowlist: string[] = [];
+
+  /** When true (default), dynamic stdio requires interactive approval */
+  private stdioRequireApproval = true;
+
+  private onStdioSpawnApprovalNeeded?: OnStdioSpawnApprovalNeeded;
+
+  /** Recent denials for operator visibility (bounded) */
+  private recentDenials: Array<{ at: number; reason: string; serverId?: string }> = [];
+  private static readonly MAX_RECENT_DENIALS = 50;
+
   constructor(private registry: ToolRegistry) {}
+
+  /**
+   * Apply security settings from config (allowlist, limits, approval flag).
+   */
+  applySecurityConfig(security?: SecurityConfig | null): void {
+    if (security?.max_dynamic_mcp_servers != null && security.max_dynamic_mcp_servers > 0) {
+      this.maxDynamicServers = security.max_dynamic_mcp_servers;
+    }
+    this.stdioCommandAllowlist = [...(security?.stdio_command_allowlist || [])];
+    this.stdioRequireApproval = security?.stdio_require_approval !== false;
+  }
+
+  /**
+   * Wire interactive approval for dynamic stdio spawns (web dashboard / API).
+   */
+  setStdioSpawnApprovalHandler(handler: OnStdioSpawnApprovalNeeded | undefined): void {
+    this.onStdioSpawnApprovalNeeded = handler;
+  }
+
+  /** Snapshot of recent stdio registration denials (newest last). */
+  getRecentDenials(): Array<{ at: number; reason: string; serverId?: string }> {
+    return [...this.recentDenials];
+  }
 
   /**
    * Connect to a single config-based MCP server and register its tools.
@@ -103,12 +176,16 @@ export class McpClientPool {
   /**
    * Dynamically register an MCP server at runtime.
    * Returns the list of discovered tool names (namespaced).
+   *
+   * For stdio transport: allowlist + optional operator approval run *before*
+   * any process is spawned (DR-038 / H6).
    */
   async connectDynamic(
     serverId: string,
     config: McpServerConfig,
     scope?: DynamicScope,
     toolFilter?: string[],
+    opts?: { consumer?: string },
   ): Promise<string[]> {
     if (this.hasConfigServer(serverId)) {
       throw new Error(`MCP server '${serverId}' is already defined in config`);
@@ -124,6 +201,11 @@ export class McpClientPool {
         `Dynamic MCP server limit reached (${this.maxDynamicServers}). ` +
         `Unregister existing servers first.`,
       );
+    }
+
+    // Gate stdio *before* recording status / spawning (no process on deny)
+    if (config.transport === 'stdio') {
+      await this.authorizeDynamicStdioSpawn(serverId, config, opts?.consumer);
     }
 
     const status: McpServerStatus = {
@@ -364,13 +446,91 @@ export class McpClientPool {
   // ── Internal ─────────────────────────────────────────────────────────
 
   /**
+   * Allowlist + approval for dynamic stdio. Throws before any spawn.
+   */
+  private async authorizeDynamicStdioSpawn(
+    serverId: string,
+    config: McpServerConfig,
+    consumer?: string,
+  ): Promise<void> {
+    try {
+      assertStdioCommandAllowlisted(config.command, this.stdioCommandAllowlist, {
+        serverId,
+        source: 'dynamic',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.recordDenial(msg, serverId);
+      throw err instanceof StdioCommandDeniedError
+        ? err
+        : new StdioCommandDeniedError(msg);
+    }
+
+    if (!this.stdioRequireApproval) {
+      console.log(
+        `[McpClientPool] stdio spawn approval skipped (stdio_require_approval=false) ` +
+          `for '${serverId}' command=${config.command}`,
+      );
+      return;
+    }
+
+    if (!this.onStdioSpawnApprovalNeeded) {
+      const msg =
+        `stdio spawn for MCP server '${serverId}' requires operator approval, but no ` +
+        `approval handler is configured. Start the web dashboard (or wire ` +
+        `setStdioSpawnApprovalHandler) and retry. Command "${config.command}" was not spawned.`;
+      this.recordDenial(msg, serverId);
+      throw new StdioSpawnApprovalDeniedError(msg);
+    }
+
+    const request: PendingStdioSpawn = {
+      requestId: randomUUID(),
+      serverId,
+      command: config.command!,
+      args: config.args || [],
+      consumer,
+      createdAt: Date.now(),
+    };
+
+    console.log(
+      `[McpClientPool] stdio spawn approval required: server='${serverId}' ` +
+        `command=${request.command} args=${JSON.stringify(request.args)} ` +
+        `consumer=${consumer || 'local'} (requestId=${request.requestId})`,
+    );
+
+    const decision = await this.onStdioSpawnApprovalNeeded(request);
+    if (decision !== 'allow') {
+      const msg =
+        `stdio spawn for MCP server '${serverId}' denied by operator ` +
+        `(command="${config.command}"). No process was spawned.`;
+      this.recordDenial(msg, serverId);
+      throw new StdioSpawnApprovalDeniedError(msg);
+    }
+
+    console.log(
+      `[McpClientPool] stdio spawn approved: server='${serverId}' ` +
+        `command=${config.command} (requestId=${request.requestId})`,
+    );
+  }
+
+  private recordDenial(reason: string, serverId?: string): void {
+    console.warn(formatStdioDenial(reason));
+    this.recentDenials.push({ at: Date.now(), reason, serverId });
+    if (this.recentDenials.length > McpClientPool.MAX_RECENT_DENIALS) {
+      this.recentDenials.shift();
+    }
+  }
+
+  /**
    * Build the appropriate transport for a config entry.
+   * Callers that need dynamic stdio gates must run authorizeDynamicStdioSpawn first.
    */
   private buildTransport(config: McpServerConfig): StdioMCPTransport | { type: 'sse' | 'http'; url: string; headers?: Record<string, string> } {
     if (config.transport === 'stdio') {
       if (!config.command) {
         throw new Error('stdio transport requires a command');
       }
+      // Process spawn happens inside StdioMCPTransport construction / connect.
       return new StdioMCPTransport({
         command: config.command,
         args: config.args,

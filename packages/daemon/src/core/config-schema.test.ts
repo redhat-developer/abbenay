@@ -103,6 +103,30 @@ describe('ConfigFileSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts security.stdio_command_allowlist (DR-038)', () => {
+    const result = parseConfigFile({
+      security: {
+        max_dynamic_mcp_servers: 5,
+        stdio_command_allowlist: ['npx', '/usr/local/bin/my-mcp'],
+        stdio_require_approval: true,
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.security?.stdio_command_allowlist).toEqual([
+        'npx',
+        '/usr/local/bin/my-mcp',
+      ]);
+    }
+  });
+
+  it('rejects unknown keys under security', () => {
+    const result = ConfigFileSchema.safeParse({
+      security: { stdio_command_allowlist: ['npx'], evil: true },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('PolicyConfigSchema', () => {

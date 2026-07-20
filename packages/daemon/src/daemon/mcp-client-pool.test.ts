@@ -36,24 +36,39 @@ vi.mock('@ai-sdk/mcp', () => ({
   createMCPClient: (...args: unknown[]) => mockCreateMCPClient(...args),
 }));
 
+const stdioTransportConstructs: unknown[] = [];
+
 vi.mock('@ai-sdk/mcp/mcp-stdio', () => ({
   Experimental_StdioMCPTransport: class {
-    constructor(public opts: unknown) {}
+    constructor(public opts: unknown) {
+      stdioTransportConstructs.push(opts);
+    }
   },
 }));
 
 // ── Import (after mocks) ──────────────────────────────────────────────────
 
-import { McpClientPool } from './mcp-client-pool.js';
+import { McpClientPool, StdioSpawnApprovalDeniedError } from './mcp-client-pool.js';
+import { StdioCommandDeniedError } from './stdio-command-policy.js';
 
 // ── Test setup ────────────────────────────────────────────────────────────
 
 let registry: ToolRegistry;
 let pool: McpClientPool;
 
+/** Allow dynamic stdio in tests that are not specifically testing the gate. */
+function enableTrustedDynamicStdio(p: McpClientPool = pool): void {
+  p.applySecurityConfig({
+    stdio_command_allowlist: ['a', 'b', 'x', 'y', 'dyn', 'good', 'bad', 'new', 'old'],
+    stdio_require_approval: true,
+  });
+  p.setStdioSpawnApprovalHandler(async () => 'allow');
+}
+
 beforeEach(() => {
   registry = new ToolRegistry();
   pool = new McpClientPool(registry);
+  stdioTransportConstructs.length = 0;
   mockCreateMCPClient.mockReset().mockImplementation(async () => {
     latestMockClient = {
       tools: vi.fn().mockResolvedValue({}),
@@ -186,6 +201,10 @@ describe('connectAll and disconnectAll', () => {
 // ── dynamic registration ──────────────────────────────────────────────────
 
 describe('connectDynamic', () => {
+  beforeEach(() => {
+    enableTrustedDynamicStdio();
+  });
+
   it('should register a dynamic server with scope', async () => {
     const tools = await pool.connectDynamic(
       'dyn-1',
@@ -239,9 +258,103 @@ describe('connectDynamic', () => {
   });
 });
 
+// ── H6: stdio allowlist + approval ────────────────────────────────────────
+
+describe('stdio spawn policy (H6)', () => {
+  it('rejects non-allowlisted command and does not spawn', async () => {
+    pool.applySecurityConfig({ stdio_command_allowlist: ['npx'] });
+    pool.setStdioSpawnApprovalHandler(async () => 'allow');
+
+    await expect(
+      pool.connectDynamic('evil', {
+        transport: 'stdio',
+        command: '/bin/sh',
+        args: ['-c', 'id'],
+        enabled: true,
+      }),
+    ).rejects.toThrow(StdioCommandDeniedError);
+
+    expect(stdioTransportConstructs).toHaveLength(0);
+    expect(mockCreateMCPClient).not.toHaveBeenCalled();
+    expect(pool.getRecentDenials().some((d) => d.reason.includes('/bin/sh'))).toBe(true);
+  });
+
+  it('rejects when allowlist is empty (fail-closed)', async () => {
+    pool.applySecurityConfig({ stdio_command_allowlist: [] });
+    pool.setStdioSpawnApprovalHandler(async () => 'allow');
+
+    await expect(
+      pool.connectDynamic('x', { transport: 'stdio', command: 'npx', enabled: true }),
+    ).rejects.toThrow(/allowlist is empty/);
+    expect(stdioTransportConstructs).toHaveLength(0);
+  });
+
+  it('spawns after allowlist match + operator approval', async () => {
+    pool.applySecurityConfig({ stdio_command_allowlist: ['npx'] });
+    const approvals: string[] = [];
+    pool.setStdioSpawnApprovalHandler(async (req) => {
+      approvals.push(req.command);
+      return 'allow';
+    });
+
+    await pool.connectDynamic('ok', {
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-everything'],
+      enabled: true,
+    });
+
+    expect(approvals).toEqual(['npx']);
+    expect(stdioTransportConstructs).toHaveLength(1);
+    expect(pool.getStatus('ok')?.connected).toBe(true);
+  });
+
+  it('does not spawn when operator denies approval', async () => {
+    pool.applySecurityConfig({ stdio_command_allowlist: ['npx'] });
+    pool.setStdioSpawnApprovalHandler(async () => 'deny');
+
+    await expect(
+      pool.connectDynamic('denied', { transport: 'stdio', command: 'npx', enabled: true }),
+    ).rejects.toThrow(StdioSpawnApprovalDeniedError);
+
+    expect(stdioTransportConstructs).toHaveLength(0);
+    expect(pool.getRecentDenials().some((d) => d.reason.includes('denied by operator'))).toBe(true);
+  });
+
+  it('does not spawn when approval handler is missing', async () => {
+    pool.applySecurityConfig({ stdio_command_allowlist: ['npx'] });
+    // no setStdioSpawnApprovalHandler
+
+    await expect(
+      pool.connectDynamic('no-handler', { transport: 'stdio', command: 'npx', enabled: true }),
+    ).rejects.toThrow(/no approval handler/);
+    expect(stdioTransportConstructs).toHaveLength(0);
+  });
+
+  it('skips approval when stdio_require_approval is false', async () => {
+    pool.applySecurityConfig({
+      stdio_command_allowlist: ['npx'],
+      stdio_require_approval: false,
+    });
+
+    await pool.connectDynamic('auto', { transport: 'stdio', command: 'npx', enabled: true });
+    expect(stdioTransportConstructs).toHaveLength(1);
+  });
+
+  it('does not apply allowlist to config-based connect', async () => {
+    pool.applySecurityConfig({ stdio_command_allowlist: [] });
+    await pool.connect('cfg', { transport: 'stdio', command: '/bin/sh', enabled: true });
+    expect(stdioTransportConstructs).toHaveLength(1);
+  });
+});
+
 // ── scope-based cleanup ───────────────────────────────────────────────────
 
 describe('scope-based cleanup', () => {
+  beforeEach(() => {
+    enableTrustedDynamicStdio();
+  });
+
   it('should disconnect servers scoped to a session', async () => {
     await pool.connectDynamic('s1', { transport: 'stdio', command: 'x', enabled: true }, { sessionId: 'sess-A' });
     await pool.connectDynamic('s2', { transport: 'stdio', command: 'x', enabled: true }, { sessionId: 'sess-B' });
@@ -295,6 +408,7 @@ describe('syncWithConfig', () => {
   });
 
   it('should not remove dynamic servers during sync', async () => {
+    enableTrustedDynamicStdio();
     await pool.connectDynamic('dyn', { transport: 'stdio', command: 'x', enabled: true });
     await pool.syncWithConfig({});
     expect(pool.getStatus('dyn')?.connected).toBe(true);
@@ -317,6 +431,10 @@ describe('getStatuses', () => {
 // ── health check ──────────────────────────────────────────────────────────
 
 describe('runHealthCheck', () => {
+  beforeEach(() => {
+    enableTrustedDynamicStdio();
+  });
+
   it('should remove unreachable dynamic servers', async () => {
     const clients: MockMCPClient[] = [];
     mockCreateMCPClient.mockImplementation(async () => {

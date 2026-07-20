@@ -78,7 +78,8 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/daemon.ts` | Process lifecycle, gRPC server startup, signal handling |
 | `daemon/transport.ts` | Unix socket and PID file management |
 | `daemon/tool-router.ts` | Tool execution routing (VS Code, MCP, local) |
-| `daemon/mcp-client-pool.ts` | MCP server connection pool |
+| `daemon/mcp-client-pool.ts` | MCP server connection pool (stdio allowlist + spawn approval) |
+| `daemon/stdio-command-policy.ts` | Dynamic stdio MCP command allowlist (H6 / DR-038) |
 | `daemon/mcp-server.ts` | Embedded MCP server (connection consent + tool_policy) |
 | `core/tool-approval.ts` | Shared tool validator (chat + MCP HTTP) |
 | `daemon/index.ts` | CLI entry point (Commander) |
@@ -328,6 +329,8 @@ Manages connections to external MCP servers defined in config. Uses `@ai-sdk/mcp
 
 - Supports stdio and HTTP/SSE transports
 - Auto-discovers tools on connect and registers them in `ToolRegistry`
+- Dynamic stdio registration requires `security.stdio_command_allowlist` +
+  operator approval (`/api/mcp/stdio-spawns`) before any process is spawned
 - Hot-reloads when config changes (connects new, disconnects removed)
 
 ```yaml

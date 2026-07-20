@@ -334,6 +334,12 @@ Tools from connected MCP servers are automatically available in chat.
 Tool approval policies control which tools can execute without
 confirmation.
 
+Dynamic registration via gRPC (`RegisterMcpServer`) with `transport: stdio`
+is gated: the command must be in `security.stdio_command_allowlist`, and the
+operator must approve the spawn in the dashboard (see
+[CONFIGURATION.md](CONFIGURATION.md#stdio-mcp-spawn-policy-security--dr-038)).
+Prefer HTTP/SSE when the caller starts its own MCP server.
+
 ### Expose Abbenay as an MCP server
 
 With `--mcp`, Abbenay also serves aggregated tools at `POST /mcp` for
