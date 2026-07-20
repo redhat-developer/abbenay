@@ -1,5 +1,5 @@
 /**
- * Unit tests for provider endpoint policy (DR-038 / A1,A3).
+ * Unit tests for provider endpoint policy (DR-039 / A1,A3).
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';

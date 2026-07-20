@@ -606,7 +606,7 @@ compare closes token oracle leaks.
 
 ---
 
-## DR-038: Credential aggregation (A1) + provider endpoint policy (A3); defer encryption-at-rest
+## DR-039: Credential aggregation (A1) + provider endpoint policy (A3); defer encryption-at-rest
 
 **Date:** 2026-07-20
 **Decision:** (1) **A1 — document and harden access, do not eliminate aggregation.**

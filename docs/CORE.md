@@ -219,7 +219,7 @@ if (core.hasProvider('my-anthropic')) { ... }
 | `engine` | `string` | **Required.** Engine type (`"openai"`, `"anthropic"`, etc.) |
 | `apiKey` | `string` | API key value — stored in SecretStore automatically |
 | `apiKeyEnvVar` | `string` | Environment variable name (alternative to `apiKey`) |
-| `baseUrl` | `string` | Custom base URL (overrides engine default); validated per DR-038 endpoint policy |
+| `baseUrl` | `string` | Custom base URL (overrides engine default); validated per DR-039 endpoint policy |
 | `models` | `Record<string, ModelConfig>` | Models to enable |
 
 In-memory providers merge over disk config. If both define the same provider ID, the in-memory version wins.

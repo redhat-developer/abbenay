@@ -490,4 +490,4 @@ internal MCP tool for cross-session retrieval.
 - **Socket**: Unix socket (or named pipe) with user-only permissions
 - **Web dashboard**: Listens on localhost only by default; Bearer auth required
 - **Config files**: Created with mode `0o600` (user read/write only)
-- **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-038)
+- **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-039)

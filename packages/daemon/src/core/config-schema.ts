@@ -144,7 +144,7 @@ export const ServerConfigSchema = z
 /**
  * Full config.yaml shape. Unknown top-level keys are rejected (`.strict()`)
  * to block field injection into saved config files.
- * Provider endpoint host policy (DR-038) is enforced via superRefine so
+ * Provider endpoint host policy (DR-039) is enforced via superRefine so
  * `server.allowed_provider_hosts` / `allow_insecure_provider_http` apply.
  */
 export const ConfigFileSchema = z

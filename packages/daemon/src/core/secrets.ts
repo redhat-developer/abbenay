@@ -29,7 +29,7 @@ export interface SecretAuditEvent {
   /** Secret key name only — never the value */
   key: string;
   op: 'set' | 'delete';
-  /** http-secrets | grpc-secrets | http-configure | grpc-configure */
+  /** http-secrets | grpc-secrets | http-configure | grpc-configure | core-add */
   source: string;
   actor?: string;
 }

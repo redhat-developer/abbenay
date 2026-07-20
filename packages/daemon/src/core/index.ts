@@ -189,7 +189,7 @@ export { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from './constants.js';
 export type { ServerConfig } from './config.js';
 export type { OpenAICompatConfig, OpenAICompatToolsMode } from './config.js';
 
-/** Provider endpoint policy (DR-038) */
+/** Provider endpoint policy (DR-039) */
 export {
   validateProviderEndpoint,
   validateProviderEndpointFormat,
