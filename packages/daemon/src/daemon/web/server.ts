@@ -113,9 +113,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   const security = resolveHttpSecurity(port, options?.host, options);
   app.locals.httpSecurity = security;
 
-  // Parse JSON / form bodies (form used by POST /login)
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: false }));
+  // Parse JSON / form bodies (form used by POST /login).
+  // Default Express limit is 100kb — too small for Open WebUI Legacy/Default
+  // function-calling payloads that embed MCP tool schemas in the prompt.
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
   // CORS — explicit allowlist only (never *)
   app.use(createCorsMiddleware(security.corsOrigins));
