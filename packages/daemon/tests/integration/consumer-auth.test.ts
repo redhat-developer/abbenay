@@ -50,6 +50,16 @@ vi.mock('../../src/core/engines.js', () => ({
     { id: 'mock', requiresKey: false, supportsTools: false, createModel: () => { throw new Error('mock'); } },
   ],
   getEngine: (id: string) => (id === 'mock' ? { id: 'mock', requiresKey: false } : undefined),
+  isKnownEngineId: (id: string) => id === 'mock',
+  validateConfigProviderEngines: (config: { providers?: Record<string, { engine?: string }> }) => {
+    for (const [id, cfg] of Object.entries(config.providers || {})) {
+      if (!cfg?.engine) return { ok: false as const, error: `provider "${id}": engine is required` };
+      if (cfg.engine !== 'mock') {
+        return { ok: false as const, error: `provider "${id}": unknown engine "${cfg.engine}"` };
+      }
+    }
+    return { ok: true as const };
+  },
   fetchModels: async () => [],
   streamChat: async function* () { yield { type: 'done', finishReason: 'stop' }; },
   getProviderTemplates: () => [],
