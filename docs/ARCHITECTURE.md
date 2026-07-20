@@ -79,7 +79,8 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/transport.ts` | Unix socket and PID file management |
 | `daemon/tool-router.ts` | Tool execution routing (VS Code, MCP, local) |
 | `daemon/mcp-client-pool.ts` | MCP server connection pool |
-| `daemon/mcp-server.ts` | Embedded MCP server (exposes daemon as MCP) |
+| `daemon/mcp-server.ts` | Embedded MCP server (connection consent + tool_policy) |
+| `core/tool-approval.ts` | Shared tool validator (chat + MCP HTTP) |
 | `daemon/index.ts` | CLI entry point (Commander) |
 | `daemon/server/abbenay-service.ts` | gRPC service handlers |
 | `daemon/web/server.ts` | Express web server + REST API |
@@ -300,13 +301,16 @@ The `ToolRegistry` collects tools from multiple sources and namespaces them to p
 | MCP server | `mcp:` | `mcp:github/searchCode` |
 | Local (agent-registered) | `local:` | `local:myAgent/search` |
 
-**Tool policy** controls which tools the LLM sees:
+**Tool policy** controls which tools the LLM sees **and** which tools may
+execute via chat or the embedded MCP HTTP endpoint (`/mcp`). Both surfaces
+use the shared `createToolValidator` helper (DR-033):
 
 | Tier | Config field | Behavior |
 |------|-------------|----------|
 | Auto-approve | `auto_approve` | Execute without confirmation |
-| Require approval | `require_approval` | Pause and ask user |
-| Disabled | `disabled_tools` | Never sent to LLM |
+| Require approval | `require_approval` | Pause and ask user (chat SSE or `POST /api/mcp/approvals`) |
+| Disabled | `disabled_tools` | Never sent to LLM; MCP `tools/call` rejected |
+| Default (no match) | — | Ask (secure-by-default, DR-019) |
 
 Patterns support glob matching (e.g., `mcp:filesystem/*`).
 
@@ -456,6 +460,8 @@ internal MCP tool for cross-session retrieval.
 3. Frontend makes API calls to Express routes:
    - GET /api/providers → state.listProviders()
    - GET /api/models → state.listModels()
+   - GET|POST /api/discover-models/:engineId → state.discoverModels()
+     (provider API key via `X-Api-Key` / JSON body only — never `?apiKey=`; DR-035)
    - GET /api/config → loadConfig()
    - POST /api/config → saveConfig()
    - POST /api/secrets → state.secretStore.set()

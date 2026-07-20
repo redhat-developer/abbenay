@@ -104,6 +104,18 @@ export type {
 /** Tool policy pattern matching */
 export { matchesAnyPattern } from './tool-registry.js';
 
+/** Shared tool approval validator (chat + MCP HTTP) */
+export {
+  createToolValidator,
+  authorizeToolExecution,
+  classifyToolPolicy,
+} from './tool-approval.js';
+export type {
+  ApprovalDecision,
+  OnToolApprovalNeeded,
+  ToolPolicyTier,
+} from './tool-approval.js';
+
 // ─── Engine Listing ─────────────────────────────────────────────────────
 
 /** Get all available engines (the fixed set of LLM API implementations) */
@@ -137,8 +149,21 @@ export {
   getConfiguredProviders,
   resolveEngineModelId,
   getEnabledModelNames,
-  isValidVirtualName,
 } from './config.js';
+
+/** Zod schemas for ConfigFile / PolicyConfig validation */
+export {
+  ConfigFileSchema,
+  PolicyConfigSchema,
+  ModelConfigSchema,
+  ProviderConfigSchema,
+  OpenAICompatConfigSchema,
+  OpenAICompatToolsModeSchema,
+  VirtualNameSchema,
+  VIRTUAL_NAME_REGEX,
+  isValidVirtualName,
+  parseConfigFile,
+} from './config-schema.js';
 
 /** Policy management */
 export {
@@ -153,7 +178,9 @@ export {
 } from './policies.js';
 
 /** Shared constants */
-export { DEFAULT_WEB_PORT } from './constants.js';
+export { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from './constants.js';
+export type { ServerConfig } from './config.js';
+export type { OpenAICompatConfig, OpenAICompatToolsMode } from './config.js';
 
 /** Platform-aware path utilities */
 export {

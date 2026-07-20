@@ -582,9 +582,79 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-md);">
             <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
               MCP servers provide tools to the LLM. Configure them in <code>~/.config/abbenay/config.yaml</code> under <code>mcp_servers</code>.
+              Tools invoked via Abbenay's <code>/mcp</code> endpoint use the same approval policy as chat.
             </p>
-            <button class="btn btn-secondary btn-sm" @click="loadMcpServers()">Refresh</button>
+            <button class="btn btn-secondary btn-sm" @click="loadMcpServers(); loadMcpApprovals(); loadMcpConnections()">Refresh</button>
           </div>
+
+          <template x-if="pendingMcpConnections.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg); padding: 1rem; background: #fce7e7; border: 2px solid #c9190b; border-radius: 3px;">
+              <h3 style="margin: 0 0 0.75rem; font-size: 1rem;">Pending MCP client connections</h3>
+              <p style="margin: 0 0 0.75rem; font-size: 0.85rem; color: #6a6e73;">
+                An external MCP client is trying to connect to Abbenay. Approve only if you trust this client.
+              </p>
+              <template x-for="req in pendingMcpConnections" :key="req.requestId">
+                <div style="margin-bottom: 0.75rem; padding: 0.75rem; background: #fff; border-radius: 3px;">
+                  <div style="font-weight: 600;" x-text="req.clientName + ' v' + req.clientVersion"></div>
+                  <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-sm" @click="resolveMcpConnection(req.requestId, 'allow')">Allow once</button>
+                    <button class="btn btn-primary btn-sm" @click="resolveMcpConnection(req.requestId, 'allow', true)">Allow &amp; Remember</button>
+                    <button class="btn btn-secondary btn-sm" style="color: #c00;" @click="resolveMcpConnection(req.requestId, 'deny')">Deny</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="mcpSessions.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg);">
+              <h3 style="margin: 0 0 0.5rem; font-size: 0.95rem;">Active MCP client sessions</h3>
+              <template x-for="sess in mcpSessions" :key="sess.sessionId">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #f0f0f0;">
+                  <span>
+                    <strong x-text="sess.clientName"></strong>
+                    <span style="color: #6a6e73; font-size: 0.85rem;" x-text="' v' + sess.clientVersion"></span>
+                  </span>
+                  <button class="btn btn-secondary btn-sm" @click="revokeMcpSession(sess.sessionId)">Revoke</button>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="mcpRemembered.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg);">
+              <h3 style="margin: 0 0 0.5rem; font-size: 0.95rem;">Remembered MCP clients</h3>
+              <p style="margin: 0 0 0.5rem; font-size: 0.85rem; color: #6a6e73;">
+                These client names skip connection consent for this daemon lifetime. Forget to require approval again.
+              </p>
+              <template x-for="name in mcpRemembered" :key="name">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #f0f0f0;">
+                  <strong x-text="name"></strong>
+                  <button class="btn btn-secondary btn-sm" @click="forgetMcpClient(name)">Forget</button>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="pendingMcpApprovals.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg); padding: 1rem; background: #fff3cd; border: 2px solid #e6a817; border-radius: 3px;">
+              <h3 style="margin: 0 0 0.75rem; font-size: 1rem;">Pending MCP tool approvals</h3>
+              <p style="margin: 0 0 0.75rem; font-size: 0.85rem; color: #6a6e73;">
+                An MCP client called a tool that requires your consent. Approve or deny to unblock the request.
+              </p>
+              <template x-for="req in pendingMcpApprovals" :key="req.requestId">
+                <div style="margin-bottom: 0.75rem; padding: 0.75rem; background: #fff; border-radius: 3px;">
+                  <div style="font-weight: 600;" x-text="req.namespacedName || req.toolName"></div>
+                  <pre style="font-size: 0.75rem; overflow: auto; max-height: 8rem; margin: 0.5rem 0;" x-text="JSON.stringify(req.args || {}, null, 2)"></pre>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary btn-sm" @click="resolveMcpApproval(req.requestId, 'allow')">Allow</button>
+                    <button class="btn btn-secondary btn-sm" @click="resolveMcpApproval(req.requestId, 'deny')">Deny</button>
+                    <button class="btn btn-secondary btn-sm" style="color: #c00;" @click="resolveMcpApproval(req.requestId, 'abort')">Abort</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
 
           <template x-if="mcpServers.length === 0">
             <div class="empty-state">
@@ -1044,6 +1114,24 @@
                     </div>
                   </fieldset>
 
+                  <!-- OpenAI-compatible /v1 tools (DR-032) -->
+                  <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+                    <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">OpenAI-compatible API</legend>
+                    <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                      <input type="checkbox"
+                             style="margin-top: 2px;"
+                             :checked="cfg.openai_compat_tools === 'passthrough'"
+                             @change="updateModelParam(modelName, 'openai_compat_tools', $event.target.checked ? 'passthrough' : undefined)">
+                      <span>
+                        <span style="font-weight: 500;">Allow OpenAI tools on /v1</span>
+                        <span class="info-tip" data-tip="Checked: force tools passthrough for this model on /v1 (client executes tools; no Abbenay approval UI). Unchecked: clear the per-model override and inherit global openai_compat.tools — which defaults to off, but if global is passthrough this model stays enabled." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        <div style="font-size: 0.75rem; color: #6a6e73; margin-top: 4px;">
+                          Passthrough for client-executed tools (e.g. Open WebUI). Unchecked inherits global (default off).
+                        </div>
+                      </span>
+                    </label>
+                  </fieldset>
+
                   <!-- Add Variant removed — user can add same model again from Available list -->
                 </div>
               </div>
@@ -1303,6 +1391,14 @@
 </div>
 
 <script>
+/** Authenticated same-origin fetch: sends cookies + CSRF for mutating requests. */
+function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const csrf = typeof window.__ABBENAY_CSRF__ === 'string' ? window.__ABBENAY_CSRF__ : '';
+  if (csrf) headers.set('X-CSRF-Token', csrf);
+  return fetch(url, { ...options, credentials: 'same-origin', headers });
+}
+
 function dashboard() {
   return {
     loading: false,
@@ -1328,6 +1424,10 @@ function dashboard() {
     
     // MCP Servers
     mcpServers: [],
+    pendingMcpApprovals: [],
+    pendingMcpConnections: [],
+    mcpSessions: [],
+    mcpRemembered: [],
     
     // Tools
     allTools: [],
@@ -1368,18 +1468,18 @@ function dashboard() {
     // ── Init ──
     async init() {
       try {
-        const resp = await fetch('/api/config?location=user');
+        const resp = await apiFetch('/api/config?location=user');
         const data = await resp.json();
         this.userConfigPath = data.path || '';
       } catch {}
       try {
-        const resp = await fetch('/api/engines');
+        const resp = await apiFetch('/api/engines');
         const data = await resp.json();
         this.engines = data.engines || [];
       } catch {}
       // Auto-detect connected workspaces and default to "all" if one exists
       try {
-        const wsResp = await fetch('/api/workspaces');
+        const wsResp = await apiFetch('/api/workspaces');
         this.connectedWorkspaces = (await wsResp.json()).workspaces || [];
         if (this.connectedWorkspaces.length > 0) {
           this.workspacePath = this.connectedWorkspaces[0];
@@ -1390,8 +1490,15 @@ function dashboard() {
       await this.refresh();
       // Load MCP servers, tools, and policies in background
       this.loadMcpServers();
+      this.loadMcpApprovals();
+      this.loadMcpConnections();
       this.loadTools();
       this.loadPolicies();
+      // Poll pending MCP connection consent + tool approvals
+      setInterval(() => {
+        this.loadMcpApprovals();
+        this.loadMcpConnections();
+      }, 2000);
     },
     
     // ── Config helpers ──
@@ -1404,7 +1511,7 @@ function dashboard() {
       try {
         if (this.configLocation === 'all') {
           // Fetch both user and workspace configs, merge client-side with source tags
-          const userResp = await fetch('/api/config?location=user');
+          const userResp = await apiFetch('/api/config?location=user');
           const userData = await userResp.json();
           const userProviders = userData.config?.providers || {};
           
@@ -1416,7 +1523,7 @@ function dashboard() {
           
           // If workspace is selected, fetch and overlay workspace providers
           if (this.workspacePath) {
-            const wsResp = await fetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
+            const wsResp = await apiFetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
             const wsData = await wsResp.json();
             const wsProviders = wsData.config?.providers || {};
             for (const [id, cfg] of Object.entries(wsProviders)) {
@@ -1427,7 +1534,7 @@ function dashboard() {
           this.providerConfig = merged;
         } else {
           const loc = this.getConfigLocation();
-          const resp = await fetch(`/api/config?location=${encodeURIComponent(loc)}`);
+          const resp = await apiFetch(`/api/config?location=${encodeURIComponent(loc)}`);
           const data = await resp.json();
           this.providerConfig = data.config?.providers || {};
         }
@@ -1451,22 +1558,22 @@ function dashboard() {
             }
           }
           // Read-modify-write user config to preserve mcp_servers, tool_policy, etc.
-          const userExist = await fetch('/api/config?location=user');
+          const userExist = await apiFetch('/api/config?location=user');
           const userExistData = await userExist.json();
           const userConfig = userExistData.config || {};
           userConfig.providers = userProviders;
-          await fetch('/api/config', {
+          await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ location: 'user', config: userConfig }),
           });
           // Save workspace config if we have one
           if (this.workspacePath && Object.keys(wsProviders).length > 0) {
-            const wsExist = await fetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
+            const wsExist = await apiFetch(`/api/config?location=${encodeURIComponent(this.workspacePath)}`);
             const wsExistData = await wsExist.json();
             const wsConfig = wsExistData.config || {};
             wsConfig.providers = wsProviders;
-            await fetch('/api/config', {
+            await apiFetch('/api/config', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ location: this.workspacePath, config: wsConfig }),
@@ -1475,7 +1582,7 @@ function dashboard() {
         } else {
           const loc = this.getConfigLocation();
           // Read existing config first to preserve mcp_servers, tool_policy, etc.
-          const existResp = await fetch(`/api/config?location=${encodeURIComponent(loc)}`);
+          const existResp = await apiFetch(`/api/config?location=${encodeURIComponent(loc)}`);
           const existData = await existResp.json();
           const existConfig = existData.config || {};
           // Strip _source tags before saving
@@ -1486,7 +1593,7 @@ function dashboard() {
             clean[id] = c;
           }
           existConfig.providers = clean;
-          await fetch('/api/config', {
+          await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ location: loc, config: existConfig }),
@@ -1501,7 +1608,7 @@ function dashboard() {
         const loc = this.getConfigLocation();
         const wsParam = this.workspacePath ? `?workspace=${encodeURIComponent(this.workspacePath)}` : '';
         const modelsUrl = (loc === 'all' || loc !== 'user') ? `/api/models${wsParam}` : '/api/models';
-        const [statusRes, modelsRes] = await Promise.all([fetch('/api/status'), fetch(modelsUrl)]);
+        const [statusRes, modelsRes] = await Promise.all([apiFetch('/api/status'), fetch(modelsUrl)]);
         this.status = await statusRes.json();
         const modelsData = await modelsRes.json();
         this.models = modelsData.models || [];
@@ -1540,13 +1647,14 @@ function dashboard() {
       if (params.top_k != null) parts.push(`top_k=${params.top_k}`);
       if (params.max_tokens != null) parts.push(`max=${params.max_tokens}`);
       if (params.system_prompt) parts.push('sys_prompt');
+      if (params.openai_compat_tools === 'passthrough') parts.push('v1_tools');
       return parts.length > 0 ? parts.join(', ') : 'default';
     },
     
     // ── Config location modal ──
     async openConfigModal() {
       try {
-        const resp = await fetch('/api/workspaces');
+        const resp = await apiFetch('/api/workspaces');
         this.connectedWorkspaces = (await resp.json()).workspaces || [];
       } catch { this.connectedWorkspaces = []; }
       this.showConfigModal = true;
@@ -1615,10 +1723,11 @@ function dashboard() {
       this.wizardFromModelsTab = true;
       // Discover models so the dual-list has data if user clicks "Back to models"
       try {
-        const params = new URLSearchParams();
-        params.set('providerId', model.provider);
-        const url = `/api/discover-models/${encodeURIComponent(model.engine)}?${params}`;
-        const resp = await fetch(url);
+        const resp = await apiFetch(`/api/discover-models/${encodeURIComponent(model.engine)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerId: model.provider }),
+        });
         const data = await resp.json();
         this.wizardDiscoveredModels = data.models || [];
       } catch (e) { console.error('Discovery failed:', e); }
@@ -1638,17 +1747,21 @@ function dashboard() {
         this.wizardStep = 2;
       } else if (this.wizardStep === 2) {
         if (!this.wizardName) return;
-        // Discover models for Step 3
+        // Discover models for Step 3 — API keys go in header/body only (never query)
         try {
-          const params = new URLSearchParams();
-          if (this.wizardApiKey) params.set('apiKey', this.wizardApiKey);
-          if (this.wizardBaseUrl) params.set('baseUrl', this.wizardBaseUrl);
+          const body = {};
+          if (this.wizardBaseUrl) body.baseUrl = this.wizardBaseUrl;
           // In edit mode without a new key, tell backend to resolve from config
           if (this.wizardEditMode && !this.wizardApiKey) {
-            params.set('providerId', this.wizardEditId);
+            body.providerId = this.wizardEditId;
           }
-          const url = `/api/discover-models/${encodeURIComponent(this.wizardEngine)}?${params}`;
-          const resp = await fetch(url);
+          const headers = { 'Content-Type': 'application/json' };
+          if (this.wizardApiKey) headers['X-Api-Key'] = this.wizardApiKey;
+          const resp = await apiFetch(`/api/discover-models/${encodeURIComponent(this.wizardEngine)}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+          });
           const data = await resp.json();
           this.wizardDiscoveredModels = data.models || [];
         } catch (e) { console.error('Discovery failed:', e); }
@@ -1678,7 +1791,7 @@ function dashboard() {
           // User entered a new key — save it
           const keychainName = existingCfg.api_key_keychain_name || `${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
           try {
-            await fetch(`/api/secrets/${keychainName}`, {
+            await apiFetch(`/api/secrets/${keychainName}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ value: this.wizardApiKey }),
@@ -1808,7 +1921,7 @@ function dashboard() {
       if (!confirm(`Delete provider "${provId}"?`)) return;
       const cfg = this.providerConfig[provId];
       if (cfg?.api_key_keychain_name) {
-        try { await fetch(`/api/secrets/${cfg.api_key_keychain_name}`, { method: 'DELETE' }); } catch {}
+        try { await apiFetch(`/api/secrets/${cfg.api_key_keychain_name}`, { method: 'DELETE' }); } catch {}
       }
       delete this.providerConfig[provId];
       this.providerConfig = { ...this.providerConfig };
@@ -1819,15 +1932,83 @@ function dashboard() {
     // ── MCP Servers ──
     async loadMcpServers() {
       try {
-        const resp = await fetch('/api/mcp-servers');
+        const resp = await apiFetch('/api/mcp-servers');
         const data = await resp.json();
         this.mcpServers = data.mcp_servers || [];
       } catch (e) { console.error('Failed to load MCP servers:', e); }
     },
+
+    async loadMcpApprovals() {
+      try {
+        const resp = await apiFetch('/api/mcp/approvals');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        this.pendingMcpApprovals = data.pending || [];
+      } catch (e) { /* ignore — MCP server may be stopped */ }
+    },
+
+    async loadMcpConnections() {
+      try {
+        const resp = await apiFetch('/api/mcp/connections');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        this.pendingMcpConnections = data.pending || [];
+        this.mcpSessions = data.sessions || [];
+        this.mcpRemembered = data.remembered || [];
+      } catch (e) { /* ignore */ }
+    },
+
+    async resolveMcpConnection(requestId, decision, remember = false) {
+      try {
+        await apiFetch(`/api/mcp/connections/${encodeURIComponent(requestId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision, remember: !!remember }),
+        });
+        await this.loadMcpConnections();
+      } catch (e) {
+        console.error('Failed to resolve MCP connection:', e);
+      }
+    },
+
+    async revokeMcpSession(sessionId) {
+      try {
+        await apiFetch(`/api/mcp/connections/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+        });
+        await this.loadMcpConnections();
+      } catch (e) {
+        console.error('Failed to revoke MCP session:', e);
+      }
+    },
+
+    async forgetMcpClient(clientName) {
+      try {
+        await apiFetch(`/api/mcp/connections/remembered/${encodeURIComponent(clientName)}`, {
+          method: 'DELETE',
+        });
+        await this.loadMcpConnections();
+      } catch (e) {
+        console.error('Failed to forget MCP client:', e);
+      }
+    },
+
+    async resolveMcpApproval(requestId, decision) {
+      try {
+        await apiFetch(`/api/mcp/approvals/${encodeURIComponent(requestId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision }),
+        });
+        await this.loadMcpApprovals();
+      } catch (e) {
+        console.error('Failed to resolve MCP approval:', e);
+      }
+    },
     
     async reconnectMcpServer(serverId) {
       try {
-        await fetch(`/api/mcp-servers/${encodeURIComponent(serverId)}/reconnect`, { method: 'POST' });
+        await apiFetch(`/api/mcp-servers/${encodeURIComponent(serverId)}/reconnect`, { method: 'POST' });
         await this.loadMcpServers();
       } catch (e) { console.error('Reconnect failed:', e); }
     },
@@ -1835,12 +2016,12 @@ function dashboard() {
     async toggleMcpServer(serverId, enabled) {
       try {
         // Load current config, toggle the server's enabled flag, save back
-        const resp = await fetch('/api/config?location=user');
+        const resp = await apiFetch('/api/config?location=user');
         const data = await resp.json();
         const config = data.config || {};
         if (config.mcp_servers && config.mcp_servers[serverId]) {
           config.mcp_servers[serverId].enabled = enabled;
-          await fetch('/api/config', {
+          await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ location: 'user', config }),
@@ -1854,12 +2035,12 @@ function dashboard() {
     // ── Tools ──
     async loadTools() {
       try {
-        const resp = await fetch('/api/tools');
+        const resp = await apiFetch('/api/tools');
         const data = await resp.json();
         this.allTools = data.tools || [];
         
         // Load tool policy from config
-        const cfgResp = await fetch('/api/config?location=user');
+        const cfgResp = await apiFetch('/api/config?location=user');
         const cfgData = await cfgResp.json();
         const policy = cfgData.config?.tool_policy || {};
         this.toolPolicy = {};
@@ -1929,7 +2110,7 @@ function dashboard() {
       }
       
       try {
-        const resp = await fetch('/api/config?location=user');
+        const resp = await apiFetch('/api/config?location=user');
         const data = await resp.json();
         const config = data.config || {};
         const existing = config.tool_policy || {};
@@ -1937,7 +2118,7 @@ function dashboard() {
         existing.require_approval = require_approval.length > 0 ? require_approval : undefined;
         existing.auto_approve = auto_approve.length > 0 ? auto_approve : undefined;
         config.tool_policy = existing;
-        await fetch('/api/config', {
+        await apiFetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ location: 'user', config }),
@@ -1948,7 +2129,7 @@ function dashboard() {
     // ── Policies ──
     async loadPolicies() {
       try {
-        const resp = await fetch('/api/policies');
+        const resp = await apiFetch('/api/policies');
         const data = await resp.json();
         this.allPolicies = data.policies || [];
       } catch (e) { console.error('Failed to load policies:', e); }
@@ -1963,7 +2144,7 @@ function dashboard() {
         newName = name + '-custom-' + i++;
       }
       try {
-        await fetch('/api/policies', {
+        await apiFetch('/api/policies', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: newName, config: JSON.parse(JSON.stringify(src.config)) }),
@@ -1975,7 +2156,7 @@ function dashboard() {
     async deletePolicy(name) {
       if (!confirm(`Delete custom policy "${name}"?`)) return;
       try {
-        await fetch(`/api/policies/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        await apiFetch(`/api/policies/${encodeURIComponent(name)}`, { method: 'DELETE' });
         await this.loadPolicies();
       } catch (e) { console.error('Failed to delete policy:', e); }
     },
@@ -2043,7 +2224,7 @@ function dashboard() {
       const r = clean(cfg.reliability); if (r) payload.reliability = r;
 
       try {
-        const resp = await fetch('/api/policies', {
+        const resp = await apiFetch('/api/policies', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, config: payload }),
@@ -2072,7 +2253,7 @@ function dashboard() {
       const messages = this.chatMessages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
       messages.push({ role: 'user', content: userMessage });
       try {
-        const response = await fetch('/api/chat', {
+        const response = await apiFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: this.selectedModel, messages }),
@@ -2139,7 +2320,7 @@ function dashboard() {
       if (!this.pendingApproval || !this.activeChatId) return;
       const { chatId, requestId } = this.pendingApproval;
       try {
-        await fetch(`/api/chat/${chatId}/approve`, {
+        await apiFetch(`/api/chat/${chatId}/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId, decision }),

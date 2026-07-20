@@ -40,6 +40,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check no query-string secrets
+        run: npm run check:no-query-secrets
+
       - name: Disable GPU acceleration
         run: |
           mkdir -p ~/.vscode

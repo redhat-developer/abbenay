@@ -98,6 +98,10 @@ class AbbenayClient:
         socket_path: Optional[str] = None,
         host: Optional[str] = None,
         port: int = 50051,
+        *,
+        tls: bool = False,
+        ca_cert: Optional[str] = None,
+        ssl_target_name: Optional[str] = None,
     ):
         """Initialize the client.
         
@@ -105,6 +109,10 @@ class AbbenayClient:
             socket_path: Path to Unix socket (default: ~/.abbenay/daemon.sock)
             host: TCP host (if using TCP instead of Unix socket)
             port: TCP port (default: 50051)
+            tls: Use TLS for TCP connections (required when daemon uses --grpc-tls)
+            ca_cert: Path to CA / trust PEM matching the daemon certificate
+            ssl_target_name: SSL target name override (default: abbenay-grpc for
+                auto-generated self-signed certs)
         """
         if socket_path:
             self._target = f"unix://{socket_path}"
@@ -114,7 +122,10 @@ class AbbenayClient:
             # Default to Unix socket
             default_socket = self._default_socket_path()
             self._target = f"unix://{default_socket}"
-        
+
+        self._tls = tls or ca_cert is not None
+        self._ca_cert = ca_cert
+        self._ssl_target_name = ssl_target_name or "abbenay-grpc"
         self._channel: Optional[grpc.aio.Channel] = None
         self._stub = None
         self._client_id: Optional[str] = None
@@ -222,7 +233,22 @@ class AbbenayClient:
             self._client_id = None
 
         try:
-            self._channel = grpc.aio.insecure_channel(self._target)
+            is_unix = self._target.startswith("unix:")
+            if self._tls and not is_unix:
+                root_certs = None
+                if self._ca_cert:
+                    with open(self._ca_cert, "rb") as f:
+                        root_certs = f.read()
+                credentials = grpc.ssl_channel_credentials(root_certificates=root_certs)
+                options = [
+                    ("grpc.ssl_target_name_override", self._ssl_target_name),
+                    ("grpc.default_authority", self._ssl_target_name),
+                ]
+                self._channel = grpc.aio.secure_channel(
+                    self._target, credentials, options=options
+                )
+            else:
+                self._channel = grpc.aio.insecure_channel(self._target)
             self._stub = grpc_service.AbbenayStub(self._channel)
             
             response = await self._stub.Register(

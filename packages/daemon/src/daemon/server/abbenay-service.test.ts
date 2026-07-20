@@ -116,6 +116,11 @@ describe('configFileToProto', () => {
           capabilities: {
             inline_policy: true,
             mcp_register: true,
+            secrets: true,
+            config: true,
+            providers: true,
+            shutdown: false,
+            chat: true,
           },
         },
       },
@@ -125,6 +130,11 @@ describe('configFileToProto', () => {
     expect(proto.consumers!['apme'].token_env).toBe('APME_TOKEN');
     expect(proto.consumers!['apme'].capabilities!.inline_policy).toBe(true);
     expect(proto.consumers!['apme'].capabilities!.mcp_register).toBe(true);
+    expect(proto.consumers!['apme'].capabilities!.secrets).toBe(true);
+    expect(proto.consumers!['apme'].capabilities!.config).toBe(true);
+    expect(proto.consumers!['apme'].capabilities!.providers).toBe(true);
+    expect(proto.consumers!['apme'].capabilities!.shutdown).toBe(false);
+    expect(proto.consumers!['apme'].capabilities!.chat).toBe(true);
   });
 });
 
@@ -203,7 +213,12 @@ describe('protoToConfigFile', () => {
       consumers: {
         apme: {
           token_env: 'APME_TOKEN',
-          capabilities: { inline_policy: true, mcp_register: false },
+          capabilities: {
+            inline_policy: true,
+            mcp_register: false,
+            secrets: true,
+            chat: true,
+          },
         },
       },
     };
@@ -212,6 +227,8 @@ describe('protoToConfigFile', () => {
     expect(roundTripped.consumers!['apme'].token_env).toBe('APME_TOKEN');
     expect(roundTripped.consumers!['apme'].capabilities.inline_policy).toBe(true);
     expect(roundTripped.consumers!['apme'].capabilities.mcp_register).toBe(false);
+    expect(roundTripped.consumers!['apme'].capabilities.secrets).toBe(true);
+    expect(roundTripped.consumers!['apme'].capabilities.chat).toBe(true);
   });
 
   it('provider with env var key instead of keychain', () => {

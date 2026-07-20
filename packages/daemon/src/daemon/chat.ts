@@ -15,7 +15,7 @@ import * as readline from 'node:readline';
 import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { DaemonState } from './state.js';
-import { SessionStore } from '../core/session-store.js';
+import { SessionStore, LOCAL_SESSION_OWNER } from '../core/session-store.js';
 import { maybeSummarize } from '../core/session-summarizer.js';
 import type { ChatToolOptions } from '../core/state.js';
 
@@ -64,12 +64,12 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
         console.error('--model is required when creating a new session');
         process.exit(1);
       }
-      const session = await store.create(model);
+      const session = await store.create(model, undefined, undefined, undefined, LOCAL_SESSION_OWNER);
       sessionId = session.id;
       console.error(`${DIM}Created session: ${sessionId}${RESET}`);
     } else {
       try {
-        const session = await store.get(options.session, true);
+        const session = await store.getOwned(options.session, LOCAL_SESSION_OWNER, true);
         sessionId = session.id;
         model = session.model;
       } catch {

@@ -21,13 +21,17 @@ const mockResolveEngineModelId = vi.fn().mockImplementation(
   (name: string, cfg: ModelConfig) => cfg.model_id || name
 );
 
-vi.mock('./core/config.js', () => ({
-  loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
-  loadWorkspaceConfig: (...a: unknown[]) => mockLoadWorkspaceConfig(...a),
-  mergeConfigs: (...a: unknown[]) => mockMergeConfigs(...a),
-  mergeMultipleWorkspaceConfigs: (...a: unknown[]) => mockMergeMultipleWorkspaceConfigs(...a),
-  resolveEngineModelId: (...a: unknown[]) => mockResolveEngineModelId(...a),
-}));
+vi.mock('./core/config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./core/config.js')>();
+  return {
+    ...actual,
+    loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
+    loadWorkspaceConfig: (...a: unknown[]) => mockLoadWorkspaceConfig(...a),
+    mergeConfigs: (...a: unknown[]) => mockMergeConfigs(...a),
+    mergeMultipleWorkspaceConfigs: (...a: unknown[]) => mockMergeMultipleWorkspaceConfigs(...a),
+    resolveEngineModelId: (...a: unknown[]) => mockResolveEngineModelId(...a),
+  };
+});
 
 // ── Mock: core/engines ───────────────────────────────────────────────────────
 
@@ -973,150 +977,10 @@ function mockGrpcCall(token?: string): { metadata: grpc.Metadata } {
   return { metadata };
 }
 
-describe('authorizeConsumer', () => {
-  it('should allow when no consumers section (default-open)', () => {
+describe('authorizeConsumer (re-export smoke)', () => {
+  it('should allow when no consumers section (default-open local DX)', () => {
     const result = authorizeConsumer(mockGrpcCall(), { providers: {} }, 'inline_policy');
     expect(result.allowed).toBe(true);
-  });
-
-  it('should allow when consumers section is empty', () => {
-    const result = authorizeConsumer(mockGrpcCall(), { providers: {}, consumers: {} }, 'inline_policy');
-    expect(result.allowed).toBe(true);
-  });
-
-  it('should reject when consumers configured but no token provided', () => {
-    const prev = process.env.TEST_TOKEN;
-    process.env.TEST_TOKEN = 'secret123';
-    try {
-      const result = authorizeConsumer(mockGrpcCall(), {
-        providers: {},
-        consumers: {
-          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
-        },
-      }, 'inline_policy');
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('x-abbenay-token');
-    } finally {
-      if (prev === undefined) delete process.env.TEST_TOKEN;
-      else process.env.TEST_TOKEN = prev;
-    }
-  });
-
-  it('should reject when token does not match any consumer (inline_policy)', () => {
-    const prev = process.env.TEST_TOKEN;
-    process.env.TEST_TOKEN = 'secret123';
-    try {
-      const result = authorizeConsumer(mockGrpcCall('wrong-token'), {
-        providers: {},
-        consumers: {
-          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
-        },
-      }, 'inline_policy');
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('not recognized');
-    } finally {
-      if (prev === undefined) delete process.env.TEST_TOKEN;
-      else process.env.TEST_TOKEN = prev;
-    }
-  });
-
-  it('should allow when token matches consumer with inline_policy capability', () => {
-    const prev = process.env.TEST_TOKEN;
-    process.env.TEST_TOKEN = 'secret123';
-    try {
-      const result = authorizeConsumer(mockGrpcCall('secret123'), {
-        providers: {},
-        consumers: {
-          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
-        },
-      }, 'inline_policy');
-      expect(result.allowed).toBe(true);
-      expect(result.consumer).toBe('apme');
-    } finally {
-      if (prev === undefined) delete process.env.TEST_TOKEN;
-      else process.env.TEST_TOKEN = prev;
-    }
-  });
-
-  it('should reject when token matches but consumer lacks requested capability', () => {
-    const prev = process.env.TEST_TOKEN;
-    process.env.TEST_TOKEN = 'secret123';
-    try {
-      const result = authorizeConsumer(mockGrpcCall('secret123'), {
-        providers: {},
-        consumers: {
-          limited: { token_env: 'TEST_TOKEN', capabilities: {} },
-        },
-      }, 'inline_policy');
-      expect(result.allowed).toBe(false);
-    } finally {
-      if (prev === undefined) delete process.env.TEST_TOKEN;
-      else process.env.TEST_TOKEN = prev;
-    }
-  });
-
-  it('should allow mcp_register when token matches with that capability', () => {
-    const prev = process.env.TEST_TOKEN;
-    process.env.TEST_TOKEN = 'mcp-secret';
-    try {
-      const result = authorizeConsumer(mockGrpcCall('mcp-secret'), {
-        providers: {},
-        consumers: {
-          apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
-        },
-      }, 'mcp_register');
-      expect(result.allowed).toBe(true);
-      expect(result.consumer).toBe('apme');
-    } finally {
-      if (prev === undefined) delete process.env.TEST_TOKEN;
-      else process.env.TEST_TOKEN = prev;
-    }
-  });
-
-  it('should reject mcp_register when consumer only has inline_policy', () => {
-    const prev = process.env.TEST_TOKEN;
-    process.env.TEST_TOKEN = 'mcp-secret';
-    try {
-      const result = authorizeConsumer(mockGrpcCall('mcp-secret'), {
-        providers: {},
-        consumers: {
-          apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
-        },
-      }, 'mcp_register');
-      expect(result.allowed).toBe(false);
-    } finally {
-      if (prev === undefined) delete process.env.TEST_TOKEN;
-      else process.env.TEST_TOKEN = prev;
-    }
-  });
-
-  it('should reject mcp_register when no token provided', () => {
-    const result = authorizeConsumer(mockGrpcCall(), {
-      providers: {},
-      consumers: {
-        apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
-      },
-    }, 'mcp_register');
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('consumer authentication');
-  });
-
-  it('should reject mcp_register when token does not match', () => {
-    const prev = process.env.TEST_TOKEN;
-    process.env.TEST_TOKEN = 'mcp-secret';
-    try {
-      const result = authorizeConsumer(mockGrpcCall('wrong-token'), {
-        providers: {},
-        consumers: {
-          apme: { token_env: 'TEST_TOKEN', capabilities: { mcp_register: true } },
-        },
-      }, 'mcp_register');
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('not recognized');
-    } finally {
-      if (prev === undefined) delete process.env.TEST_TOKEN;
-      else process.env.TEST_TOKEN = prev;
-    }
   });
 });
 

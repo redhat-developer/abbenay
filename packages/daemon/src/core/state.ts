@@ -35,7 +35,8 @@ import {
   type ToolExecutor,
   type ToolValidationCallback,
 } from './engines.js';
-import { matchesAnyPattern, type ToolRegistry } from './tool-registry.js';
+import type { ToolRegistry } from './tool-registry.js';
+import { createToolValidator } from './tool-approval.js';
 import { VERSION } from '../version.js';
 
 // ── Virtual provider info (runtime, for API responses) ─────────────────
@@ -612,7 +613,8 @@ export class CoreState {
       tools = undefined;
       resolvedExecutor = undefined;
     } else if (effectiveToolMode === 'passthrough') {
-      tools = undefined;
+      // Client-provided schemas only — no Abbenay executor (caller runs tools).
+      tools = toolOptions?.tools;
       resolvedExecutor = undefined;
       console.warn(`[State] passthrough mode: tools will be sent to LLM but not executed (delegated to caller)`);
     } else {
@@ -640,40 +642,28 @@ export class CoreState {
 
     // ── Build tool validator from policy + caller's approval callback ──
     // Secure-by-default: all tools require approval unless explicitly
-    // listed in auto_approve.  See DR-019.
-    // Precedence: require_approval > auto_approve > default (ask).
+    // listed in auto_approve.  See DR-019 / DR-033.
+    // Same createToolValidator() path as MCP HTTP (/mcp) — no bypass.
     let toolValidator: ToolValidationCallback | undefined;
     if (toolOptions?.onToolApprovalNeeded && this.toolRegistry) {
       const registry = this.toolRegistry;
-      const requirePatterns = toolPolicy?.require_approval;
-      const autoPatterns = toolPolicy?.auto_approve;
-
-      toolValidator = async (toolName: string, args: unknown): Promise<'allow' | 'deny' | 'abort'> => {
-        const resolved = registry.resolve(toolName);
-        const nsName = resolved?.namespacedName || toolName;
-
-        if (matchesAnyPattern(requirePatterns, nsName)) {
-          const requestId = crypto.randomUUID();
-          debug(`[State] Tool "${toolName}" (${nsName}) requires approval (explicit) — requestId=${requestId}`);
-          return toolOptions.onToolApprovalNeeded!(requestId, toolName, args, nsName);
-        }
-
-        if (matchesAnyPattern(autoPatterns, nsName)) {
-          return 'allow';
-        }
-
-        const requestId = crypto.randomUUID();
-        debug(`[State] Tool "${toolName}" (${nsName}) requires approval (default) — requestId=${requestId}`);
-        return toolOptions.onToolApprovalNeeded!(requestId, toolName, args, nsName);
-      };
+      const onApproval = toolOptions.onToolApprovalNeeded;
+      const inner = createToolValidator(registry, toolPolicy, async (requestId, toolName, args, nsName) => {
+        debug(`[State] Tool "${toolName}" (${nsName || toolName}) requires approval — requestId=${requestId}`);
+        return onApproval(requestId, toolName, args, nsName);
+      });
+      toolValidator = inner;
     }
 
     // ── Resolve maxSteps for tool loop ──
-    // Priority: caller > config tool_policy > policy tool.max_tool_iterations > default
-    const maxSteps = toolOptions?.maxToolIterations
-      ?? toolPolicy?.max_tool_iterations
-      ?? flatPolicy?.maxToolIterations
-      ?? 10;
+    // Priority: caller > config tool_policy > policy tool.max_tool_iterations > default.
+    // Passthrough never runs a multi-step executor loop — stop after the model proposes calls.
+    const maxSteps = effectiveToolMode === 'passthrough'
+      ? 1
+      : (toolOptions?.maxToolIterations
+        ?? toolPolicy?.max_tool_iterations
+        ?? flatPolicy?.maxToolIterations
+        ?? 10);
 
     // ── Call the actual engine ──
     const isJsonStrict = flatPolicy?.outputFormat === 'json_only';

@@ -37,7 +37,7 @@ The `start` command runs all services:
 | Web dashboard | `http://localhost:8787` |
 | REST API | `http://localhost:8787/api/*` |
 | OpenAI-compatible API | `http://localhost:8787/v1/chat/completions` |
-| MCP server | `http://localhost:8787/mcp` (when `--mcp` is passed) |
+| MCP server | `http://localhost:8787/mcp` (when `--mcp` is passed; requires Bearer auth; tools honor `tool_policy`) |
 | gRPC (TCP) | `localhost:50051` (for Python/programmatic clients) |
 
 ### What's different from bare-metal
@@ -99,28 +99,38 @@ Mount this file into the container at:
 podman run -d --name abbenay \
   -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
   -e OPENROUTER_API_KEY=sk-or-... \
+  -e ABBENAY_API_TOKEN=change-me \
   -p 8787:8787 \
   -p 50051:50051 \
   abbenay:latest
 ```
 
-With consumer authentication (for programmatic clients like APME):
+Consumer authentication is **required** for the default image CMD (`--grpc-host
+0.0.0.0`). Use `config.container.example.yaml` (includes a `consumers` section)
+and pass the consumer token env:
 
 ```bash
 podman run -d --name abbenay \
   -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
   -e OPENROUTER_API_KEY=sk-or-... \
+  -e ABBENAY_API_TOKEN=change-me \
   -e APME_TOKEN=secret123 \
   -p 8787:8787 \
   -p 50051:50051 \
   abbenay:latest
 ```
 
+Without a `consumers` section the daemon refuses to start on `0.0.0.0` unless
+you pass `--allow-open-auth` or `--insecure` (not recommended).
+
 ### Verify it's running
 
 ```bash
-curl http://localhost:8787/api/health
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/api/health
 ```
+
+Set `ABBENAY_API_TOKEN` in the container environment (required for the
+built-in healthcheck and all HTTP routes).
 
 ### View logs
 
@@ -132,9 +142,10 @@ podman logs -f abbenay
 
 ## Overriding the command
 
-The default `CMD` is `start --port 8787 --grpc-port 50051 --grpc-host 0.0.0.0`,
-which runs all services with gRPC accessible from outside the container.
-You can override it to run a subset:
+The default `CMD` is
+`start --port 8787 --host 0.0.0.0 --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls`,
+which runs all services with HTTP and TLS-protected gRPC accessible from outside the
+container. You can override it to run a subset:
 
 ```bash
 # Web dashboard and REST API only
@@ -149,12 +160,15 @@ podman run -d -p 8787:8787 \
   -e OPENROUTER_API_KEY=sk-or-... \
   abbenay:latest serve --port 8787
 
-# gRPC daemon only (no HTTP port needed)
+# gRPC daemon only (TLS required for 0.0.0.0)
 podman run -d -p 50051:50051 \
   -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
   -e OPENROUTER_API_KEY=sk-or-... \
-  abbenay:latest daemon --grpc-port 50051 --grpc-host 0.0.0.0
+  abbenay:latest daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls
 ```
+
+> Binding to `0.0.0.0` without `--grpc-tls` and without
+> `--insecure` is refused at startup.
 
 ---
 
@@ -194,25 +208,33 @@ providers:
 
 ## Python gRPC client
 
-When the daemon runs in a container, the Python client connects via TCP
-instead of the Unix socket:
+When the daemon runs in a container with `--grpc-tls` (the default image CMD),
+the Python client must trust the daemon CA:
 
 ```python
 from abbenay_grpc import AbbenayClient
 
-# Connect to containerized daemon via TCP
-async with AbbenayClient(host="localhost", port=50051) as client:
+# Copy ca.crt out of the container (runtime tls/ dir) or mount it, then:
+async with AbbenayClient(
+    host="localhost",
+    port=50051,
+    tls=True,
+    ca_cert="/path/to/ca.crt",
+) as client:
     async for chunk in client.chat("openrouter/anthropic/claude-sonnet-4", "Hello!"):
         if chunk.text:
             print(chunk.text, end="")
 ```
+
+If you intentionally start the container with `--insecure` instead of
+`--grpc-tls`, omit `tls` / `ca_cert` (plaintext TCP — not recommended).
 
 The `is_daemon_running()` and `get_daemon_pid()` convenience methods
 check the local filesystem and do not apply to remote connections. Use
 `health_check()` instead:
 
 ```python
-client = AbbenayClient(host="container-host", port=50051)
+client = AbbenayClient(host="container-host", port=50051, tls=True, ca_cert="/path/to/ca.crt")
 await client.connect()
 healthy = await client.health_check()
 ```
@@ -231,6 +253,9 @@ metadata:
 type: Opaque
 stringData:
   OPENROUTER_API_KEY: "sk-or-..."
+  # Must match the Bearer value in the probe httpHeaders below.
+  # Kubernetes does not expand env vars in httpGet.httpHeaders.
+  ABBENAY_API_TOKEN: "replace-with-a-strong-token"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -279,12 +304,18 @@ spec:
             httpGet:
               path: /api/health
               port: 8787
+              httpHeaders:
+                - name: Authorization
+                  value: Bearer replace-with-a-strong-token
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /api/health
               port: 8787
+              httpHeaders:
+                - name: Authorization
+                  value: Bearer replace-with-a-strong-token
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
@@ -312,29 +343,90 @@ spec:
 
 - The image runs as non-root user `abbenay` (UID 1001), compatible with
   OpenShift's restricted SCC.
-- The built-in `HEALTHCHECK` uses `curl` against `/api/health`. In
-  Kubernetes, use the `livenessProbe` and `readinessProbe` shown above
-  instead.
+- The built-in `HEALTHCHECK` uses `curl` against `/api/health` with
+  `Authorization: Bearer ${ABBENAY_API_TOKEN}`. Set that env var when
+  running the container. In Kubernetes, the sample `livenessProbe` /
+  `readinessProbe` send the same Bearer token via `httpHeaders` — keep that
+  value identical to `ABBENAY_API_TOKEN` in the Secret (Kubernetes does not
+  expand environment variables in `httpGet.httpHeaders`).
 - Sessions are ephemeral by default. To persist sessions across restarts,
   mount a volume at `/home/abbenay/.local/share/abbenay/sessions/`.
 
 ---
 
-## Security: `--grpc-host`
+## Security: HTTP bind and authentication
 
-The `--grpc-host` flag controls which network interface the TCP gRPC
-listener binds to:
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--host` / `ABBENAY_HTTP_HOST` / `server.host` | `127.0.0.1` | HTTP bind (dashboard, `/api/*`, `/v1/*`, `/mcp`) |
 
 | Value | Effect |
 |-------|--------|
-| `127.0.0.1` (default) | Loopback only -- safe for local development |
-| `0.0.0.0` | All interfaces -- required inside containers so that published ports are reachable |
+| `127.0.0.1` (default) | Loopback only — safe for local development |
+| `0.0.0.0` | All interfaces — required inside containers so published ports are reachable |
 
-The container's default `CMD` uses `--grpc-host 0.0.0.0` because
-container networking requires the listener to accept connections from
-outside the container's network namespace. The daemon logs a warning
-when `0.0.0.0` is used without consumer authentication.
+The container's default `CMD` uses `--host 0.0.0.0` because container
+networking requires listeners to accept connections from outside the
+container's network namespace. The daemon logs a warning when HTTP is bound
+beyond loopback.
 
-**Recommendation:** When exposing gRPC outside a trusted network,
-configure a `consumers` section in `config.yaml` to require
-token-based authentication on every RPC.
+**HTTP authentication is on by default.** Set `ABBENAY_API_TOKEN` (or
+`server.api_token` / `server.api_token_env`) and pass
+`Authorization: Bearer <token>` on every request. CORS is allowlist-only
+(never `*`).
+
+> **WARNING:** `ABBENAY_HTTP_AUTH=0` disables HTTP auth for local development
+> only. Combining it with `--host 0.0.0.0` (or any non-loopback bind) fails
+> closed — the HTTP server refuses to start.
+
+When exposing HTTP, always set a strong `ABBENAY_API_TOKEN` and restrict
+`server.cors_origins`. Keep `ABBENAY_HTTP_AUTH` enabled (the default).
+
+## Security: gRPC bind, TLS, and `--insecure`
+
+The `--grpc-host` flag controls which network interface the TCP gRPC
+listener binds to. Non-loopback binds fail closed unless TLS is enabled
+or `--insecure` is set explicitly.
+
+| Value | Effect |
+|-------|--------|
+| `127.0.0.1` (default) | Loopback only — plaintext allowed for local development |
+| `0.0.0.0` / non-loopback | Requires `--grpc-tls` **or** `--insecure` |
+
+### Flags
+
+| Flag | Purpose |
+|------|---------|
+| `--grpc-tls` | Enable TLS; auto-generates self-signed certs |
+| `--insecure` | Allow plaintext on non-loopback binds (escape hatch; not recommended) |
+
+### Auto-generated certificates
+
+With `--grpc-tls`, the daemon writes:
+
+- `<runtime-dir>/tls/server.crt`
+- `<runtime-dir>/tls/server.key` (mode 0600)
+- `<runtime-dir>/tls/ca.crt` (same as server cert — trust anchor for clients)
+
+The certificate CN / default SSL target name is `abbenay-grpc`. Clients must
+trust `ca.crt` (and typically override the SSL target name to `abbenay-grpc`
+when connecting by IP).
+
+### Client trust
+
+- **Python:** `AbbenayClient(host=..., tls=True, ca_cert=".../ca.crt")`
+- **grpc-web-control:** pass `tls: true` and `caPath` for TCP targets
+- **Unix socket:** remains plaintext local IPC (no TLS required)
+
+### Insecure tradeoffs
+
+`--insecure` on `0.0.0.0` restores the old plaintext behavior. API keys, chat,
+provider config, and tools travel unencrypted. Prefer `--grpc-tls`.
+
+**Consumers (DR-037):** Non-loopback gRPC binds refuse to start when
+`consumers` is missing/empty unless `--allow-open-auth` or `--insecure` is
+set. The image default CMD uses `--grpc-tls` on `0.0.0.0`, so mount a config
+with a `consumers` section (see `config.container.example.yaml`) and pass the
+token env (e.g. `-e APME_TOKEN=...`). Clients send the token as gRPC metadata
+`x-abbenay-token`. See
+[CONFIGURATION.md](./CONFIGURATION.md#consumer-authentication-consumers).

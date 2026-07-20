@@ -13,6 +13,14 @@ Abbenay uses YAML configuration files and system keychain for secrets.
 ## Config File Format
 
 ```yaml
+# HTTP API security (optional overrides — secure defaults apply without this block)
+server:
+  api_token_env: "ABBENAY_API_TOKEN"   # preferred: token from env (never commit secrets)
+  # api_token: "..."                   # discouraged plaintext; prefer api_token_env
+  host: "127.0.0.1"                    # default bind; use 0.0.0.0 only intentionally
+  cors_origins:                        # extra allowed Origins (localhost always included)
+    - "https://my-trusted-app.example"
+
 providers:
   my-openai:                        # Virtual provider name (user-defined)
     engine: openai                  # Engine type (see Supported Engines below)
@@ -39,6 +47,213 @@ providers:
       qwen2.5-coder:
         model_id: "qwen2.5-coder:7b"        # Map virtual name to actual model ID
 ```
+
+### OpenAI-compatible tools (`openai_compat`) — DR-032
+
+By default, `POST /v1/chat/completions` **ignores** request `tools` (secure
+default from DR-019). Opt in to **passthrough** so clients like
+[Open WebUI](https://docs.openwebui.com/) Native function calling can send
+`tools`, receive structured `tool_calls`, and execute tools **themselves**.
+
+| Level | Key | UI |
+|-------|-----|-----|
+| Global | `openai_compat.tools: off \| passthrough` | YAML only |
+| Per model | `openai_compat_tools: off \| passthrough` | YAML for both values; dashboard **Configure model** checkbox only sets `passthrough` or clears the key (inherit global) |
+
+Resolve order: **per-model → global → `off`**. To force a model `off` when
+global is `passthrough`, set `openai_compat_tools: off` in YAML (the checkbox
+cannot force `off`).
+
+```yaml
+openai_compat:
+  tools: off                         # default — Cursor/aider/scripts stay tool-free on /v1
+
+providers:
+  openrouter:
+    engine: openrouter
+    models:
+      anthropic/claude-sonnet-4: {}
+      x-ai/grok-3:
+        openai_compat_tools: passthrough   # Open WebUI Native FC for this model only
+```
+
+**Security tradeoff:** Passthrough trusts the client’s tool list and does not
+use Abbenay’s approval UI. Prefer enabling it only on models you use with
+trusted clients. For Abbenay-executed / approval-gated tools, use the dashboard,
+gRPC, or MCP paths instead of `/v1`.
+
+### HTTP API security (`server`)
+
+The web dashboard, REST API (`/api/*`), OpenAI-compatible API (`/v1/*`), and
+MCP endpoint (`/mcp`) require authentication by default. MCP tool calls also
+honor `tool_policy` (same approval path as chat — see [Tool policy](#tool-policy)
+below).
+
+| Setting / env | Purpose | Default |
+|---------------|---------|---------|
+| `ABBENAY_API_TOKEN` or `server.api_token` / `server.api_token_env` | Bearer token for all HTTP routes | Auto-generated and stored as `http-api-token` in the config directory |
+| `ABBENAY_HTTP_AUTH` | Enable/disable HTTP auth | Enabled (`1` / unset). Set to `0`, `false`, `off`, `no`, or `disabled` to turn auth off |
+| `ABBENAY_HTTP_HOST` or `server.host` or `--host` | HTTP bind address | `127.0.0.1` |
+| `ABBENAY_CORS_ORIGINS` or `server.cors_origins` | Extra CORS allowed origins | `http://127.0.0.1:<port>`, `http://localhost:<port>` |
+
+Call APIs with:
+
+```bash
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/api/health
+```
+
+Provider API keys for model discovery must never appear in query strings
+(DR-035). Use `X-Api-Key` or a JSON body (daemon Bearer auth stays on
+`Authorization`):
+
+```bash
+# Header
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  -H "X-Api-Key: $GOOGLE_API_KEY" \
+  http://127.0.0.1:8787/api/discover-models/gemini
+
+# Body
+curl -X POST -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"apiKey\":\"$GOOGLE_API_KEY\"}" \
+  http://127.0.0.1:8787/api/discover-models/gemini
+```
+
+`GET/POST ...?apiKey=` is rejected (HTTP 400). Outbound Gemini calls use the
+`x-goog-api-key` header, not `?key=` in the URL.
+
+The dashboard uses SameSite=Strict cookies plus a CSRF token for browser
+session auth. Open `http://127.0.0.1:8787/login` (or `POST /login` with the
+token in the body) to establish a session — prefer that over putting the
+token in the URL. Cookies include the `Secure` flag when the request is
+HTTPS or arrives via a TLS-terminated proxy (`X-Forwarded-Proto: https`).
+Binding to `0.0.0.0` requires an explicit opt-in and logs a warning — only
+do this when you intentionally expose the HTTP API (e.g. containers) and
+have set a strong token.
+
+When auth is enabled, unauthenticated browser requests to `/` (or `/index.html`)
+redirect to `/login` unless both the TCP peer and the browser `Host` /
+`X-Forwarded-Host` are localhost (direct local use). That way a reverse proxy
+that connects over loopback still cannot auto-establish a session for a public
+hostname. API routes (`/api/*`, `/v1/*`, `/mcp`) continue to return `401` JSON
+when unauthenticated.
+
+> **WARNING — disabling HTTP auth:** Auth is **on by default**. For throwaway
+> local development only you may set `ABBENAY_HTTP_AUTH=0`. That allows any
+> process (and any website that can reach the bind address) to call the
+> daemon and read/write secrets, config, chat, MCP, and sessions. The server
+> logs a loud warning when auth is disabled. Combining `ABBENAY_HTTP_AUTH=0`
+> with `--host 0.0.0.0` (or any non-loopback bind) fails closed — the HTTP
+> server refuses to start. Prefer keeping auth enabled and using a local
+> token instead.
+
+### Tool policy
+
+`tool_policy` in `config.yaml` applies to **chat** and to tools invoked through
+Abbenay's MCP HTTP endpoint (`POST /mcp`). Both use the same validator
+(`createToolValidator` — DR-033).
+
+```yaml
+tool_policy:
+  disabled_tools: ['mcp:dangerous/*']   # Rejected; never listed for chat
+  auto_approve: ['local:agent/echo']    # Runs without prompting
+  require_approval: ['local:agent/danger']  # Blocks until user approves
+```
+
+| Outcome | Chat | MCP HTTP (`/mcp`) |
+|---------|------|-------------------|
+| `disabled_tools` | Tool omitted from LLM | `tools/call` returns error; executor not run |
+| `auto_approve` | Runs immediately | Runs immediately |
+| `require_approval` / default ask | SSE `approval_request`; `POST /api/chat/:chatId/approve` | Request blocks; dashboard / `GET|POST /api/mcp/approvals` |
+| Denied / abort | Tool skipped or loop aborted | `tools/call` returns `isError` |
+
+Unauthenticated `POST/GET/DELETE /mcp` is rejected with `401` (DR-030).
+
+### MCP client connection consent
+
+Bearer auth alone is not enough to open an MCP session. On `initialize`, Abbenay
+creates a pending connection consent (DR-034). The dashboard (or
+`GET/POST /api/mcp/connections`) must allow the client before a
+`Mcp-Session-Id` is issued. Subsequent `tools/call` requests without that
+session header are rejected with `403`.
+
+| Action | API |
+|--------|-----|
+| List pending + active sessions + remembered | `GET /api/mcp/connections` |
+| Allow / deny (optional `remember: true`) | `POST /api/mcp/connections/:requestId` |
+| Revoke session | `DELETE /api/mcp/connections/sessions/:sessionId` |
+| Forget remembered client | `DELETE /api/mcp/connections/remembered/:clientName` |
+
+`remember: true` is a DX shortcut keyed on `clientInfo.name` for the daemon
+lifetime. Empty names and the placeholder `unknown-client` are never
+remembered. Remember is not strong client identity — any API-token holder can
+present a remembered name, and the same token can both call `/mcp` and approve
+via `/api/mcp/connections`. Pending connection consents and tool approvals
+auto-deny after **5 minutes** if the user never responds, so abandoned
+`initialize` / `tools/call` requests cannot leak entries in the pending maps.
+
+### Consumer authentication (`consumers`) — DR-037
+
+Named consumer applications authenticate to gRPC with a token in the
+`x-abbenay-token` metadata header. Each consumer is granted a capability
+matrix; sensitive RPCs require both a matching token and the relevant flag.
+
+```yaml
+consumers:
+  apme:
+    token_env: "APME_TOKEN"          # env var holding the consumer token
+    # token_keychain: "APME_TOKEN"   # future: keychain-backed token
+    capabilities:
+      chat: true                     # Chat / SessionChat / SummarizeSession
+      inline_policy: true            # PolicyConfig on chat requests
+      mcp_register: true             # RegisterMcpServer / UnregisterMcpServer
+      secrets: true                  # Get/Set/Delete/ListSecret, GetKeyStatus
+      config: true                   # Get/UpdateConfig, policy CRUD, web start/stop
+      providers: true                # ConfigureProvider / RemoveProvider / DiscoverModels
+      shutdown: true                 # Shutdown RPC
+```
+
+| Capability | Gated RPCs |
+|------------|------------|
+| `chat` | `Chat`, `SessionChat`, `SummarizeSession` |
+| `inline_policy` | Inline `PolicyConfig` on chat (also needs `chat`) |
+| `mcp_register` | `RegisterMcpServer`, `UnregisterMcpServer`, `ReconnectMcpServer` |
+| `secrets` | `GetSecret`, `SetSecret`, `DeleteSecret`, `ListSecrets`, `GetKeyStatus` |
+| `config` | `GetConfig`, `UpdateConfig`, `CreatePolicy`, `DeletePolicy`, `StartWebServer`, `StopWebServer` |
+| `providers` | `ConfigureProvider`, `RemoveProvider`, `DiscoverModels` |
+| `shutdown` | `Shutdown` |
+
+**Behavior:**
+
+| Bind / config | Empty `consumers` | `consumers` configured |
+|---------------|-------------------|------------------------|
+| Unix socket or loopback TCP (`127.0.0.1`, `::1`) | Allow-all (local DX) | Token + capability required for sensitive RPCs |
+| Non-loopback TCP (`0.0.0.0`, LAN IP, …) | **Refuse to start** unless `--allow-open-auth` or `--insecure` | Token + capability required |
+
+Token comparison uses `crypto.timingSafeEqual` (equal-length buffers). Wrong
+or missing tokens receive `PERMISSION_DENIED`. Health/status/list discovery
+RPCs stay ungated so probes and local tooling keep working.
+
+> **WARNING — open auth:** `--allow-open-auth` (or `--insecure`, which implies
+> it) on a non-loopback bind restores allow-all when `consumers` is empty.
+> Prefer configuring consumers. HTTP API auth is separate (`server` / Bearer);
+> see above.
+
+### Session ownership
+
+Every session is stamped with an `owner` principal:
+
+| Surface | Owner |
+|---------|--------|
+| CLI (`aby chat` / `aby sessions`) | `local` |
+| HTTP API (Bearer / dashboard cookie) | `http:<token-fingerprint>` |
+| HTTP + `X-Abbenay-Session-Owner: <name>` | `http:<fingerprint>:<name>` |
+| gRPC with matching consumer token | `consumer:<name>` |
+| gRPC without consumer token | `local` |
+
+List/get/delete/chat only return sessions for the caller's owner. Cross-owner
+access returns 404 (not 403) so session IDs are not leaked across principals.
+Legacy sessions without an `owner` field are treated as `local`.
 
 ### Key Concepts
 
@@ -147,6 +362,11 @@ Each provider shows:
 Click the settings icon to choose where config is saved:
 - **User**: `~/.config/abbenay/config.yaml` (default)
 - **Workspace**: `<workspace>/.config/abbenay/config.yaml` (requires VS Code connection)
+
+HTTP `POST /api/config` validates the body with Zod (`ConfigFile` shape) and
+only allows workspace `location` values that match a currently connected /
+allowlisted workspace path. Path traversal (`..`) and unknown locations are
+rejected with no file write.
 
 ## VS Code Extension
 

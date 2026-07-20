@@ -20,6 +20,28 @@ import {
 } from '../../core/config.js';
 import { DEFAULT_WEB_PORT } from '../../core/constants.js';
 import { getProviderTemplates } from '../../core/engines.js';
+import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
+import {
+  authorizeConsumer,
+  matchConsumerByToken,
+  DEFAULT_CONSUMER_AUTH_CONTEXT,
+  type ConsumerAuthContext,
+  type ConsumerCapability,
+  type AuthResult,
+} from './consumer-auth.js';
+
+export type { ConsumerAuthContext, ConsumerCapability, AuthResult };
+export {
+  authorizeConsumer,
+  matchConsumerByToken,
+  DEFAULT_CONSUMER_AUTH_CONTEXT,
+  hasConfiguredConsumers,
+  buildConsumerAuthContext,
+  assertConsumersConfiguredForBind,
+  resolveAllowOpenAuth,
+  timingSafeEqualString,
+  ConsumerAuthBindError,
+} from './consumer-auth.js';
 
 interface ProtoClientInfo {
   client_type?: string | number;
@@ -251,7 +273,15 @@ interface ToolPolicyConfigMsgProto {
 interface ConsumerConfigMsgProto {
   token_env?: string;
   token_keychain?: string;
-  capabilities?: { inline_policy?: boolean; mcp_register?: boolean };
+  capabilities?: {
+    inline_policy?: boolean;
+    mcp_register?: boolean;
+    secrets?: boolean;
+    config?: boolean;
+    providers?: boolean;
+    shutdown?: boolean;
+    chat?: boolean;
+  };
 }
 
 interface ConfigureProviderRequestProto {
@@ -366,9 +396,59 @@ function toRole(protoRole: string | number): string {
 }
 
 /**
- * Create the Abbenay service handlers
+ * Deny a unary RPC when consumer auth fails. Returns true when the call may proceed.
  */
-export function createAbbenayService(state: DaemonState) {
+function requireCapability(
+  call: { metadata: grpc.Metadata },
+  capability: ConsumerCapability,
+  authContext: ConsumerAuthContext,
+  callback: grpc.sendUnaryData<object>,
+): boolean {
+  const auth = authorizeConsumer(call, loadConfig() || { providers: {} }, capability, authContext);
+  if (!auth.allowed) {
+    callback({
+      code: grpc.status.PERMISSION_DENIED,
+      message: auth.reason || 'Permission denied',
+    });
+    return false;
+  }
+  if (auth.consumer) {
+    console.log(`[Service] ${capability} authorized for consumer "${auth.consumer}"`);
+  }
+  return true;
+}
+
+/**
+ * Deny a server-streaming RPC when consumer auth fails. Returns auth on success, null when denied.
+ * Emits a gRPC PERMISSION_DENIED status (same as unary gates) so clients see a real RPC error,
+ * not only an in-band ChatChunk error.
+ */
+function requireCapabilityStream(
+  call: grpc.ServerWritableStream<unknown, object>,
+  capability: ConsumerCapability,
+  authContext: ConsumerAuthContext,
+): AuthResult | null {
+  const auth = authorizeConsumer(call, loadConfig() || { providers: {} }, capability, authContext);
+  if (!auth.allowed) {
+    const err = Object.assign(new Error(auth.reason || 'Permission denied'), {
+      code: grpc.status.PERMISSION_DENIED,
+      details: auth.reason || 'Permission denied',
+    });
+    call.emit('error', err);
+    return null;
+  }
+  return auth;
+}
+
+/**
+ * Create the Abbenay service handlers.
+ *
+ * @param authContext Bind/open-mode policy. Defaults to local DX (empty consumers allowed).
+ */
+export function createAbbenayService(
+  state: DaemonState,
+  authContext: ConsumerAuthContext = DEFAULT_CONSUMER_AUTH_CONTEXT,
+) {
   return {
     /**
      * Register a client with the daemon
@@ -484,6 +564,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<DiscoverModelsRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'providers', authContext, callback)) return;
       const engineId = call.request.engine_id || call.request.engineId || '';
       if (!engineId) {
         callback({
@@ -530,6 +611,9 @@ export function createAbbenayService(state: DaemonState) {
      * Streaming chat
      */
     Chat(call: grpc.ServerWritableStream<ChatRequestProto, object>): void {
+      const chatAuth = requireCapabilityStream(call, 'chat', authContext);
+      if (!chatAuth) return;
+
       const request = call.request;
       const model = request.model;
       
@@ -590,8 +674,13 @@ export function createAbbenayService(state: DaemonState) {
           return;
         }
 
-        // Consumer authorization gate (DR-024)
-        const auth = authorizeConsumer(call, loadConfig(), 'inline_policy');
+        // Consumer authorization gate (DR-024 / DR-037)
+        const auth = authorizeConsumer(
+          call,
+          loadConfig() || { providers: {} },
+          'inline_policy',
+          authContext,
+        );
         if (!auth.allowed) {
           call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
           call.end();
@@ -664,6 +753,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<GetSecretRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'secrets', authContext, callback)) return;
       const key = call.request.key;
       
       state.secretStore.get(key).then((value) => {
@@ -686,6 +776,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<SetSecretRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'secrets', authContext, callback)) return;
       const { key, value } = call.request;
       
       state.secretStore.set(key, value).then(() => {
@@ -707,6 +798,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<DeleteSecretRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'secrets', authContext, callback)) return;
       state.secretStore.delete(call.request.key).then(() => {
         callback(null, {});
       }).catch((error: unknown) => {
@@ -724,6 +816,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<object, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'secrets', authContext, callback)) return;
       // Return known key names with availability status
       const engines = getEngines();
       const checks = engines.filter(e => e.requiresKey).map(async (e) => {
@@ -860,6 +953,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<GetConfigRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'config', authContext, callback)) return;
       try {
         const location = call.request.location || 'user';
         let config: ConfigFile;
@@ -886,6 +980,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<UpdateConfigRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'config', authContext, callback)) return;
       try {
         const location = call.request.location || 'user';
         const protoConfig = call.request.config;
@@ -974,6 +1069,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<StartWebServerRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'config', authContext, callback)) return;
       const port = call.request.port || DEFAULT_WEB_PORT;
       
       if (isWebServerRunning()) {
@@ -1010,6 +1106,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<object, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'config', authContext, callback)) return;
       stopEmbeddedWebServer().then(() => {
         callback(null, {});
       }).catch((error: unknown) => {
@@ -1027,6 +1124,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<object, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'shutdown', authContext, callback)) return;
       console.log('[gRPC] Shutdown requested');
       callback(null, {});
       
@@ -1046,7 +1144,8 @@ export function createAbbenayService(state: DaemonState) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'model is required' });
         return;
       }
-      state.sessionStore.create(model, topic || undefined, undefined, metadata).then((session) => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.create(model, topic || undefined, undefined, metadata, owner).then((session) => {
         callback(null, sessionToProto(session));
       }).catch((error: unknown) => {
         callback({ code: grpc.status.INTERNAL, message: error instanceof Error ? error.message : String(error) });
@@ -1063,7 +1162,8 @@ export function createAbbenayService(state: DaemonState) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
         return;
       }
-      state.sessionStore.get(id, includeMessages).then((session) => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.getOwned(id, owner, includeMessages).then((session) => {
         callback(null, sessionToProto(session));
       }).catch((error: unknown) => {
         callback({ code: grpc.status.NOT_FOUND, message: error instanceof Error ? error.message : String(error) });
@@ -1079,7 +1179,8 @@ export function createAbbenayService(state: DaemonState) {
       const rawOffset = call.request.offset;
       const limit = rawLimit == null || rawLimit < 0 ? undefined : rawLimit;
       const offset = rawOffset == null || rawOffset < 0 ? undefined : rawOffset;
-      state.sessionStore.list({ model, limit, offset }).then((result) => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.list({ model, limit, offset, owner }).then((result) => {
         callback(null, {
           sessions: result.sessions.map(summaryToProto),
           total_count: result.totalCount,
@@ -1098,7 +1199,8 @@ export function createAbbenayService(state: DaemonState) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
         return;
       }
-      state.sessionStore.delete(id).then(async () => {
+      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      state.sessionStore.deleteOwned(id, owner).then(async () => {
         // Clean up session-scoped dynamic MCP servers
         await state.mcpClientPool.disconnectByScope(id);
         state.toolRegistry?.clearSessionScope(id);
@@ -1109,6 +1211,9 @@ export function createAbbenayService(state: DaemonState) {
     },
 
     SessionChat(call: grpc.ServerWritableStream<SessionChatRequestProto, object>): void {
+      const chatAuth = requireCapabilityStream(call, 'chat', authContext);
+      if (!chatAuth) return;
+
       const sessionId = call.request.session_id || call.request.sessionId || '';
       const userMsg = call.request.message;
 
@@ -1156,8 +1261,13 @@ export function createAbbenayService(state: DaemonState) {
           return;
         }
 
-        // Consumer authorization gate (DR-024)
-        const auth = authorizeConsumer(call, loadConfig(), 'inline_policy');
+        // Consumer authorization gate (DR-024 / DR-037)
+        const auth = authorizeConsumer(
+          call,
+          loadConfig() || { providers: {} },
+          'inline_policy',
+          authContext,
+        );
         if (!auth.allowed) {
           call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
           call.end();
@@ -1170,7 +1280,8 @@ export function createAbbenayService(state: DaemonState) {
 
       (async () => {
         try {
-          const session = await state.sessionStore.get(sessionId, true);
+          const owner = resolveGrpcSessionOwner(call, loadConfig());
+          const session = await state.sessionStore.getOwned(sessionId, owner, true);
           await state.sessionStore.appendMessage(sessionId, chatMessage);
 
           const allMessages = [...session.messages, chatMessage];
@@ -1270,6 +1381,9 @@ export function createAbbenayService(state: DaemonState) {
       callback({ code: grpc.status.UNIMPLEMENTED, message: 'Sessions not yet implemented' });
     },
     SummarizeSession(call: grpc.ServerUnaryCall<{ session_id?: string; sessionId?: string; summarize_model?: string; summarizeModel?: string }, object>, callback: grpc.sendUnaryData<object>): void {
+      // Same capability as Chat — summarization invokes the LLM and can burn provider keys.
+      if (!requireCapability(call, 'chat', authContext, callback)) return;
+
       const sessionId = call.request.session_id || call.request.sessionId || '';
       if (!sessionId) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
@@ -1278,7 +1392,8 @@ export function createAbbenayService(state: DaemonState) {
 
       (async () => {
         try {
-          const session = await state.sessionStore.get(sessionId, true);
+          const owner = resolveGrpcSessionOwner(call, loadConfig());
+          const session = await state.sessionStore.getOwned(sessionId, owner, true);
           const userCount = session.messages.filter((m) => m.role === 'user').length;
 
           if (session.summary && session.summaryMessageCount === userCount) {
@@ -1366,15 +1481,7 @@ export function createAbbenayService(state: DaemonState) {
         return;
       }
 
-      // Consumer auth: require mcp_register capability
-      const authResult = authorizeConsumer(call, loadConfig(), 'mcp_register');
-      if (!authResult.allowed) {
-        callback({ code: grpc.status.PERMISSION_DENIED, message: authResult.reason! });
-        return;
-      }
-      if (authResult.consumer) {
-        console.log(`[Service] RegisterMcpServer authorized for consumer "${authResult.consumer}"`);
-      }
+      if (!requireCapability(call, 'mcp_register', authContext, callback)) return;
 
       // Resolve registering client ID from gRPC metadata
       const clientIdMeta = call.metadata.get('x-abbenay-client-id');
@@ -1413,6 +1520,7 @@ export function createAbbenayService(state: DaemonState) {
      * Unregister a dynamically registered MCP server
      */
     UnregisterMcpServer(call: grpc.ServerUnaryCall<UnregisterMcpServerRequestProto, object>, callback: grpc.sendUnaryData<object>): void {
+      if (!requireCapability(call, 'mcp_register', authContext, callback)) return;
       const serverId = call.request.server_id || call.request.serverId || '';
       if (!serverId) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'server_id is required' });
@@ -1446,6 +1554,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<ConfigureProviderRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'providers', authContext, callback)) return;
       (async () => {
         try {
           const providerId = call.request.provider_id || call.request.providerId || '';
@@ -1517,6 +1626,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<RemoveProviderRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'providers', authContext, callback)) return;
       (async () => {
         try {
           const providerId = call.request.provider_id || call.request.providerId || '';
@@ -1583,6 +1693,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<GetKeyStatusRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'secrets', authContext, callback)) return;
       const source = call.request.source || '';
       const name = call.request.name || '';
 
@@ -1659,6 +1770,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<ReconnectMcpServerRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'mcp_register', authContext, callback)) return;
       const serverId = call.request.server_id || call.request.serverId || '';
       if (!serverId) {
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'server_id is required' });
@@ -1681,6 +1793,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<CreatePolicyRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'config', authContext, callback)) return;
       try {
         const name = call.request.name || '';
         const protoConfig = call.request.config;
@@ -1719,6 +1832,7 @@ export function createAbbenayService(state: DaemonState) {
       call: grpc.ServerUnaryCall<DeletePolicyRequestProto, object>,
       callback: grpc.sendUnaryData<object>
     ): void {
+      if (!requireCapability(call, 'config', authContext, callback)) return;
       try {
         const name = call.request.name || '';
         if (!name) {
@@ -1884,6 +1998,11 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
         capabilities: {
           inline_policy: ccfg.capabilities?.inline_policy,
           mcp_register: ccfg.capabilities?.mcp_register,
+          secrets: ccfg.capabilities?.secrets,
+          config: ccfg.capabilities?.config,
+          providers: ccfg.capabilities?.providers,
+          shutdown: ccfg.capabilities?.shutdown,
+          chat: ccfg.capabilities?.chat,
         },
       };
     }
@@ -1961,6 +2080,11 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
         capabilities: {
           inline_policy: ccfg.capabilities?.inline_policy,
           mcp_register: ccfg.capabilities?.mcp_register,
+          secrets: ccfg.capabilities?.secrets,
+          config: ccfg.capabilities?.config,
+          providers: ccfg.capabilities?.providers,
+          shutdown: ccfg.capabilities?.shutdown,
+          chat: ccfg.capabilities?.chat,
         },
       };
     }
@@ -2051,60 +2175,24 @@ function transportProtoToConfig(transport: McpTransportProto): McpServerConfig {
   throw new Error(`Unknown transport type: "${type}". Must be "stdio", "http", or "sse".`);
 }
 
-// ── Consumer authorization (DR-024 / DR-025) ──────────────────────────
+// ── Consumer authorization (DR-024 / DR-025 / DR-037) ─────────────────
 
-/** @internal Exported for testing. */
-export interface AuthResult {
-  allowed: boolean;
-  consumer?: string;
-  reason?: string;
-}
-
-export type ConsumerCapability = 'inline_policy' | 'mcp_register';
-
-const CAPABILITY_LABELS: Record<ConsumerCapability, string> = {
-  inline_policy: 'Inline policy',
-  mcp_register: 'MCP registration',
-};
-
-/** @internal Exported for testing. */
-export function authorizeConsumer(
+/**
+ * Resolve the session owner principal for a gRPC call.
+ * - Matching consumer token → `consumer:<name>`
+ * - Otherwise (local CLI / VS Code / no consumers) → `local`
+ */
+export function resolveGrpcSessionOwner(
   call: { metadata: grpc.Metadata },
-  config: ConfigFile,
-  capability: ConsumerCapability,
-): AuthResult {
-  const consumers = config.consumers;
-
-  if (!consumers || Object.keys(consumers).length === 0) {
-    return { allowed: true };
-  }
-
+  config: ConfigFile | null,
+): string {
   const metadata = call.metadata.get('x-abbenay-token');
   const token = metadata.length > 0 ? String(metadata[0]) : undefined;
-
-  if (!token) {
-    return {
-      allowed: false,
-      reason: `${CAPABILITY_LABELS[capability]} requires consumer authentication. Set the x-abbenay-token gRPC metadata header.`,
-    };
+  const name = matchConsumerByToken(config, token);
+  if (name) {
+    return `consumer:${name}`;
   }
-
-  for (const [name, consumer] of Object.entries(consumers)) {
-    const expectedToken = consumer.token_env
-      ? process.env[consumer.token_env]
-      : undefined;
-
-    if (!expectedToken) continue;
-
-    if (token === expectedToken && consumer.capabilities?.[capability]) {
-      return { allowed: true, consumer: name };
-    }
-  }
-
-  return {
-    allowed: false,
-    reason: `Consumer token not recognized or lacks ${CAPABILITY_LABELS[capability]} capability.`,
-  };
+  return LOCAL_SESSION_OWNER;
 }
 
 /** @deprecated Use authorizeConsumer(call, config, 'mcp_register') instead. */

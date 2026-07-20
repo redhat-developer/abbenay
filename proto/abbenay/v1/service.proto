@@ -900,6 +900,11 @@ message ConsumerConfigMsg {
 message ConsumerCapabilitiesMsg {
   optional bool inline_policy = 1;      // Allow inline PolicyConfig on ChatRequest
   optional bool mcp_register = 2;       // Allow dynamic MCP server registration
+  optional bool secrets = 3;            // Allow secret read/write/list RPCs
+  optional bool config = 4;             // Allow GetConfig / UpdateConfig / policy / web control
+  optional bool providers = 5;          // Allow ConfigureProvider / RemoveProvider / DiscoverModels
+  optional bool shutdown = 6;           // Allow Shutdown RPC
+  optional bool chat = 7;               // Allow Chat / SessionChat
 }
 
 enum LogLevel {

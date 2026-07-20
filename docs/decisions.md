@@ -410,7 +410,205 @@ incomplete builds from reaching end users.
 
 ---
 
-## DR-029: Block MCP self-connections to the daemon's own endpoints
+---
+
+## DR-029: Fail-closed TLS for non-loopback gRPC TCP binds
+
+**Date:** 2026-07-15
+**Decision:** TCP gRPC listeners require TLS (or an explicit `--insecure` opt-in)
+when binding to any non-loopback address, including `0.0.0.0` / `::`. Loopback
+binds (`127.0.0.1`, `::1`, `localhost`) may remain plaintext for local DX. Unix
+sockets stay plaintext (local IPC). `--grpc-tls` enables TLS with auto-generated
+self-signed material under the runtime `tls/` directory. Clients that use TCP
+(grpc-web-control, Python `AbbenayClient`) support matching SSL credentials;
+SSL target name for auto-generated certs is `abbenay-grpc`. The container
+default CMD uses `--grpc-tls`.
+**Rationale:** Plaintext gRPC on all interfaces exposes API keys, chat, provider
+config, and tools. A warning alone is insufficient (finding C2). Fail-closed
+startup forces an explicit security choice while preserving localhost DX and
+allowing an escape hatch for trusted networks.
+
+---
+
+## DR-030: Secure-by-default HTTP API
+
+**Date:** 2026-07-14
+**Decision:** Require Bearer (or SameSite cookie) authentication on all HTTP
+routes (`/api/*`, `/v1/*`, `/mcp`) by default, restrict CORS to an explicit
+origin allowlist (never `*`), and bind the HTTP server to `127.0.0.1` by
+default. Non-localhost bind requires explicit opt-in (`--host`,
+`ABBENAY_HTTP_HOST`, or `server.host`). The API token resolves from
+`ABBENAY_API_TOKEN` / `server.api_token` / `server.api_token_env`, or is
+auto-generated and persisted as `http-api-token` in the config directory.
+The dashboard uses `SameSite=Strict` cookies plus a CSRF token for browser
+state-changing requests. Prefer `GET/POST /login` (token in the form/body)
+over `/?token=` query login to avoid leaking credentials via history,
+Referer, and access logs; the query form remains for compatibility and uses
+a timing-safe compare. Cookies set the `Secure` flag when the request is
+HTTPS or `X-Forwarded-Proto: https`. For local development only,
+`ABBENAY_HTTP_AUTH=0` (or `false`/`off`/`no`/`disabled`) turns auth off and
+logs a loud warning. Combining auth-disabled with a non-loopback bind
+(`0.0.0.0`, LAN IP, etc.) fails closed: the HTTP server refuses to start.
+**Rationale:** The previous defaults (no auth, `Access-Control-Allow-Origin: *`,
+`app.listen(port)` → `0.0.0.0`) allowed any website the user visited to
+cross-origin call the daemon and read/write secrets, config, chat, MCP, and
+sessions. Secure-by-default closes that gap while keeping intentional network
+exposure possible for containers with an explicit opt-in and a strong token.
+An env-var escape hatch keeps local DX workable without baking an insecure
+default back into production paths.
+
+---
+
+## DR-031: Session ownership principals
+
+**Date:** 2026-07-14
+**Decision:** Stamp every session with an `owner` principal and enforce
+owner-scoped list/get/delete/chat on HTTP and gRPC. Principals are
+`local` (CLI / local gRPC), `http:<token-fingerprint>` (HTTP API token, with
+optional `X-Abbenay-Session-Owner` claim), or `consumer:<name>` (gRPC consumer
+token). Legacy sessions without `owner` are treated as `local`. Cross-owner
+access returns "not found".
+**Rationale:** Authentication alone (DR-030) blocks anonymous access but does
+not isolate sessions between authenticated principals sharing one daemon.
+Ownership closes H9: HTTP clients, CLI, and named consumers cannot enumerate
+or read each other's conversation history.
+
+---
+
+## DR-032: Opt-in OpenAI-compatible tools passthrough on `/v1`
+
+**Date:** 2026-07-17
+**Decision:** `/v1/chat/completions` keeps tools disabled by default (DR-019).
+Operators may opt in to **passthrough** via global `openai_compat.tools` and/or
+per-model `openai_compat_tools` (YAML, or the dashboard checkbox which sets
+`passthrough` / clears the override; forcing per-model `off` is YAML-only).
+In passthrough,
+Abbenay forwards client-provided OpenAI `tools` to the model and returns
+structured `tool_calls` (streaming and non-streaming); the **client** executes
+tools and posts `role: tool` follow-ups. Abbenay does not run MCP/tool
+execution or the approval UI on `/v1`. Resolve order: model override → global →
+`off`.
+**Rationale:** Clients such as Open WebUI Native function calling need
+OpenAI-shaped tool schemas and `tool_calls` through a drop-in `/v1` endpoint.
+Forcing tools off forever breaks those clients; enabling Abbenay-side execution
+on `/v1` without an approval UI would weaken DR-019. Passthrough preserves the
+secure default while unblocking client-executed tools for explicitly opted-in
+models.
+
+---
+
+## DR-033: MCP HTTP uses the same tool approval policy as chat
+
+**Date:** 2026-07-17
+**Decision:** Every tool invocation on the embedded MCP HTTP endpoint (`/mcp`)
+goes through the shared `createToolValidator` / `authorizeToolExecution` helper
+used by chat. Precedence is `disabled_tools` → deny, `require_approval` → ask,
+`auto_approve` → allow, default → ask (DR-019). Pending MCP approvals block the
+MCP `tools/call` until the user resolves them via
+`GET/POST /api/mcp/approvals` (dashboard consent UX). `/mcp` remains behind the
+DR-030 Bearer/cookie auth gate. There is no executor path that bypasses
+`tool_policy`. After connection consent (DR-034), the daemon keeps a
+sessionful Streamable HTTP transport per approved `Mcp-Session-Id`
+(`enableJsonResponse: true`); non-initialize requests without an approved
+session are rejected.
+**Rationale:** Finding C3/A2 — `registerTools()` previously invoked executors
+directly, so an authenticated (or, before DR-030, open) MCP client could run
+tools while skipping approval tiers. Sharing one validator with chat closes
+that bypass and keeps policy configuration consistent across surfaces.
+
+---
+
+## DR-034: Explicit consent for MCP client connections
+
+**Date:** 2026-07-17
+**Decision:** Before an MCP client may establish a Streamable HTTP session on
+`/mcp`, the user must explicitly allow the connection (dashboard /
+`POST /api/mcp/connections/:requestId`). `initialize` blocks until allow/deny.
+Non-initialize requests without an approved `Mcp-Session-Id` are rejected with
+403 so `tools/call` cannot skip connection consent. Optional "Allow & Remember"
+keeps a **non-empty** `clientInfo.name` for the daemon lifetime (the default
+placeholder `unknown-client` is never remembered — remember is a DX shortcut,
+not strong client identity; any token bearer can present a remembered name).
+Remembered names can be cleared via
+`DELETE /api/mcp/connections/remembered/:clientName` (dashboard Forget).
+Sessions can be revoked via
+`DELETE /api/mcp/connections/sessions/:sessionId`. Pending connection consents
+and MCP tool approvals auto-deny after a 5-minute TTL so abandoned clients
+cannot leak pending map entries.
+**Rationale:** Bearer auth alone (DR-030) proves possession of the API token but
+does not express user intent to let a specific MCP client attach. Connection
+consent closes the remaining C3 recommendation and stops token-bearing callers
+from silently opening an MCP session. API-token holders can both call `/mcp`
+and approve via `/api/mcp/connections`, so consent is interactive friction, not
+a second principal against a stolen/shared token.
+
+---
+
+## DR-035: No API keys in URL query strings
+
+**Date:** 2026-07-17
+**Decision:** Never place provider API keys in request URLs. Gemini outbound
+calls use the `x-goog-api-key` header (same as `@ai-sdk/google`). The
+`/api/discover-models/:engineId` endpoint accepts provider keys only via the
+`X-Api-Key` header or JSON body (`POST`); `?apiKey=` is rejected with HTTP 400.
+Non-secret params (`baseUrl`, `providerId`) may remain on the query string for
+GET. CI runs `npm run check:no-query-secrets` to block regressions of common
+query-secret patterns (`?key=`, `query.apiKey` / `query['apiKey']`,
+`params.set/append('apiKey'`, `searchParams.set('key'`) in production sources.
+**Rationale:** Query-string secrets leak into access logs, reverse proxies,
+browser history, and `Referer` headers. Header/body transport matches other
+engines (Bearer / `x-api-key`) and closes findings H2/H3.
+
+---
+
+## DR-036: Zod validation for all HTTP API request bodies
+
+**Date:** 2026-07-17
+**Decision:** Validate every mutating HTTP web API request body with a Zod
+schema before business logic runs. Invalid bodies return HTTP 400. Config
+writes (`POST /api/config`, provider configure/delete with workspace target)
+additionally require `location` / `workspacePath` to be `'user'` or an
+allowlisted connected workspace path; path segments containing `..` are
+rejected (400) and non-allowlisted paths return 403 with no file write.
+Shared `ConfigFile` / `PolicyConfig` schemas live in `@abbenay/core`
+(`config-schema.ts`) and are reused by the web layer (`api-schemas.ts`).
+Most schemas use `.strict()` so unexpected fields are rejected
+(field-injection defense). OpenAI `/v1/chat/completions` instead **strips**
+unknown client fields (e.g. `stream_options`, `user`) so DR-020 SDKs keep
+working, while still requiring `model` / non-empty `messages` and allowing
+optional `tools` for DR-032 passthrough. `ConfigFileSchema` /
+`ModelConfigSchema` include `openai_compat` and `openai_compat_tools` so
+dashboard/`POST /api/config` can persist DR-032 settings without 400s.
+Workspace location checks also reject NUL bytes and compare `realpath` when
+the path exists.
+**Rationale:** Unvalidated `req.body` destructuring allowed arbitrary config
+writes, path traversal into workspace config paths, type confusion, and
+field injection (findings H4/H5). Auth (DR-030) authenticates the caller but
+does not constrain payload shape or write targets.
+
+---
+
+## DR-037: Mandatory consumer auth for non-localhost gRPC
+
+**Date:** 2026-07-17
+**Decision:** Extend the DR-024 consumer model so that (1) binding gRPC to a
+non-loopback address with an empty/missing `consumers` section fails closed
+unless `--allow-open-auth` or `--insecure` is set; (2) when `consumers` is
+configured, all sensitive RPCs (secrets, config, providers, shutdown, chat
+including SummarizeSession, MCP register, inline policy) require a matching
+`x-abbenay-token` and the corresponding capability; (3) token comparison uses
+`crypto.timingSafeEqual` on equal-length buffers. Localhost / unix-socket
+binds with empty consumers remain allow-all for local DX. HTTP consumer auth
+remains out of scope (covered by DR-030 Bearer auth).
+**Rationale:** Previously only Chat (inline policy) and RegisterMcpServer were
+gated, and empty consumers meant allow-all even on `0.0.0.0` — findings H8/H10.
+Fail-closed on network exposure closes unauthenticated secret/config/shutdown
+access while keeping single-user local workflows frictionless. Timing-safe
+compare closes token oracle leaks.
+
+---
+
+## DR-038: Block MCP self-connections to the daemon's own endpoints
 
 **Date:** 2026-07-20
 **Decision:** `McpClientPool` tracks the daemon's HTTP and gRPC listen ports

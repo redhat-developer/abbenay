@@ -65,6 +65,60 @@ describe('SessionStore.create', () => {
     expect(session.policy).toBe('strict');
     expect(session.metadata).toEqual({ workspace: '/tmp' });
   });
+
+  it('assigns local owner by default', async () => {
+    const session = await store.create('openai/gpt-4o');
+    expect(session.owner).toBe('local');
+  });
+
+  it('stores explicit owner', async () => {
+    const session = await store.create('openai/gpt-4o', 'Owned', undefined, undefined, 'http:abc');
+    expect(session.owner).toBe('http:abc');
+    const index = JSON.parse(fs.readFileSync(path.join(tmpDir, 'index.json'), 'utf-8'));
+    expect(index.sessions[0].owner).toBe('http:abc');
+  });
+});
+
+describe('SessionStore ownership', () => {
+  it('list filters by owner', async () => {
+    await store.create('openai/gpt-4o', 'Local', undefined, undefined, 'local');
+    await store.create('openai/gpt-4o', 'Http', undefined, undefined, 'http:tok');
+    const local = await store.list({ owner: 'local' });
+    const http = await store.list({ owner: 'http:tok' });
+    expect(local.sessions).toHaveLength(1);
+    expect(local.sessions[0].title).toBe('Local');
+    expect(http.sessions).toHaveLength(1);
+    expect(http.sessions[0].title).toBe('Http');
+  });
+
+  it('getOwned rejects other owners without leaking', async () => {
+    const session = await store.create('openai/gpt-4o', 'Secret', undefined, undefined, 'http:a');
+    await expect(store.getOwned(session.id, 'http:b')).rejects.toThrow(`Session not found: ${session.id}`);
+  });
+
+  it('deleteOwned rejects other owners', async () => {
+    const session = await store.create('openai/gpt-4o', 'Keep', undefined, undefined, 'http:a');
+    await expect(store.deleteOwned(session.id, 'http:b')).rejects.toThrow('Session not found');
+    const still = await store.get(session.id, false);
+    expect(still.id).toBe(session.id);
+  });
+
+  it('treats legacy sessions without owner as local', async () => {
+    const session = await store.create('openai/gpt-4o', 'Legacy');
+    // Simulate legacy file missing owner
+    const filePath = path.join(tmpDir, `${session.id}.json`);
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    delete raw.owner;
+    fs.writeFileSync(filePath, JSON.stringify(raw));
+    const indexPath = path.join(tmpDir, 'index.json');
+    const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+    delete index.sessions[0].owner;
+    fs.writeFileSync(indexPath, JSON.stringify(index));
+
+    const listed = await store.list({ owner: 'local' });
+    expect(listed.sessions).toHaveLength(1);
+    await expect(store.getOwned(session.id, 'local')).resolves.toMatchObject({ id: session.id });
+  });
 });
 
 describe('SessionStore.get', () => {
