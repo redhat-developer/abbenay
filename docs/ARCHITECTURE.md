@@ -485,7 +485,9 @@ internal MCP tool for cross-session retrieval.
 ## Security
 
 - **Secrets**: Stored in system keychain via keytar when available; never in config files
+- **Credential aggregation (A1)**: One daemon holds many provider keys — larger blast radius than per-extension storage; documented for Enterprise / Security-Conscious / air-gapped personas in [CONFIGURATION.md](CONFIGURATION.md#credential-aggregation-risk-operators--finding-a1); secret APIs auth-gated; mutate audits; HTTP lists presence only
+- **Provider supply chain / endpoints (A3)**: `@ai-sdk/*` packages load from a fixed in-code allowlist (config cannot add packages); unknown `engine` IDs rejected on write; `base_url` requires auth + scheme/host policy; audited in logs
 - **Socket**: Unix socket (or named pipe) with user-only permissions
-- **Web dashboard**: Listens on localhost only
-- **No remote access**: Daemon designed for local use only
+- **Web dashboard**: Listens on localhost only by default; Bearer auth required
 - **Config files**: Created with mode `0o600` (user read/write only)
+- **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-038)

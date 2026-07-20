@@ -96,6 +96,9 @@ Tests that start real servers, make real HTTP/gRPC calls.
 | `tests/integration/mcp-http-policy.test.ts` | `/mcp` auth + connection consent + tool_policy E2E |
 | `tests/integration/http-security.test.ts` | HTTP auth, CORS, bind defaults, dashboard login |
 | `tests/integration/discover-models-auth.test.ts` | discover-models: reject `?apiKey=`; accept `X-Api-Key` / body |
+| `tests/integration/provider-endpoint-security.test.ts` | Provider `base_url`: unauth denied, bad endpoint rejected, allowed + audit |
+| `src/core/provider-endpoint.test.ts` | Unit: scheme/host policy, allowlist, audit log |
+| `src/core/secrets-audit.test.ts` | Unit: secret mutation audit never logs values (A1) |
 
 ### Mock Engine
 

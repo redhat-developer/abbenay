@@ -37,6 +37,7 @@ import {
 } from './engines.js';
 import type { ToolRegistry } from './tool-registry.js';
 import { createToolValidator } from './tool-approval.js';
+import { validateProviderEndpoint } from './provider-endpoint.js';
 import { VERSION } from '../version.js';
 
 // ── Virtual provider info (runtime, for API responses) ─────────────────
@@ -207,7 +208,11 @@ export class CoreState {
     };
 
     if (options.baseUrl) {
-      providerCfg.base_url = options.baseUrl;
+      const endpoint = validateProviderEndpoint(options.baseUrl);
+      if (!endpoint.ok) {
+        throw new Error(endpoint.error);
+      }
+      providerCfg.base_url = endpoint.normalized;
     }
 
     // Store API key in SecretStore if provided

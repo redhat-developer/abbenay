@@ -95,6 +95,53 @@ below).
 | `ABBENAY_HTTP_AUTH` | Enable/disable HTTP auth | Enabled (`1` / unset). Set to `0`, `false`, `off`, `no`, or `disabled` to turn auth off |
 | `ABBENAY_HTTP_HOST` or `server.host` or `--host` | HTTP bind address | `127.0.0.1` |
 | `ABBENAY_CORS_ORIGINS` or `server.cors_origins` | Extra CORS allowed origins | `http://127.0.0.1:<port>`, `http://localhost:<port>` |
+| `server.allowed_provider_hosts` | Optional host allowlist for provider `base_url` (non-loopback) | Unset — any `https` host allowed; `http` only to loopback |
+| `server.allow_insecure_provider_http` | Allow `http://` provider endpoints to non-loopback hosts | `false` |
+
+### Provider integrations & endpoint policy (finding A3)
+
+Each LLM engine adds dependency and trust surface: a dedicated `@ai-sdk/*`
+package (or shared `@ai-sdk/openai-compatible`), its own HTTP schemas, and
+auth model (API key, AWS chain, Vertex ADC/Bearer, etc.). Abbenay loads those
+packages **on demand**, but only from a **fixed in-code allowlist**
+(`PROVIDER_LOADERS` / built-in engine IDs) — writable config **cannot**
+install or `import()` an arbitrary npm package at runtime.
+
+The residual A3 risk is configuring a **known** engine (often
+openai-compatible) with a malicious `base_url` so prompts, responses, and
+keys are sent to an attacker. That path is closed by auth on config writes
+(DR-030 / DR-037 / H4 Zod) plus the endpoint policy below (DR-038).
+
+Provider `base_url` values (configure wizard, `POST /api/config`, gRPC
+`ConfigureProvider` / `UpdateConfig`, and model discovery) are validated
+before use:
+
+- Absolute URL with scheme `http` or `https` only; hostname required
+- Credentials in the URL (`https://user:pass@…`) are rejected
+- `http` is allowed only for loopback (`localhost`, `127.0.0.1`, `::1`,
+  `*.localhost`) unless the host is listed in `allowed_provider_hosts` or
+  `allow_insecure_provider_http: true`
+- When `allowed_provider_hosts` is set, every non-loopback host must match
+- `engine` must be a built-in engine ID (unknown engines are rejected)
+- Successful endpoint changes are audited:
+  `[Audit] provider endpoint changed: provider=… from=… to=… source=…`
+- Dynamic provider registration cannot be done anonymously when auth is on
+
+```yaml
+server:
+  # Tighten: only these hosts (plus loopback) may be used as provider endpoints
+  allowed_provider_hosts:
+    - "api.openai.com"
+    - "maas.apps.cluster.example.com"
+    - "10.0.0.5"          # also permits http://10.0.0.5/… (air-gapped)
+  # Or, broader air-gapped trust (still prefer allowlist when possible):
+  # allow_insecure_provider_http: true
+```
+
+**Supply-chain notes for operators:** keep dependencies locked and run
+`npm run audit:check`; only add engines via code review / release (not via
+config). Per-package SBOM pinning beyond the existing lockfile + audit
+allowlist is out of scope for this finding’s runtime mitigations.
 
 Call APIs with:
 
@@ -566,3 +613,75 @@ and ensure Google Cloud ADC is configured (e.g., via `GOOGLE_APPLICATION_CREDENT
 - Never commit API keys to version control
 - Use keychain for local development
 - Use env vars for CI/CD and containers
+
+## Credential aggregation risk (operators) — finding A1
+
+Abbenay **centralizes** API keys for 20+ LLM providers in a single daemon
+(keychain and/or env vars referenced from one config). If the daemon host or
+an authenticated secret/config surface is compromised, **all** configured
+provider credentials can be exposed at once. That is a **larger blast radius**
+than per-extension credential storage (where compromising one editor
+extension typically yields only that extension’s keys).
+
+Primary personas — **Enterprise Developers**, **Security-Conscious
+Developers**, and operators in **air-gapped** environments — require that this
+tradeoff be explicit and that controls reduce (not ignore) the risk. The
+mitigations below are the current posture; stronger isolation
+(encryption-at-rest beyond OS keychain, process separation) is deferred
+(DR-038).
+
+Related: a writable config that points `base_url` at a malicious host can
+steal prompts/responses/keys — constrained by the
+[provider endpoint policy](#provider-integrations--endpoint-policy-finding-a3)
+(finding A3 / DR-038).
+
+### Mitigations in place
+
+| Control | What it does |
+|---------|----------------|
+| OS keychain (`keytar`) / env refs | Secrets are not stored in plaintext YAML |
+| Config files mode `0600` | User-only read/write on disk |
+| HTTP Bearer auth (DR-030) | Unauthenticated callers cannot read/write secrets or configure providers |
+| gRPC consumer capabilities (DR-037) | On non-localhost binds, sensitive RPCs require token + capability (`secrets`, `providers`, `config`, `mcp_register`, …) |
+| Secret API shape | HTTP `GET /api/secrets` returns key names + `hasValue` only — never secret values. gRPC `GetSecret` (value-returning) requires the `secrets` capability |
+| Secret / endpoint audit logs | `[Audit] secret changed` and `[Audit] provider endpoint changed` (never log secret values) |
+| Provider endpoint policy (DR-038) | Malformed / disallowed `base_url` values are rejected; changes are audited |
+| Localhost bind defaults | HTTP/gRPC default to loopback; non-loopback requires intentional opt-in |
+
+Dynamic provider registration (`ConfigureProvider` / dashboard configure) and
+dynamic MCP registration (`RegisterMcpServer`) **cannot** be performed
+anonymously when auth is enabled / consumers are configured.
+
+### Guidance by persona
+
+| Persona | Recommended posture |
+|---------|---------------------|
+| Enterprise / air-gapped | Bind loopback or trusted network only; configure `consumers` for gRPC; set `server.allowed_provider_hosts` to approved gateways; prefer env/secrets-manager injection over long-lived dashboard tokens |
+| Security-conscious workstation | Keychain storage; keep HTTP auth on; do not disable `ABBENAY_HTTP_AUTH`; treat `ABBENAY_API_TOKEN` like a password-manager master secret |
+| Local DX / single user | Defaults (loopback + auto token + keychain) are acceptable; still rotate keys if the host may have been exposed |
+
+### Operator checklist
+
+1. Treat the daemon host and API token as **high value** — same tier as a
+   password manager holding multiple cloud keys.
+2. Prefer keychain storage on interactive workstations; prefer env vars (or
+   a secrets manager injecting env) in CI/containers.
+3. Keep HTTP/gRPC on loopback unless you need remote access; then require
+   strong tokens and (for gRPC) a `consumers` section with least-privilege
+   capabilities (grant `secrets` / `providers` only to callers that need them).
+4. For enterprise / air-gapped fleets, set `server.allowed_provider_hosts` to
+   the approved inference gateways only.
+5. Review audit logs for `[Audit] secret changed` and
+   `[Audit] provider endpoint changed` after config changes or suspected
+   compromise.
+6. Rotate **all** provider API keys if the daemon host or `ABBENAY_API_TOKEN`
+   may have been exposed — aggregation means one incident can touch every
+   configured provider.
+
+### Deferred: encryption-at-rest / stronger isolation
+
+Per-secret encryption-at-rest beyond the OS keychain, and process-level
+isolation of secrets, are **deferred** (recorded in DR-038). Revisit when
+there is a concrete enterprise requirement; current controls rely on OS
+keychain/env, filesystem permissions, auth gates, audit logs, and endpoint
+policy — not on eliminating aggregation itself.

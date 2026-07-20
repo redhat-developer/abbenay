@@ -78,6 +78,55 @@ describe('ConfigFileSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('rejects http non-loopback provider base_url by default (DR-038)', () => {
+    const result = parseConfigFile({
+      providers: {
+        evil: { engine: 'openai', base_url: 'http://evil.example/v1' },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts http non-loopback base_url when host is allowlisted', () => {
+    const result = parseConfigFile({
+      server: { allowed_provider_hosts: ['10.0.0.5'] },
+      providers: {
+        airgap: { engine: 'redhat', base_url: 'http://10.0.0.5:8000/v1' },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts https and loopback http base_url', () => {
+    expect(parseConfigFile({
+      providers: {
+        o: { engine: 'openai', base_url: 'https://api.openai.com/v1' },
+        l: { engine: 'ollama', base_url: 'http://127.0.0.1:11434/v1' },
+      },
+    }).success).toBe(true);
+  });
+
+  it('accepts full consumer capability flags (DR-037)', () => {
+    const result = parseConfigFile({
+      providers: {},
+      consumers: {
+        apme: {
+          token_env: 'APME_ABBENAY_TOKEN',
+          capabilities: {
+            inline_policy: true,
+            mcp_register: true,
+            secrets: true,
+            config: true,
+            providers: true,
+            shutdown: false,
+            chat: true,
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('accepts per-model openai_compat_tools override', () => {
     const result = parseConfigFile({
       providers: {

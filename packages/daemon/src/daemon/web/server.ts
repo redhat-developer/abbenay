@@ -17,11 +17,18 @@ import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
 import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, type ConfigFile, type ProviderConfig } from '../../core/config.js';
+import { auditSecretChange } from '../../core/secrets.js';
+import {
+  auditProviderEndpointChange,
+  auditProviderEndpointConfigDiff,
+  endpointPolicyFromServer,
+  validateProviderEndpoint,
+} from '../../core/provider-endpoint.js';
 import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
-import { getEngines, getProviderTemplates } from '../../core/engines.js';
+import { getEngine, getEngines, getProviderTemplates, validateConfigProviderEngines } from '../../core/engines.js';
 import { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from '../../core/constants.js';
 import { registerOpenAIRoutes } from './openai-compat.js';
 import {
@@ -642,6 +649,16 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         if (resolved.baseUrl && !baseUrl) baseUrl = resolved.baseUrl;
       }
 
+      if (baseUrl) {
+        const policy = endpointPolicyFromServer(loadConfig()?.server);
+        const endpoint = validateProviderEndpoint(baseUrl, policy);
+        if (!endpoint.ok) {
+          res.status(400).json({ error: endpoint.error });
+          return;
+        }
+        baseUrl = endpoint.normalized;
+      }
+
       const models = await state.discoverModels(req.params.engineId, apiKey, baseUrl);
       res.json({
         models: models.map((m) => ({
@@ -751,6 +768,16 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
 
+      const enginesCheck = validateConfigProviderEngines(config);
+      if (!enginesCheck.ok) {
+        res.status(400).json({ error: enginesCheck.error });
+        return;
+      }
+
+      const previous = loc.kind === 'user'
+        ? loadConfig()
+        : loadWorkspaceConfig(loc.resolved);
+
       let savedPath: string;
       if (loc.kind === 'user') {
         saveConfig(config);
@@ -759,6 +786,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         saveWorkspaceConfig(loc.resolved, config);
         savedPath = getWorkspaceConfigPath(loc.resolved);
       }
+
+      auditProviderEndpointConfigDiff(previous, config, 'http-config');
 
       res.json({ success: true, path: savedPath });
       state.notifyModelsChanged('config_changed');
@@ -875,6 +904,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
       await state.secretStore.set(key, parsed.data.value);
+      auditSecretChange({ key, op: 'set', source: 'http-secrets' });
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -896,6 +926,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
       await state.secretStore.set(parsed.data.key, parsed.data.value);
+      auditSecretChange({ key: parsed.data.key, op: 'set', source: 'http-secrets' });
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -916,6 +947,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
       await state.secretStore.delete(req.params.key);
+      auditSecretChange({ key: req.params.key, op: 'delete', source: 'http-secrets' });
       res.json({ success: true });
       state.notifyModelsChanged('secret_deleted');
     } catch (err: unknown) {
@@ -1173,13 +1205,40 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
       // Initialize or update provider config
       const existing: Partial<ProviderConfig> & { display_name?: string } = config.providers[providerId] ? { ...config.providers[providerId] } : {};
+      const previousBaseUrl = existing.base_url;
       if (engine) existing.engine = engine;
       delete existing.display_name;
+
+      const effectiveEngine = existing.engine;
+      if (!effectiveEngine) {
+        res.status(400).json({ error: 'engine is required when configuring a new provider' });
+        return;
+      }
+      if (!getEngine(effectiveEngine)) {
+        res.status(400).json({
+          error: `unknown engine "${effectiveEngine}" (not in the built-in engine allowlist)`,
+        });
+        return;
+      }
+
+      let normalizedBaseUrl: string | undefined;
+      if (baseUrl) {
+        // Host policy uses user-level server settings (allowlist / insecure http).
+        const policy = endpointPolicyFromServer(loadConfig()?.server);
+        const endpoint = validateProviderEndpoint(baseUrl, policy);
+        if (!endpoint.ok) {
+          res.status(400).json({ error: endpoint.error });
+          return;
+        }
+        normalizedBaseUrl = endpoint.normalized;
+      }
+
       config.providers[providerId] = existing as ProviderConfig;
 
       if (apiKey) {
         const keychainName = `${providerId.toUpperCase()}_API_KEY`;
         await state.secretStore.set(keychainName, apiKey);
+        auditSecretChange({ key: keychainName, op: 'set', source: 'http-configure' });
         config.providers[providerId].api_key_keychain_name = keychainName;
         delete config.providers[providerId].api_key_env_var_name;
       } else if (envVarName) {
@@ -1187,14 +1246,23 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         delete config.providers[providerId].api_key_keychain_name;
       }
 
-      if (baseUrl) {
-        config.providers[providerId].base_url = baseUrl;
+      if (normalizedBaseUrl) {
+        config.providers[providerId].base_url = normalizedBaseUrl;
       }
 
       if (resolvedWorkspace) {
         saveWorkspaceConfig(resolvedWorkspace, config);
       } else {
         saveConfig(config);
+      }
+
+      if (normalizedBaseUrl && normalizedBaseUrl !== previousBaseUrl) {
+        auditProviderEndpointChange({
+          providerId,
+          previousBaseUrl,
+          newBaseUrl: normalizedBaseUrl,
+          source: 'http-configure',
+        });
       }
 
       res.json({ success: true });
@@ -1242,7 +1310,10 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       if (config.providers && config.providers[providerId]) {
         const keychainName = config.providers[providerId].api_key_keychain_name;
         if (keychainName) {
-          try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
+          try {
+            await state.secretStore.delete(keychainName);
+            auditSecretChange({ key: keychainName, op: 'delete', source: 'http-configure' });
+          } catch { /* ignore */ }
         }
 
         delete config.providers[providerId];
