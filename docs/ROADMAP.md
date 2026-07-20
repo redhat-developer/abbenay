@@ -122,7 +122,10 @@ aider, any `openai` SDK script, etc.). See DR-020.
 | `POST /v1/completions` | low — legacy |
 | `POST /v1/embeddings` | low — if engines support it |
 | Usage/token stats (real counts from providers) | medium |
-| Bearer token auth on all HTTP routes (`server.api_token` / `ABBENAY_API_TOKEN`) | **done** |
+| Bearer token auth on all HTTP routes (`server.api_token` / `ABBENAY_API_TOKEN`) | **done** (DR-030) |
+| Localhost-first HTTP bind + CORS allowlist (never `*`) | **done** (DR-030) |
+| gRPC TLS / fail-closed non-loopback binds | **done** (DR-029) |
+| Air-gap / privacy docs aligned with defaults (finding A4) | **done** — [SECURITY.md](./SECURITY.md) |
 | Rate limiting | low |
 
 ### Key files
@@ -257,6 +260,15 @@ Several gRPC RPCs in `abbenay-service.ts` are unimplemented stubs.
 
 `ListTools` and `ExecuteTool` have no dependencies and can be implemented immediately
 by wiring to `ToolRegistry`.
+
+---
+
+## 8. Air-gap docs vs network exposure (A4) — done
+
+Product copy historically overstated air-gap / privacy while defaults exposed
+HTTP on all interfaces, plaintext gRPC, and wildcard CORS. Docs now state the
+real defaults and that **network isolation alone does not secure Abbenay** —
+see [SECURITY.md](./SECURITY.md) (DR-038). Code fixes: DR-030 / DR-029.
 
 ---
 
