@@ -6,7 +6,7 @@
  * through {@link validateProviderEndpoint} (or the config-wide helper) before
  * being persisted or used for outbound discovery calls.
  *
- * Policy (DR-039):
+ * Policy (DR-040):
  * - Absolute URL, `http:` or `https:` only, hostname required, no userinfo
  * - `http:` only to loopback unless the host is on `allowed_provider_hosts`
  *   or `allow_insecure_provider_http` is set

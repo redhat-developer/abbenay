@@ -329,6 +329,12 @@ Manages connections to external MCP servers defined in config. Uses `@ai-sdk/mcp
 - Supports stdio and HTTP/SSE transports
 - Auto-discovers tools on connect and registers them in `ToolRegistry`
 - Hot-reloads when config changes (connects new, disconnects removed)
+- Refuses self-connections: HTTP/SSE URLs that target this daemon's own
+  listening HTTP or gRPC ports on a local address (`localhost`, `127.0.0.1`,
+  `::1`, IPv4-mapped loopback, hostname, or any local interface IP) are
+  rejected so the daemon cannot recurse into its own `/mcp` endpoint
+  (DR-039). When listen ports are not yet registered, local hosts are
+  refused fail-closed.
 
 ```yaml
 # In config.yaml
@@ -490,4 +496,4 @@ internal MCP tool for cross-session retrieval.
 - **Socket**: Unix socket (or named pipe) with user-only permissions
 - **Web dashboard**: Listens on localhost only by default; Bearer auth required
 - **Config files**: Created with mode `0o600` (user read/write only)
-- **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-039)
+- **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-040)

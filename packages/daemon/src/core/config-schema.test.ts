@@ -78,7 +78,7 @@ describe('ConfigFileSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects http non-loopback provider base_url by default (DR-039)', () => {
+  it('rejects http non-loopback provider base_url by default (DR-040)', () => {
     const result = parseConfigFile({
       providers: {
         evil: { engine: 'openai', base_url: 'http://evil.example/v1' },

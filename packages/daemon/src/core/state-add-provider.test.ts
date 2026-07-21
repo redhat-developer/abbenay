@@ -1,5 +1,5 @@
 /**
- * Unit tests for CoreState.addProvider endpoint policy + audits (DR-039 / A3).
+ * Unit tests for CoreState.addProvider endpoint policy + audits (DR-040 / A3).
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';

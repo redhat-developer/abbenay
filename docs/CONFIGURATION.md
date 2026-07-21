@@ -110,7 +110,7 @@ install or `import()` an arbitrary npm package at runtime.
 The residual A3 risk is configuring a **known** engine (often
 openai-compatible) with a malicious `base_url` so prompts, responses, and
 keys are sent to an attacker. That path is closed by auth on config writes
-(DR-030 / DR-037 / H4 Zod) plus the endpoint policy below (DR-039).
+(DR-030 / DR-037 / H4 Zod) plus the endpoint policy below (DR-040).
 
 Provider `base_url` values (configure wizard, `POST /api/config`, gRPC
 `ConfigureProvider` / `UpdateConfig`, and model discovery) are validated
@@ -630,12 +630,12 @@ Developers**, and operators in **air-gapped** environments — require that this
 tradeoff be explicit and that controls reduce (not ignore) the risk. The
 mitigations below are the current posture; stronger isolation
 (encryption-at-rest beyond OS keychain, process separation) is deferred
-(DR-039).
+(DR-040).
 
 Related: a writable config that points `base_url` at a malicious host can
 steal prompts/responses/keys — constrained by the
 [provider endpoint policy](#provider-integrations--endpoint-policy-finding-a3)
-(finding A3 / DR-039).
+(finding A3 / DR-040).
 
 ### Mitigations in place
 
@@ -647,7 +647,7 @@ steal prompts/responses/keys — constrained by the
 | gRPC consumer capabilities (DR-037) | On non-localhost binds, sensitive RPCs require token + capability (`secrets`, `providers`, `config`, `mcp_register`, …) |
 | Secret API shape | HTTP `GET /api/secrets` returns key names + `hasValue` only — never secret values. gRPC `GetSecret` (value-returning) requires the `secrets` capability |
 | Secret / endpoint audit logs | `[Audit] secret changed` and `[Audit] provider endpoint changed` (never log secret values) |
-| Provider endpoint policy (DR-039) | Malformed / disallowed `base_url` values are rejected; changes are audited |
+| Provider endpoint policy (DR-040) | Malformed / disallowed `base_url` values are rejected; changes are audited |
 | Localhost bind defaults | HTTP/gRPC default to loopback; non-loopback requires intentional opt-in |
 
 Dynamic provider registration (`ConfigureProvider` / dashboard configure) and
@@ -683,7 +683,7 @@ anonymously when auth is enabled / consumers are configured.
 ### Deferred: encryption-at-rest / stronger isolation
 
 Per-secret encryption-at-rest beyond the OS keychain, and process-level
-isolation of secrets, are **deferred** (recorded in DR-039). Revisit when
+isolation of secrets, are **deferred** (recorded in DR-040). Revisit when
 there is a concrete enterprise requirement; current controls rely on OS
 keychain/env, filesystem permissions, auth gates, audit logs, and endpoint
 policy — not on eliminating aggregation itself.

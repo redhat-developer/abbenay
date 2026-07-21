@@ -51,6 +51,7 @@ function createMockState(): DaemonState {
     mcpClientPool: {
       getAllStatus() { return []; },
       async reconnect() {},
+      setListenEndpoints() {},
     },
     toolRegistry: {
       listTools() { return []; },
