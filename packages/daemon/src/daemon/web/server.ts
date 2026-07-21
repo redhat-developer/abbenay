@@ -119,12 +119,15 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // JSON bodies: default 100kb for /api and most routes. Defer parsing for
   // /v1/chat/completions so the larger limit runs only after requireAuth
   // (Open WebUI Legacy/Default FC embeds MCP tool schemas; ~200kb+).
+  const defaultJsonParser = express.json();
+  const isChatCompletionsPath = (path: string): boolean =>
+    path === '/v1/chat/completions' || path === '/v1/chat/completions/';
   app.use((req, res, next) => {
-    if (req.path === '/v1/chat/completions') {
+    if (isChatCompletionsPath(req.path)) {
       next();
       return;
     }
-    express.json()(req, res, next);
+    defaultJsonParser(req, res, next);
   });
 
   // CORS — explicit allowlist only (never *)
@@ -312,7 +315,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   app.use('/mcp', requireAuth);
 
   // Large JSON limit only on authenticated chat-completions (not global /login).
-  app.use('/v1/chat/completions', express.json({ limit: '10mb' }));
+  const largeChatCompletionsJsonParser = express.json({ limit: '10mb' });
+  app.use('/v1/chat/completions', largeChatCompletionsJsonParser);
 
   // ── MCP connection consent + tool approval (DR-033 / DR-034) ───────────
   // Connection: initialize blocks until POST /api/mcp/connections resolves.

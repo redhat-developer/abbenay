@@ -380,6 +380,35 @@ describe('POST /v1/chat/completions (non-streaming)', () => {
     expect(resBody.choices[0].message.content).toBe('Hello world');
   });
 
+  it('accepts >100kb tools payloads on trailing-slash path', async () => {
+    const pad = 'x'.repeat(120 * 1024);
+    const body = {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'large_tool_schema',
+            description: pad,
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      ],
+      stream: false,
+    };
+    expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(100 * 1024);
+
+    const { statusCode, body: resBody } = await httpRequest(
+      'POST',
+      `${baseUrl}/v1/chat/completions/`,
+      body,
+    );
+
+    expect(statusCode).toBe(200);
+    expect(resBody.choices[0].message.content).toBe('Hello world');
+  });
+
   it('concatenates all text chunks into message content', async () => {
     const { body } = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
       model: 'openai/gpt-4o',
