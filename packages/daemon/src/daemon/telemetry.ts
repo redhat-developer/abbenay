@@ -20,7 +20,7 @@ export async function initAiSdkTelemetry(): Promise<void> {
   const enabled = process.env.ABBENAY_AI_TELEMETRY === '1'
     || process.env.ABBENAY_AI_TELEMETRY === 'true';
   if (!enabled) {
-    debug('[Telemetry] Skipped (set ABBENAY_AI_TELEMETRY=1 to enable)');
+    debug('[Telemetry] Skipped (set ABBENAY_AI_TELEMETRY=1 or true to enable)');
     return;
   }
 
