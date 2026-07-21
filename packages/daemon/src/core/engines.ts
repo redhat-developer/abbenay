@@ -12,8 +12,30 @@
  * the built-in step loop (stopWhen). No wrapper classes required.
  */
 
-import { streamText, jsonSchema, tool, stepCountIs } from 'ai';
+import { streamText, jsonSchema, tool, isStepCount, Output } from 'ai';
 import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
+
+/** Unified AI SDK reasoning effort levels (DR-042). */
+export type ReasoningLevel =
+  | 'provider-default'
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
+
+/**
+ * Map Abbenay's flat timeout (ms) to AI SDK 7 TimeoutConfiguration.
+ * Total-budget only — matches AI SDK 7 number semantics and preserves
+ * prior Abbenay behavior (no invented step/tool half-budgets). DR-042.
+ */
+export function toSdkTimeout(timeoutMs?: number): { totalMs: number } | undefined {
+  if (timeoutMs == null || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return undefined;
+  }
+  return { totalMs: timeoutMs };
+}
 
 import { mockStreamChat, getMockModels } from './mock.js';
 import { debug } from './debug.js';
@@ -581,6 +603,8 @@ export interface ChatParams {
   top_k?: number;
   maxTokens?: number;
   timeout?: number;
+  /** Unified reasoning effort (AI SDK 7); not streamed to clients in Phase 1. */
+  reasoning?: ReasoningLevel;
 }
 
 // ── Tool definitions (passed from proto/config to AI SDK tools) ────────
@@ -942,17 +966,12 @@ export async function* streamChat(
         }
 
         if (toolExecutor) {
+          // Approval is gated by streamText toolApproval only (DR-042) — do not
+          // also validate inside execute or ask tiers prompt twice.
           toolRecord[t.name] = tool({
             description: t.description,
             inputSchema: jsonSchema(schema),
-            execute: async (args: Record<string, unknown>) => {
-              if (toolValidator) {
-                const decision = await toolValidator(t.name, args);
-                if (decision === 'deny') return { error: 'Tool execution denied by policy' };
-                if (decision === 'abort') throw new Error('Tool execution aborted by policy');
-              }
-              return toolExecutor(t.name, args);
-            },
+            execute: async (args: Record<string, unknown>) => toolExecutor(t.name, args),
           });
         } else {
           toolRecord[t.name] = tool({
@@ -964,22 +983,50 @@ export async function* streamChat(
       aiTools = toolRecord;
     }
 
+    const sdkTimeout = toSdkTimeout(params?.timeout);
+    /** toolCallId → name/input for mapping tool-output-denied (part has no toolName/input). */
+    const toolCallMeta = new Map<string, { name: string; input: unknown }>();
+
     const result = streamText({
       model,
       messages: aiMessages,
       ...(aiTools ? { tools: aiTools } : {}),
       // Always bound tool loops when tools are registered — including passthrough
       // (effectiveMaxSteps === 1) so we do not rely on AI SDK defaults alone.
-      ...(aiTools ? { stopWhen: stepCountIs(effectiveMaxSteps) } : {}),
+      ...(aiTools ? { stopWhen: isStepCount(effectiveMaxSteps) } : {}),
+      // Bridge Abbenay policy validator into SDK-native toolApproval (DR-042).
+      // Awaits toolValidator (which may prompt via onToolApprovalNeeded).
+      // Only when Abbenay executes tools (executor present) — not passthrough.
+      ...(aiTools && toolExecutor && toolValidator ? {
+        toolApproval: async ({ toolCall }: { toolCall: { toolName: string; input: unknown } }) => {
+          const decision = await toolValidator(toolCall.toolName, toolCall.input);
+          if (decision === 'allow') return 'approved' as const;
+          if (decision === 'abort') {
+            throw new Error('Tool execution aborted by policy');
+          }
+          return {
+            type: 'denied' as const,
+            reason: 'Tool execution denied by policy',
+          };
+        },
+      } : {}),
       ...(params?.temperature != null ? { temperature: params.temperature } : {}),
-      ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
+      ...(params?.maxTokens != null ? { maxOutputTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
       ...(params?.top_k != null ? { topK: params.top_k } : {}),
-      ...(params?.timeout != null ? { timeout: params.timeout } : {}),
-      ...(jsonMode ? { responseFormat: { type: 'json' as const } } : {}),
+      ...(sdkTimeout ? { timeout: sdkTimeout } : {}),
+      ...(params?.reasoning != null ? { reasoning: params.reasoning } : {}),
+      ...(jsonMode ? { output: Output.json() } : {}),
+      telemetry: {
+        functionId: 'abbenay.streamChat',
+        // Privacy-safe defaults — prompts/tool I/O stay local unless an
+        // operator opts into recording via a custom telemetry integration.
+        recordInputs: false,
+        recordOutputs: false,
+      },
     });
 
-    for await (const part of result.fullStream) {
+    for await (const part of result.stream) {
       switch (part.type) {
         case 'text-delta':
           if (part.text) {
@@ -988,6 +1035,9 @@ export async function* streamChat(
           break;
 
         case 'tool-call':
+          if (part.toolCallId && part.toolName) {
+            toolCallMeta.set(part.toolCallId, { name: part.toolName, input: part.input });
+          }
           yield {
             type: 'tool',
             name: part.toolName,
@@ -998,6 +1048,9 @@ export async function* streamChat(
           break;
 
         case 'tool-result':
+          if (part.toolCallId) {
+            toolCallMeta.delete(part.toolCallId);
+          }
           yield {
             type: 'tool',
             name: part.toolName,
@@ -1006,6 +1059,26 @@ export async function* streamChat(
             done: true,
           };
           break;
+
+        case 'tool-output-denied': {
+          // Preserve prior deny UX: clients see a completed tool with error payload
+          // and the original args from the preceding tool-call part.
+          const denied = part.toolCallId ? toolCallMeta.get(part.toolCallId) : undefined;
+          if (part.toolCallId) {
+            toolCallMeta.delete(part.toolCallId);
+          }
+          yield {
+            type: 'tool',
+            name: denied?.name || 'unknown',
+            state: 'completed',
+            call: {
+              params: denied?.input,
+              result: { error: 'Tool execution denied by policy' },
+            },
+            done: true,
+          };
+          break;
+        }
 
         case 'error': {
           console.error(`[Adapter] Stream error for ${engineId}/${engineModelId}:`, part.error);
@@ -1018,6 +1091,10 @@ export async function* streamChat(
 
         case 'finish':
           yield { type: 'done', finishReason: part.finishReason || 'stop' };
+          break;
+
+        default:
+          // Ignore lifecycle / reasoning / other stream parts — not forwarded yet.
           break;
       }
     }

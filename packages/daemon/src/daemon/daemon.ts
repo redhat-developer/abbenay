@@ -120,6 +120,10 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
   }
   
   console.log('Starting Abbenay daemon...');
+
+  // AI SDK telemetry (DR-042) — once per process
+  const { initAiSdkTelemetry } = await import('./telemetry.js');
+  await initAiSdkTelemetry();
   
   // Ensure directories exist
   ensureSocketDir();
