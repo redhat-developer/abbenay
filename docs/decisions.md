@@ -626,3 +626,22 @@ known listen endpoints closes that loop without blocking legitimate remote or
 other-localhost MCP servers on different ports once ports are known. Fail-closed
 behavior when the listen set is empty closes the race before
 `setListenEndpoints()` runs (finding H7 / AAP-82830).
+
+---
+
+## DR-041: npm overrides for transitive security patches
+
+**Date:** 2026-07-21
+**Decision:** Use root `package.json` `overrides` to pin patched versions of
+transitive dependencies when Dependabot/npm audit reports fixed advisories that
+direct dependency bumps alone cannot resolve (for example `undici` via cheerio,
+`brace-expansion` via minimatch major lines, `body-parser` via express 4/5).
+Keep major-compatible pins (`minimatch@3` → `brace-expansion@1.1.16`,
+`express@5` → `body-parser@2.3.0`, etc.) rather than forcing a single version
+across incompatible majors. Prefer direct dependency bumps when the vulnerable
+package is declared directly; use overrides only for transitive pins; regenerate
+the lockfile when adding or changing overrides so npm applies them.
+**Rationale:** Manual lockfile edits (used previously for undici) do not scale
+across nested copies and major lines. Overrides make the security pin reviewable
+in `package.json` and survive `npm install` / Dependabot refreshes.
+
