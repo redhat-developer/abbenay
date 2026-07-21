@@ -59,7 +59,7 @@ describe('streamChat mock engine (stream contract)', () => {
     )) {
       chunks.push({ type: chunk.type });
     }
-    expect(chunks.some((c) => c.type === 'text' || c.type === 'done')).toBe(true);
+    expect(chunks.some((c) => c.type === 'text')).toBe(true);
     expect(chunks[chunks.length - 1]?.type).toBe('done');
   });
 });

@@ -655,7 +655,7 @@ Dependency bump and API renames (`stepCountIs` → `isStepCount`, `fullStream`
 Map Abbenay's flat `timeout` ms to `{ totalMs }` only (no invented step/tool
 half-budgets). Pass-through unified `reasoning` on chat params / model config /
 policy sampling (not streamed to clients yet). Register AI SDK telemetry only
-when `ABBENAY_AI_TELEMETRY=1`, with `recordInputs`/`recordOutputs: false` on
+when `ABBENAY_AI_TELEMETRY` is `1` or `true`, with `recordInputs`/`recordOutputs: false` on
 `streamChat`. Bridge chat tool approval onto SDK `toolApproval` (executor path
 only) via a function that awaits Abbenay's `createToolValidator` /
 `onToolApprovalNeeded` and returns `approved` or `{ type: 'denied', reason }`;
