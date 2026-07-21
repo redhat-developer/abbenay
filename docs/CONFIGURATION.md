@@ -335,7 +335,7 @@ Each model entry supports these optional fields:
 | `top_p` | number | Nucleus sampling (0.0 - 1.0) |
 | `top_k` | number | Top-k sampling |
 | `max_tokens` | number | Maximum output tokens |
-| `timeout` | number | Request timeout in milliseconds |
+| `timeout` | number | Request timeout in milliseconds (mapped to AI SDK `{ totalMs }`; total budget only) |
 
 An empty object `{}` means "enabled with all defaults."
 
