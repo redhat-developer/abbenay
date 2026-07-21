@@ -1048,6 +1048,9 @@ export async function* streamChat(
           break;
 
         case 'tool-result':
+          if (part.toolCallId) {
+            toolCallNames.delete(part.toolCallId);
+          }
           yield {
             type: 'tool',
             name: part.toolName,
@@ -1060,6 +1063,9 @@ export async function* streamChat(
         case 'tool-output-denied': {
           // Preserve prior deny UX: clients see a completed tool with error payload.
           const deniedName = toolCallNames.get(part.toolCallId) || 'unknown';
+          if (part.toolCallId) {
+            toolCallNames.delete(part.toolCallId);
+          }
           yield {
             type: 'tool',
             name: deniedName,

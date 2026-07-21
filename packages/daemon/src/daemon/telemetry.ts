@@ -24,11 +24,10 @@ export async function initAiSdkTelemetry(): Promise<void> {
     return;
   }
 
-  registered = true;
-
   try {
     const { OpenTelemetry } = await import('@ai-sdk/otel');
     registerTelemetry(new OpenTelemetry());
+    registered = true;
     debug('[Telemetry] Registered @ai-sdk/otel (ABBENAY_AI_TELEMETRY)');
   } catch (err) {
     debug(
