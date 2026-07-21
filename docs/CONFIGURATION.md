@@ -336,6 +336,7 @@ Each model entry supports these optional fields:
 | `top_k` | number | Top-k sampling |
 | `max_tokens` | number | Maximum output tokens |
 | `timeout` | number | Request timeout in milliseconds (mapped to AI SDK `{ totalMs }`; total budget only) |
+| `reasoning` | string | Optional AI SDK 7 reasoning effort: `provider-default`, `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Passed through to the model; reasoning deltas are not streamed to clients yet. |
 
 An empty object `{}` means "enabled with all defaults."
 
