@@ -34,7 +34,7 @@
     "long": "^5.3.2",
     "nice-grpc": "^2.1.14",
     "nice-grpc-common": "^2.0.2",
-    "protobufjs": "^8.0.0",
+    "protobufjs": "^8.6.6",
     "ts-proto": "^2.11.2"
   }
 }

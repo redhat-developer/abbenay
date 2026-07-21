@@ -626,3 +626,22 @@ known listen endpoints closes that loop without blocking legitimate remote or
 other-localhost MCP servers on different ports once ports are known. Fail-closed
 behavior when the listen set is empty closes the race before
 `setListenEndpoints()` runs (finding H7 / AAP-82830).
+
+---
+
+## DR-041: Prefer direct bumps and lockfile resolution over npm overrides
+
+**Date:** 2026-07-21
+**Decision:** Resolve Dependabot/npm audit advisories by bumping direct
+dependencies and refreshing the lockfile to patched transitive versions that
+already fall within parent semver ranges. Do not add root `package.json`
+`overrides` unless a parent dependency pins a range that cannot reach a
+patched release (in which case prefer allowlisting via `.audit-allowlist` for
+dev-only/unfixable cases, or an override only as a last resort with a new
+decision entry explaining why).
+**Rationale:** Parent ranges for the current Dependabot set (`undici` via
+cheerio, `brace-expansion` via minimatch, `protobufjs` via proto-loader)
+already admit patched versions. Overrides force versions outside the normal
+resolution graph, increase review surface, and can surprise consumers; a
+lockfile refresh after direct bumps is enough when ranges allow the fix.
+
