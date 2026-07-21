@@ -800,6 +800,7 @@ message Engine {
   bool requires_key = 2;               // Whether this engine needs an API key
   optional string default_base_url = 3; // Default API base URL
   optional string default_env_var = 4;  // Default environment variable for API key
+  optional string display_name = 5;    // Human-friendly name for UI display
 }
 
 //
@@ -899,6 +900,11 @@ message ConsumerConfigMsg {
 message ConsumerCapabilitiesMsg {
   optional bool inline_policy = 1;      // Allow inline PolicyConfig on ChatRequest
   optional bool mcp_register = 2;       // Allow dynamic MCP server registration
+  optional bool secrets = 3;            // Allow secret read/write/list RPCs
+  optional bool config = 4;             // Allow GetConfig / UpdateConfig / policy / web control
+  optional bool providers = 5;          // Allow ConfigureProvider / RemoveProvider / DiscoverModels
+  optional bool shutdown = 6;           // Allow Shutdown RPC
+  optional bool chat = 7;               // Allow Chat / SessionChat
 }
 
 enum LogLevel {

@@ -13,13 +13,19 @@ import {
   getWorkspaceConfigPath,
   getUserPoliciesPath,
 } from './paths.js';
-import { DEFAULT_WEB_PORT } from './constants.js';
+import { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from './constants.js';
 
-// ── DEFAULT_WEB_PORT ─────────────────────────────────────────────────────────
+// ── DEFAULT_WEB_PORT / DEFAULT_HTTP_HOST ─────────────────────────────────────
 
 describe('DEFAULT_WEB_PORT', () => {
   it('should be 8787', () => {
     expect(DEFAULT_WEB_PORT).toBe(8787);
+  });
+});
+
+describe('DEFAULT_HTTP_HOST', () => {
+  it('should be 127.0.0.1', () => {
+    expect(DEFAULT_HTTP_HOST).toBe('127.0.0.1');
   });
 });
 

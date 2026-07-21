@@ -82,7 +82,7 @@ let baseUrl: string;
 beforeAll(async () => {
   sessionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-sessions-integ-'));
   const state = createMockState();
-  const app = createWebApp(state);
+  const app = createWebApp(state, { apiToken: 'test-integration-token', skipConfig: true });
 
   const port = await new Promise<number>((resolve) => {
     httpServer = app.listen(0, () => {
@@ -123,7 +123,7 @@ function httpRequest(
     const urlObj = new URL(url);
     const postData = body ? JSON.stringify(body) : '';
 
-    const headers: Record<string, string> = { Connection: 'close' };
+    const headers: Record<string, string> = { Connection: 'close', Authorization: 'Bearer test-integration-token' };
     if (body) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = String(Buffer.byteLength(postData));
@@ -180,6 +180,7 @@ function postSSE(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-integration-token',
           'Content-Length': String(Buffer.byteLength(postData)),
         },
       },

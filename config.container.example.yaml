@@ -42,6 +42,23 @@ providers:
   #     gpt-4o: {}
   #     gpt-4o-mini: {}
 
+  # ── Red Hat AI ────────────────────────────────────────────────────────
+  # Inference Server (local/OpenShift vLLM) or OpenShift AI MaaS.
+  # Omit api_key_env_var_name if the server has no --api-key set.
+
+  # redhat-inference:
+  #   engine: redhat
+  #   base_url: "http://host.containers.internal:8000/v1"
+  #   models:
+  #     RedHatAI/Llama-3.2-1B-Instruct-FP8: {}
+
+  # redhat-maas:
+  #   engine: redhat
+  #   base_url: "https://maas.apps.cluster.example.com/v1"
+  #   api_key_env_var_name: "REDHAT_AI_API_KEY"
+  #   models:
+  #     llama-3.1-8b-instruct: {}
+
   # ── Local models (no API key required) ──────────────────────────────
   # To reach Ollama from inside the container, use the host network
   # address or run with --network=host.
@@ -52,12 +69,19 @@ providers:
   #   models:
   #     llama3.2: {}
 
-# ── Consumer authentication (optional) ────────────────────────────────
-# Uncomment to require tokens for programmatic clients.
+# ── Consumer authentication (required for non-loopback gRPC) ──────────
+# Binding --grpc-host 0.0.0.0 (container default) refuses to start without
+# a consumers section unless --allow-open-auth / --insecure is passed.
+# Pass the token env when starting the container, e.g. -e APME_TOKEN=...
 
-# consumers:
-#   apme:
-#     token_env: "APME_TOKEN"
-#     capabilities:
-#       inline_policy: true
-#       mcp_register: true
+consumers:
+  apme:
+    token_env: "APME_TOKEN"
+    capabilities:
+      chat: true
+      inline_policy: true
+      mcp_register: true
+      secrets: true
+      config: true
+      providers: true
+      shutdown: true

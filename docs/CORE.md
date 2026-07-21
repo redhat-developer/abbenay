@@ -1,6 +1,6 @@
 # @abbenay/core
 
-A lightweight, transport-agnostic library for integrating LLM engines into your applications. Use it in agents, web apps, CLI tools, or any Node.js project that needs multi-provider LLM access.
+A lightweight, transport-agnostic library for integrating 20 LLM engines into your applications. Use it in agents, web apps, CLI tools, or any Node.js project that needs multi-provider LLM access.
 
 ## What is it?
 
@@ -122,6 +122,21 @@ console.log(config.providers);
 // Modify and save
 config.providers!['my-openai'].models!['gpt-4o'] = { temperature: 0.7 };
 saveConfig(config);
+```
+
+### Config validation (Zod)
+
+`ConfigFileSchema` and `PolicyConfigSchema` (plus `parseConfigFile`) validate
+config-shaped objects before persistence. The daemon HTTP API uses the same
+schemas for `POST /api/config` and related routes.
+
+```typescript
+import { parseConfigFile } from '@abbenay/core';
+
+const result = parseConfigFile(raw);
+if (!result.success) {
+  console.error(result.error.issues);
+}
 ```
 
 ## API Reference
@@ -291,6 +306,7 @@ The Vercel AI SDK handles the tool execution loop automatically (up to `maxSteps
 | LM Studio | `lmstudio` | No | `@ai-sdk/openai-compatible` | Local models |
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` | Fast inference |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` | Llama API |
+| Red Hat AI | `redhat` | No | `@ai-sdk/openai-compatible` | Inference Server or OpenShift AI MaaS |
 | Mock | `mock` | No | *(built-in)* | Testing only |
 
 ## Policies
@@ -381,14 +397,22 @@ for await (const chunk of core.chat('my-openai/gpt-4o', messages, undefined, { t
 
 ### Tool policy
 
-Control tool visibility and approval via `ToolPolicyConfig`:
+Control tool visibility and approval via `ToolPolicyConfig`. Chat and the
+daemon MCP HTTP server share `createToolValidator` / `authorizeToolExecution`
+from `tool-approval.ts` (DR-033):
 
 ```typescript
+import { createToolValidator, authorizeToolExecution } from '@abbenay/core';
+
 const tools = registry.listForChat({
   disabled_tools: ['mcp:filesystem/*'],   // Never send to LLM
   auto_approve: ['local:*/*'],            // Execute without confirmation
   require_approval: ['ws:*/*'],           // Pause and ask user
 });
+
+// Same precedence for any execution surface:
+// disabled → deny; require_approval → ask; auto_approve → allow; default → ask
+const validator = createToolValidator(registry, policy, onApprovalNeeded);
 ```
 
 ## Relationship to @abbenay/daemon

@@ -27,6 +27,8 @@ packages/daemon/
 ├── tests/
 │   └── integration/
 │       ├── grpc-streaming.test.ts    <- Integration (real gRPC server/client)
+│       ├── grpc-tls.test.ts          <- TLS bind policy + SetSecret over TLS
+│       ├── grpc-real-service.test.ts <- Real service RPCs
 │       ├── web-sse.test.ts           <- Integration (real Express + HTTP)
 │       ├── openai-compat.test.ts     <- Integration (OpenAI-compat API)
 │       ├── sessions.test.ts          <- Integration (session CRUD + chat SSE)
@@ -66,11 +68,14 @@ Pure unit tests with no I/O, no network, no processes.
 |------|----------------|
 | `src/core/mock.test.ts` | Mock engine: echo, fixed, error, empty, slow modes |
 | `src/core/config.test.ts` | Config loading, merging, validation |
+| `src/core/config-schema.test.ts` | Zod ConfigFile / PolicyConfig schemas (types, field injection) |
 | `src/core/tool-registry.test.ts` | Glob matching, tool registration, resolution, policy filtering |
-| `src/core/tool-approval.test.ts` | 3-tier approval precedence (auto_approve, require_approval, default) |
+| `src/core/tool-approval.test.ts` | Shared validator: disabled / auto_approve / require_approval / default ask |
+| `src/daemon/mcp-server.test.ts` | MCP authorizeAndExecute honors tool_policy (no bypass) |
 | `src/state.test.ts` | DaemonState: provider listing, model listing, chat flow |
 | `src/daemon/chat-prompt.test.ts` | `parseApprovalInput` case-sensitive routing |
 | `src/daemon/web/openai-compat.test.ts` | OpenAI format mapping: models, finish reasons, stream chunks, complete responses |
+| `src/daemon/web/validate-body.test.ts` | HTTP body parse helpers + workspace path allowlist / traversal |
 | `src/core/session-store.test.ts` | SessionStore: CRUD, appendMessage, updateTitle, updateSummary, index consistency |
 | `src/core/session-summarizer.test.ts` | generateSessionSummary, maybeSummarize interval logic, error handling |
 
@@ -81,9 +86,16 @@ Tests that start real servers, make real HTTP/gRPC calls.
 | File | What it covers |
 |------|----------------|
 | `tests/integration/grpc-streaming.test.ts` | gRPC unary RPCs + streaming + cancellation + concurrency |
-| `tests/integration/web-sse.test.ts` | Web API endpoints + SSE chat streaming + errors + disconnect |
+| `tests/integration/grpc-tls.test.ts` | gRPC TLS bind policy + SetSecret/GetSecret over TLS |
+| `tests/integration/grpc-bind-e2e.test.ts` | Subprocess E2E: localhost OK, 0.0.0.0 refuse, TLS/insecure + consumers/open-auth |
+| `tests/integration/consumer-auth.test.ts` | Consumer capability gating on sensitive RPCs |
+| `src/daemon/server/consumer-auth.test.ts` | Unit: timing-safe tokens, fail-closed bind, capability matrix |
+| `tests/integration/web-sse.test.ts` | Web API endpoints + SSE chat + config Zod validation / workspace allowlist |
 | `tests/integration/openai-compat.test.ts` | OpenAI-compatible API: /v1/models, streaming, non-streaming, errors, tool calls |
 | `tests/integration/sessions.test.ts` | Session REST API: CRUD endpoints, session chat SSE streaming + persistence |
+| `tests/integration/mcp-http-policy.test.ts` | `/mcp` auth + connection consent + tool_policy E2E |
+| `tests/integration/http-security.test.ts` | HTTP auth, CORS, bind defaults, dashboard login |
+| `tests/integration/discover-models-auth.test.ts` | discover-models: reject `?apiKey=`; accept `X-Api-Key` / body |
 
 ### Mock Engine
 

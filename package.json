@@ -17,6 +17,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "audit:check": "node scripts/audit-check.js",
+    "check:no-query-secrets": "node scripts/check-no-query-secrets.js",
     "ci:build": "node build.js --skip-proto",
     "ci:package-python": "cd packages/python && uvx hatch build",
     "ci:publish-vscode": "node scripts/publish-vscode.js"
@@ -33,7 +34,7 @@
     "long": "^5.3.2",
     "nice-grpc": "^2.1.14",
     "nice-grpc-common": "^2.0.2",
-    "protobufjs": "^8.0.0",
+    "protobufjs": "^8.6.6",
     "ts-proto": "^2.11.2"
   }
 }

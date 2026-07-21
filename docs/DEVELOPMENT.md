@@ -109,6 +109,7 @@ The build handles macOS-specific SEA requirements automatically: it passes `--ma
 | `build:dev` | `node build.js --skip-zip --code-install` | Build + install VSIX, no zip |
 | `build:proto` | `node build.js --proto-only` | Regenerate proto stubs only |
 | `lint` | `npm run lint --workspaces --if-present` | Lint all packages |
+| `check:no-query-secrets` | `npm run check:no-query-secrets` | Ban query-string API key patterns in sources (DR-035) |
 | `test` | `npm run test --workspaces --if-present` | Test all packages |
 | `ci:build` | `node build.js --skip-proto` | Full build, skip proto (stubs committed) |
 | `ci:package-python` | `cd packages/python && uvx hatch build` | Build Python wheel |
@@ -140,13 +141,37 @@ abbenay list-models         # show configured models from your config
 abbenay list-models --discover ollama   # query an engine for available models
 abbenay chat -m openai/gpt-4o          # interactive chat
 aby daemon                  # short alias
+
+# TCP gRPC (optional) — loopback plaintext OK; non-loopback needs TLS or --insecure
+# Non-loopback also requires a consumers section (or --allow-open-auth / --insecure)
+abbenay daemon --grpc-port 50051
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls   # needs consumers in config
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --insecure   # not recommended
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls --allow-open-auth  # not recommended
 ```
+
+### gRPC TCP / TLS flags
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--grpc-port <port>` | (off) | Also listen for gRPC on TCP |
+| `--grpc-host <host>` | `127.0.0.1` | Bind address; `0.0.0.0` for containers |
+| `--grpc-tls` | off | Enable TLS (auto-generated self-signed certs) |
+| `--insecure` | off | Allow plaintext on non-loopback binds; also permits empty consumers |
+| `--allow-open-auth` | off | Allow empty consumers on non-loopback binds (prefer configuring `consumers`) |
+
+Non-loopback binds without a `consumers` section fail closed unless
+`--allow-open-auth` or `--insecure` is set. See
+[CONFIGURATION.md](./CONFIGURATION.md#consumer-authentication-consumers) for
+the capability model and
+[CONTAINER.md](./CONTAINER.md#security-grpc-bind-tls-and---insecure) for
+client trust and insecure tradeoffs.
 
 ### CLI list commands
 
 | Command | What it shows | Network? |
 |---------|--------------|----------|
-| `list-engines` | All 19 supported engines with auth, tool support, and base URL | No |
+| `list-engines` | All 20 supported engines with auth, tool support, and base URL | No |
 | `list-models` | Configured provider/model pairs from your config (usable with `chat -m`) | No |
 | `list-models --discover <engine>` | All models available from an engine's API | Yes |
 

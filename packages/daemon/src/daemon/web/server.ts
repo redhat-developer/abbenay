@@ -9,21 +9,66 @@
  * - Stopped via Ctrl+C, `abbenay web` exit, or gRPC StopWebServer
  */
 
-import express, { type Express } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
-import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
+import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
 import { getEngines, getProviderTemplates } from '../../core/engines.js';
-import { DEFAULT_WEB_PORT } from '../../core/constants.js';
+import { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from '../../core/constants.js';
 import { registerOpenAIRoutes } from './openai-compat.js';
+import {
+  createAuthMiddleware,
+  createCorsMiddleware,
+  resolveHttpSecurity,
+  setAuthCookies,
+  getCookie,
+  cookieSecureFromRequest,
+  timingSafeEqualString,
+  API_TOKEN_COOKIE,
+  CSRF_COOKIE,
+  isLocalhostBind,
+  shouldRedirectDashboardToLogin,
+  mayAutoEstablishDashboardSession,
+  requestDashboardHost,
+  assertHttpAuthBindAllowed,
+  type WebSecurityOptions,
+  type ResolvedHttpSecurity,
+  type RequestWithOwner,
+} from './http-security.js';
+import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
+import {
+  DiscoverModelsBodySchema,
+  EmptyBodySchema,
+  LoginBodySchema,
+  PostChatApproveBodySchema,
+  PostChatBodySchema,
+  PostConfigBodySchema,
+  PostMcpApprovalBodySchema,
+  PostMcpConnectionDecisionBodySchema,
+  PostPolicyBodySchema,
+  PostProviderConfigureBodySchema,
+  PostSecretBodySchema,
+  PostSecretByKeyBodySchema,
+  PostSessionBodySchema,
+  PostSessionChatBodySchema,
+} from './api-schemas.js';
+import {
+  parseRequestBody,
+  resolveConfigLocation,
+  checkWorkspaceLocation,
+  collectAllowlistedWorkspaces,
+  sendBadRequest,
+} from './validate-body.js';
+
+export type { WebSecurityOptions, ResolvedHttpSecurity } from './http-security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,27 +102,24 @@ const STATIC_PATH = resolveStaticPath();
 
 /**
  * Create the Express application with direct DaemonState access.
- * 
+ *
  * Used both for production (embedded in daemon) and testing.
+ * All /api/*, /v1/*, and /mcp routes require Bearer (or cookie) auth unless
+ * ABBENAY_HTTP_AUTH disables authentication for local development.
  */
-export function createWebApp(state: DaemonState): Express {
+export function createWebApp(state: DaemonState, options?: WebSecurityOptions): Express {
   const app = express();
-  
-  // Parse JSON bodies
+  const port = options?.port ?? DEFAULT_WEB_PORT;
+  const security = resolveHttpSecurity(port, options?.host, options);
+  app.locals.httpSecurity = security;
+
+  // Parse JSON / form bodies (form used by POST /login)
   app.use(express.json());
-  
-  // CORS for local development
-  app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(200);
-      return;
-    }
-    next();
-  });
-  
+  app.use(express.urlencoded({ extended: false }));
+
+  // CORS — explicit allowlist only (never *)
+  app.use(createCorsMiddleware(security.corsOrigins));
+
   // Prevent browser caching of HTML so dashboard always serves fresh content
   app.use((req, res, next) => {
     if (req.path.endsWith('.html') || req.path === '/') {
@@ -86,15 +128,410 @@ export function createWebApp(state: DaemonState): Express {
     next();
   });
 
-  // Serve static files
-  if (fs.existsSync(STATIC_PATH)) {
-    app.use(express.static(STATIC_PATH));
-  }
-  
-  // ─── API Routes ────────────────────────────────────────────────────────
-  
+  const cookieOpts = (req: Request) => ({ secure: cookieSecureFromRequest(req) });
+
+  const hasValidAuthCookie = (req: Request): boolean => {
+    const cookieToken = getCookie(req, API_TOKEN_COOKIE);
+    return cookieToken !== null && timingSafeEqualString(cookieToken, security.apiToken);
+  };
+
+  const LOGIN_PAGE = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Abbenay login</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;padding:0 1rem}
+  label{display:block;margin-bottom:.5rem;font-weight:600}
+  input[type=password]{width:100%;padding:.5rem;box-sizing:border-box}
+  button{margin-top:1rem;padding:.5rem 1rem}
+  .err{color:#b00020;margin-bottom:1rem}
+</style></head><body>
+<h1>Abbenay</h1>
+<p>Enter the HTTP API token to open the dashboard. Prefer this form (or
+<code>POST /login</code>) over putting the token in the URL.</p>
+{{ERROR}}
+<form method="post" action="/login">
+  <label for="token">API token</label>
+  <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
+  <button type="submit">Sign in</button>
+</form>
+</body></html>`;
+
   /**
-   * GET /api/health - Health check
+   * Serve dashboard HTML. Establishes SameSite auth cookies when auth is
+   * enabled and:
+   * - POST /login (preferred) or legacy ?token=<apiToken> succeeded, or
+   * - locality allows auto-session: local TCP peer/bind **and** every
+   *   Host / X-Forwarded-Host value is loopback (see
+   *   {@link mayAutoEstablishDashboardSession})
+   *
+   * Otherwise unauthenticated HTML requests redirect to `/login`.
+   *
+   * The API token is never embedded in HTML for remote clients; the dashboard
+   * authenticates via HttpOnly cookie + CSRF header (and API clients use Bearer).
+   */
+  const serveDashboardHtml = (req: Request, res: Response): void => {
+    // All HTML entry points (/, /index.html, SPA deep-links) must be
+    // non-cacheable — embedded window.__ABBENAY_CSRF__ must stay fresh.
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+    const indexPath = path.join(STATIC_PATH, 'index.html');
+    if (!fs.existsSync(indexPath)) {
+      res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);
+      return;
+    }
+
+    if (!security.authEnabled) {
+      res.type('html').send(fs.readFileSync(indexPath, 'utf-8'));
+      return;
+    }
+
+    // Legacy query login (kept for compat). Prefer POST /login — query tokens
+    // can leak via history, Referer, and access logs.
+    const q = typeof req.query.token === 'string' ? req.query.token : undefined;
+    if (q !== undefined) {
+      if (!timingSafeEqualString(q, security.apiToken)) {
+        res.status(401).send('Invalid token');
+        return;
+      }
+      setAuthCookies(res, security.apiToken, cookieOpts(req));
+      res.redirect(302, '/');
+      return;
+    }
+
+    const hasAuthCookie = hasValidAuthCookie(req);
+    const hostHeader = requestDashboardHost(req);
+    const locality = {
+      authEnabled: security.authEnabled,
+      hasValidAuthCookie: hasAuthCookie,
+      bindHost: security.host,
+      remoteAddress: req.socket.remoteAddress,
+      hostHeader,
+    };
+    if (shouldRedirectDashboardToLogin(locality)) {
+      res.redirect(302, '/login');
+      return;
+    }
+
+    const mayEstablishSession = mayAutoEstablishDashboardSession(locality);
+
+    let csrf = getCookie(req, CSRF_COOKIE);
+    if (mayEstablishSession && (!hasAuthCookie || !csrf)) {
+      csrf = setAuthCookies(res, security.apiToken, cookieOpts(req));
+    }
+
+    let html = fs.readFileSync(indexPath, 'utf-8');
+    // Inject CSRF for dashboard mutating requests; never inject the API token.
+    const inject = `<script>window.__ABBENAY_CSRF__=${JSON.stringify(csrf || '')};</script>`;
+    html = html.includes('</head>')
+      ? html.replace('</head>', `${inject}</head>`)
+      : `${inject}${html}`;
+    res.type('html').send(html);
+  };
+
+  const extractLoginToken = (req: Request): { ok: true; token: string } | { ok: false; error: string } => {
+    const parsed = parseRequestBody(LoginBodySchema, req.body);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error };
+    }
+    if (typeof parsed.data.token === 'string') return { ok: true, token: parsed.data.token };
+    if (typeof parsed.data.api_token === 'string') return { ok: true, token: parsed.data.api_token };
+    return { ok: true, token: '' };
+  };
+
+  app.get('/login', (req, res) => {
+    // Always offer the form when unauthenticated — loopback clients can also
+    // open `/` for auto cookie establish, but /login must not put the token
+    // in the URL for remote (or any) users.
+    if (!security.authEnabled || hasValidAuthCookie(req)) {
+      res.redirect(302, '/');
+      return;
+    }
+    res.type('html').send(LOGIN_PAGE.replace('{{ERROR}}', ''));
+  });
+
+  app.post('/login', (req, res) => {
+    if (!security.authEnabled) {
+      res.redirect(302, '/');
+      return;
+    }
+    const wantsJson = req.is('application/json') || (req.headers.accept || '').includes('application/json');
+    const extracted = extractLoginToken(req);
+    if (!extracted.ok) {
+      if (wantsJson) {
+        sendBadRequest(res, extracted.error);
+        return;
+      }
+      res.status(400).type('html').send(
+        LOGIN_PAGE.replace('{{ERROR}}', `<p class="err">${extracted.error}</p>`),
+      );
+      return;
+    }
+    if (!timingSafeEqualString(extracted.token, security.apiToken)) {
+      if (wantsJson) {
+        res.status(401).json({ error: 'Invalid token' });
+        return;
+      }
+      res.status(401).type('html').send(
+        LOGIN_PAGE.replace('{{ERROR}}', '<p class="err">Invalid token</p>'),
+      );
+      return;
+    }
+    setAuthCookies(res, security.apiToken, cookieOpts(req));
+    if (wantsJson) {
+      res.status(204).end();
+      return;
+    }
+    res.redirect(302, '/');
+  });
+
+  app.get('/', serveDashboardHtml);
+  app.get('/index.html', serveDashboardHtml);
+
+  // Serve other static files (CSS/JS assets next to index.html)
+  if (fs.existsSync(STATIC_PATH)) {
+    app.use(express.static(STATIC_PATH, { index: false }));
+  }
+
+  // Auth gate for all API / OpenAI-compat / MCP routes (no-op when auth disabled)
+  const requireAuth = createAuthMiddleware(
+    security.apiToken,
+    security.corsOrigins,
+    security.authEnabled,
+  );
+  app.use('/api', requireAuth);
+  app.use('/v1', requireAuth);
+  app.use('/mcp', requireAuth);
+
+  // ── MCP connection consent + tool approval (DR-033 / DR-034) ───────────
+  // Connection: initialize blocks until POST /api/mcp/connections resolves.
+  // Tools: authorizeAndExecute blocks until POST /api/mcp/approvals resolves.
+  // Abandoned pending entries auto-deny after mcpPendingTtlMs (default 5m).
+  const DEFAULT_MCP_PENDING_TTL_MS = 5 * 60 * 1000;
+  const mcpPendingTtlMs = options?.mcpPendingTtlMs != null && options.mcpPendingTtlMs > 0
+    ? options.mcpPendingTtlMs
+    : DEFAULT_MCP_PENDING_TTL_MS;
+
+  const pendingMcpApprovals = new Map<string, {
+    resolve: (decision: 'allow' | 'deny' | 'abort') => void;
+    toolName: string;
+    namespacedName?: string;
+    args: unknown;
+    createdAt: number;
+  }>();
+
+  const pendingMcpConnections = new Map<string, {
+    resolve: (decision: 'allow' | 'deny') => void;
+    clientName: string;
+    clientVersion: string;
+    createdAt: number;
+  }>();
+
+  if (typeof state.mcpServer?.configure === 'function') {
+    state.mcpServer.configure({
+      getPolicy: () => {
+        try {
+          return loadConfig().tool_policy;
+        } catch {
+          return undefined;
+        }
+      },
+      onApprovalNeeded: async (requestId, toolName, args, namespacedName) => {
+        console.log(
+          `[Web] MCP tool approval required: ${namespacedName || toolName} (requestId=${requestId})`,
+        );
+        return new Promise<'allow' | 'deny' | 'abort'>((resolve) => {
+          const timer = setTimeout(() => {
+            if (!pendingMcpApprovals.has(requestId)) return;
+            pendingMcpApprovals.delete(requestId);
+            console.log(
+              `[Web] MCP tool approval expired → deny: ${namespacedName || toolName} (requestId=${requestId})`,
+            );
+            resolve('deny');
+          }, mcpPendingTtlMs);
+          pendingMcpApprovals.set(requestId, {
+            resolve: (decision) => {
+              clearTimeout(timer);
+              resolve(decision);
+            },
+            toolName,
+            namespacedName,
+            args,
+            createdAt: Date.now(),
+          });
+        });
+      },
+      onConnectionConsentNeeded: async (requestId, clientName, clientVersion) => {
+        console.log(
+          `[Web] MCP connection consent required: ${clientName}@${clientVersion} (requestId=${requestId})`,
+        );
+        return new Promise<'allow' | 'deny'>((resolve) => {
+          const timer = setTimeout(() => {
+            if (!pendingMcpConnections.has(requestId)) return;
+            pendingMcpConnections.delete(requestId);
+            console.log(
+              `[Web] MCP connection consent expired → deny: ${clientName}@${clientVersion} (requestId=${requestId})`,
+            );
+            resolve('deny');
+          }, mcpPendingTtlMs);
+          pendingMcpConnections.set(requestId, {
+            resolve: (decision) => {
+              clearTimeout(timer);
+              resolve(decision);
+            },
+            clientName,
+            clientVersion,
+            createdAt: Date.now(),
+          });
+        });
+      },
+    });
+  }
+
+  /**
+   * GET /api/mcp/connections — pending connection consents + active sessions
+   */
+  app.get('/api/mcp/connections', (_req, res) => {
+    const pending = [...pendingMcpConnections.entries()].map(([requestId, p]) => ({
+      requestId,
+      clientName: p.clientName,
+      clientVersion: p.clientVersion,
+      createdAt: p.createdAt,
+    }));
+    const sessions = typeof state.mcpServer?.listSessions === 'function'
+      ? state.mcpServer.listSessions()
+      : [];
+    const remembered = typeof state.mcpServer?.listRememberedClients === 'function'
+      ? state.mcpServer.listRememberedClients()
+      : [];
+    res.json({ pending, sessions, remembered });
+  });
+
+  /**
+   * POST /api/mcp/connections/:requestId — allow / deny a pending MCP client connection
+   * Body: { decision: 'allow' | 'deny', remember?: boolean }
+   */
+  app.post('/api/mcp/connections/:requestId', (req, res) => {
+    const parsed = parseRequestBody(PostMcpConnectionDecisionBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
+      return;
+    }
+    const { requestId } = req.params;
+    const { decision, remember } = parsed.data;
+    const pending = pendingMcpConnections.get(requestId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending MCP connection with requestId "${requestId}"` });
+      return;
+    }
+    console.log(
+      `[Web] MCP connection: ${pending.clientName}@${pending.clientVersion} → ${decision}` +
+        (remember && decision === 'allow' ? ' (remember)' : '') +
+        ` (requestId=${requestId})`,
+    );
+    if (decision === 'allow' && remember && typeof state.mcpServer?.rememberClient === 'function') {
+      state.mcpServer.rememberClient(pending.clientName);
+    }
+    pending.resolve(decision);
+    pendingMcpConnections.delete(requestId);
+    res.json({ success: true });
+  });
+
+  /**
+   * DELETE /api/mcp/connections/sessions/:sessionId — revoke an approved session
+   */
+  app.delete('/api/mcp/connections/sessions/:sessionId', async (req, res) => {
+    try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+      if (typeof state.mcpServer?.revokeSession !== 'function') {
+        res.status(404).json({ error: 'MCP server does not support session revoke' });
+        return;
+      }
+      const ok = await state.mcpServer.revokeSession(req.params.sessionId);
+      if (!ok) {
+        res.status(404).json({ error: `No MCP session "${req.params.sessionId}"` });
+        return;
+      }
+      res.json({ success: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  /**
+   * DELETE /api/mcp/connections/remembered/:clientName — forget a remembered client
+   */
+  app.delete('/api/mcp/connections/remembered/:clientName', (req, res) => {
+    const parsed = parseRequestBody(EmptyBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
+      return;
+    }
+    const clientName = decodeURIComponent(req.params.clientName || '').trim();
+    if (!clientName) {
+      res.status(400).json({ error: 'clientName is required' });
+      return;
+    }
+    if (typeof state.mcpServer?.forgetClient !== 'function') {
+      res.status(404).json({ error: 'MCP server does not support forgetClient' });
+      return;
+    }
+    const before = typeof state.mcpServer.listRememberedClients === 'function'
+      ? state.mcpServer.listRememberedClients()
+      : [];
+    if (!before.includes(clientName)) {
+      res.status(404).json({ error: `No remembered MCP client "${clientName}"` });
+      return;
+    }
+    state.mcpServer.forgetClient(clientName);
+    console.log(`[Web] MCP remembered client forgotten: ${clientName}`);
+    res.json({ success: true, forgotten: clientName });
+  });
+
+  /**
+   * GET /api/mcp/approvals — list pending MCP tool approval requests
+   */
+  app.get('/api/mcp/approvals', (_req, res) => {
+    const pending = [...pendingMcpApprovals.entries()].map(([requestId, p]) => ({
+      requestId,
+      toolName: p.toolName,
+      namespacedName: p.namespacedName,
+      args: p.args,
+      createdAt: p.createdAt,
+    }));
+    res.json({ pending });
+  });
+
+  /**
+   * POST /api/mcp/approvals/:requestId — approve / deny / abort a pending MCP tool call
+   * Body: { decision: 'allow' | 'deny' | 'abort' }
+   */
+  app.post('/api/mcp/approvals/:requestId', (req, res) => {
+    const parsed = parseRequestBody(PostMcpApprovalBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
+      return;
+    }
+    const { requestId } = req.params;
+    const { decision } = parsed.data;
+    const pending = pendingMcpApprovals.get(requestId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending MCP approval with requestId "${requestId}"` });
+      return;
+    }
+    console.log(`[Web] MCP tool approval: ${pending.namespacedName || pending.toolName} → ${decision} (requestId=${requestId})`);
+    pending.resolve(decision);
+    pendingMcpApprovals.delete(requestId);
+    res.json({ success: true });
+  });
+
+  // ─── API Routes ────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/health - Health check (requires auth; pass Bearer for probes)
    */
   app.get('/api/health', (req, res) => {
     res.json({
@@ -152,27 +589,59 @@ export function createWebApp(state: DaemonState): Express {
   });
   
   /**
-   * GET /api/discover-models/:providerId - Discover all models a provider offers
-   * Ignores config — for browsing/selection UI. Does NOT trigger notifications.
+   * Discover models for an engine (actual layer). Does NOT trigger notifications.
+   *
+   * API keys MUST NOT be passed as query params (leaks via logs, proxies, history,
+   * Referer). Accept provider keys only via:
+   *   - Header: X-Api-Key
+   *   - JSON body: { apiKey } (POST)
+   * Non-secret params (baseUrl, providerId) may be query (GET) or body (POST).
+   * Query ?apiKey= is rejected with 400.
    */
-  /**
-   * GET /api/discover-models/:engineId - Discover all models an engine offers
-   * Operates on the actual layer (engine, not virtual provider).
-   * Query params: ?apiKey=xxx&baseUrl=xxx (optional, for authenticated discovery)
-   */
-  app.get('/api/discover-models/:engineId', async (req, res) => {
+  const handleDiscoverModels = async (req: Request, res: Response): Promise<void> => {
     try {
-      let apiKey = req.query.apiKey as string | undefined;
-      let baseUrl = req.query.baseUrl as string | undefined;
-      const providerId = req.query.providerId as string | undefined;
-      
+      // Reject query-string secrets without naming req.query.apiKey (CI ban pattern).
+      if (Object.prototype.hasOwnProperty.call(req.query, 'apiKey')) {
+        res.status(400).json({
+          error:
+            'apiKey must not be passed as a query parameter. ' +
+            'Send it via the X-Api-Key header or JSON body (POST).',
+        });
+        return;
+      }
+
+      const parsed = parseRequestBody(DiscoverModelsBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+      const body = parsed.data;
+
+      const headerKey = req.headers['x-api-key'];
+      const headerKeyStr = Array.isArray(headerKey) ? headerKey[0] : headerKey;
+      let apiKey: string | undefined;
+      if (typeof headerKeyStr === 'string' && headerKeyStr.length > 0) {
+        apiKey = headerKeyStr;
+      } else if (body.apiKey) {
+        apiKey = body.apiKey;
+      }
+
+      let baseUrl =
+        body.baseUrl ||
+        (typeof req.query.baseUrl === 'string' ? req.query.baseUrl : undefined) ||
+        undefined;
+      const providerId =
+        body.providerId ||
+        (typeof req.query.providerId === 'string' ? req.query.providerId : undefined) ||
+        undefined;
+
       // If providerId is given (edit mode), resolve API key and base URL from config
       if (providerId && !apiKey) {
         const resolved = await state.resolveProviderCredentials(providerId);
         if (resolved.apiKey) apiKey = resolved.apiKey;
         if (resolved.baseUrl && !baseUrl) baseUrl = resolved.baseUrl;
       }
-      
+
       const models = await state.discoverModels(req.params.engineId, apiKey, baseUrl);
       res.json({
         models: models.map((m) => ({
@@ -190,7 +659,10 @@ export function createWebApp(state: DaemonState): Express {
       console.error('[Web] /api/discover-models error:', msg);
       res.status(500).json({ error: msg });
     }
-  });
+  };
+
+  app.get('/api/discover-models/:engineId', handleDiscoverModels);
+  app.post('/api/discover-models/:engineId', handleDiscoverModels);
   
   /**
    * GET /api/models - List models from configured providers
@@ -226,22 +698,30 @@ export function createWebApp(state: DaemonState): Express {
   /**
    * GET /api/config?location=user|<workspacePath> - Get configuration
    * Returns { config: ConfigFile, path: string }
+   * Workspace locations must be allowlisted (same rules as POST).
    */
   app.get('/api/config', (req, res) => {
     try {
-      const location = (req.query.location as string) || 'user';
+      const location = typeof req.query.location === 'string' && req.query.location
+        ? req.query.location
+        : 'user';
+      const loc = resolveConfigLocation(location, state);
+      if (!loc.ok) {
+        res.status(loc.status).json({ error: loc.error });
+        return;
+      }
+
       let config: ConfigFile;
       let configPath: string;
-      
-      if (location === 'user') {
+
+      if (loc.kind === 'user') {
         config = loadConfig() || { providers: {} };
         configPath = getUserConfigPath();
       } else {
-        // location is a workspace path
-        config = loadWorkspaceConfig(location) || { providers: {} };
-        configPath = getWorkspaceConfigPath(location);
+        config = loadWorkspaceConfig(loc.resolved) || { providers: {} };
+        configPath = getWorkspaceConfigPath(loc.resolved);
       }
-      
+
       res.json({ config, path: configPath });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -249,25 +729,37 @@ export function createWebApp(state: DaemonState): Express {
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * POST /api/config - Save configuration
    * Accepts { location: 'user' | workspacePath, config: ConfigFile }
+   * Body is Zod-validated; workspace locations must be allowlisted.
    */
   app.post('/api/config', (req, res) => {
     try {
-      const { location, config } = req.body;
-      const loc = location || 'user';
+      const parsed = parseRequestBody(PostConfigBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+
+      const { config } = parsed.data;
+      const location = parsed.data.location ?? 'user';
+      const loc = resolveConfigLocation(location, state);
+      if (!loc.ok) {
+        res.status(loc.status).json({ error: loc.error });
+        return;
+      }
+
       let savedPath: string;
-      
-      if (loc === 'user') {
+      if (loc.kind === 'user') {
         saveConfig(config);
         savedPath = getUserConfigPath();
       } else {
-        saveWorkspaceConfig(loc, config);
-        savedPath = getWorkspaceConfigPath(loc);
+        saveWorkspaceConfig(loc.resolved, config);
+        savedPath = getWorkspaceConfigPath(loc.resolved);
       }
-      
+
       res.json({ success: true, path: savedPath });
       state.notifyModelsChanged('config_changed');
       state.refreshMcpConnections().catch((err: unknown) => {
@@ -377,12 +869,12 @@ export function createWebApp(state: DaemonState): Express {
   app.post('/api/secrets/:key', async (req, res) => {
     try {
       const key = req.params.key;
-      const { value } = req.body;
-      if (!value) {
-        res.status(400).json({ error: 'value required' });
+      const parsed = parseRequestBody(PostSecretByKeyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
-      await state.secretStore.set(key, value);
+      await state.secretStore.set(key, parsed.data.value);
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -391,19 +883,19 @@ export function createWebApp(state: DaemonState): Express {
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * POST /api/secrets - Set a secret (API key) — legacy route
    * Body: { key: string, value: string }
    */
   app.post('/api/secrets', async (req, res) => {
     try {
-      const { key, value } = req.body;
-      if (!key || !value) {
-        res.status(400).json({ error: 'key and value required' });
+      const parsed = parseRequestBody(PostSecretBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
-      await state.secretStore.set(key, value);
+      await state.secretStore.set(parsed.data.key, parsed.data.value);
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -412,12 +904,17 @@ export function createWebApp(state: DaemonState): Express {
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * DELETE /api/secrets/:key - Delete a secret
    */
   app.delete('/api/secrets/:key', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       await state.secretStore.delete(req.params.key);
       res.json({ success: true });
       state.notifyModelsChanged('secret_deleted');
@@ -471,15 +968,12 @@ export function createWebApp(state: DaemonState): Express {
    * Body: { requestId: string, decision: 'allow' | 'deny' | 'abort' }
    */
   app.post('/api/chat/:chatId/approve', (req, res) => {
-    const { requestId, decision } = req.body;
-    if (!requestId || !decision) {
-      res.status(400).json({ error: 'requestId and decision required' });
+    const parsed = parseRequestBody(PostChatApproveBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
-    if (!['allow', 'deny', 'abort'].includes(decision)) {
-      res.status(400).json({ error: 'decision must be allow, deny, or abort' });
-      return;
-    }
+    const { requestId, decision } = parsed.data;
 
     const pending = pendingApprovals.get(requestId);
     if (!pending) {
@@ -505,12 +999,23 @@ export function createWebApp(state: DaemonState): Express {
    * emitted and the stream pauses until POST /api/chat/:chatId/approve resolves it.
    */
   app.post('/api/chat', (req, res) => {
-    const { model, messages, temperature, top_p, top_k, max_tokens, timeout: reqTimeout, tools, tool_mode } = req.body;
-
-    if (!model || !messages) {
-      res.status(400).json({ error: 'model and messages required' });
+    const parsed = parseRequestBody(PostChatBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
+
+    const {
+      model,
+      messages,
+      temperature,
+      top_p,
+      top_k,
+      max_tokens,
+      timeout: reqTimeout,
+      tools,
+      tool_mode,
+    } = parsed.data;
 
     const chatId = crypto.randomUUID();
 
@@ -538,7 +1043,7 @@ export function createWebApp(state: DaemonState): Express {
     };
 
     // Convert web messages to the format state.chat() expects
-    const chatMessages = messages.map((m: { role?: string; content?: string; name?: string; tool_call_id?: string; tool_calls?: unknown[] }) => ({
+    const chatMessages = messages.map((m) => ({
       role: m.role || 'user',
       content: m.content ?? '',
       name: m.name || undefined,
@@ -556,11 +1061,15 @@ export function createWebApp(state: DaemonState): Express {
     const hasParams = Object.keys(requestParams).length > 0;
 
     // Build tool options
-    const toolDefs = Array.isArray(tools) ? tools.map((t: { name?: string; description?: string; input_schema?: string | Record<string, unknown> }) => ({
-      name: t.name || '',
-      description: t.description || '',
-      inputSchema: typeof t.input_schema === 'string' ? t.input_schema : JSON.stringify(t.input_schema || {}),
-    })).filter((t) => t.name) : undefined;
+    const toolDefs = tools
+      ? tools.map((t) => ({
+          name: t.name || '',
+          description: t.description || '',
+          inputSchema: typeof t.input_schema === 'string'
+            ? t.input_schema
+            : JSON.stringify(t.input_schema || {}),
+        })).filter((t) => t.name)
+      : undefined;
 
     const toolOptions: ChatToolOptions = {
       toolMode: tool_mode || 'auto',
@@ -639,20 +1148,35 @@ export function createWebApp(state: DaemonState): Express {
   app.post('/api/provider/:id/configure', async (req, res) => {
     try {
       const providerId = req.params.id;
-      const { engine, apiKey, envVarName, baseUrl, target, workspacePath } = req.body;
-      
-      const config: ConfigFile = (target === 'workspace' && workspacePath
-        ? loadWorkspaceConfig(workspacePath)
+      const parsed = parseRequestBody(PostProviderConfigureBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+      const { engine, apiKey, envVarName, baseUrl, target, workspacePath } = parsed.data;
+
+      let resolvedWorkspace: string | undefined;
+      if (target === 'workspace' && workspacePath) {
+        const check = checkWorkspaceLocation(workspacePath, collectAllowlistedWorkspaces(state));
+        if (!check.ok) {
+          res.status(check.status).json({ error: check.error });
+          return;
+        }
+        resolvedWorkspace = check.resolved;
+      }
+
+      const config: ConfigFile = (resolvedWorkspace
+        ? loadWorkspaceConfig(resolvedWorkspace)
         : loadConfig()) || { providers: {} };
-      
+
       if (!config.providers) config.providers = {};
-      
+
       // Initialize or update provider config
       const existing: Partial<ProviderConfig> & { display_name?: string } = config.providers[providerId] ? { ...config.providers[providerId] } : {};
       if (engine) existing.engine = engine;
       delete existing.display_name;
       config.providers[providerId] = existing as ProviderConfig;
-      
+
       if (apiKey) {
         const keychainName = `${providerId.toUpperCase()}_API_KEY`;
         await state.secretStore.set(keychainName, apiKey);
@@ -662,17 +1186,17 @@ export function createWebApp(state: DaemonState): Express {
         config.providers[providerId].api_key_env_var_name = envVarName;
         delete config.providers[providerId].api_key_keychain_name;
       }
-      
+
       if (baseUrl) {
         config.providers[providerId].base_url = baseUrl;
       }
-      
-      if (target === 'workspace' && workspacePath) {
-        saveWorkspaceConfig(workspacePath, config);
+
+      if (resolvedWorkspace) {
+        saveWorkspaceConfig(resolvedWorkspace, config);
       } else {
         saveConfig(config);
       }
-      
+
       res.json({ success: true });
       state.notifyModelsChanged('provider_configured');
     } catch (err: unknown) {
@@ -681,35 +1205,55 @@ export function createWebApp(state: DaemonState): Express {
       res.status(500).json({ error: msg });
     }
   });
-  
+
   /**
    * DELETE /api/provider/:id - Remove a provider configuration
    */
   app.delete('/api/provider/:id', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+
       const providerId = req.params.id;
-      const target = req.query.target as string || 'user';
-      const workspacePath = req.query.workspacePath as string;
-      
-      const config: ConfigFile = (target === 'workspace' && workspacePath
-        ? loadWorkspaceConfig(workspacePath)
+      const target = typeof req.query.target === 'string' ? req.query.target : 'user';
+      const workspacePath = typeof req.query.workspacePath === 'string' ? req.query.workspacePath : undefined;
+
+      let resolvedWorkspace: string | undefined;
+      if (target === 'workspace') {
+        if (!workspacePath) {
+          sendBadRequest(res, 'workspacePath query param is required when target is "workspace"');
+          return;
+        }
+        const check = checkWorkspaceLocation(workspacePath, collectAllowlistedWorkspaces(state));
+        if (!check.ok) {
+          res.status(check.status).json({ error: check.error });
+          return;
+        }
+        resolvedWorkspace = check.resolved;
+      }
+
+      const config: ConfigFile = (resolvedWorkspace
+        ? loadWorkspaceConfig(resolvedWorkspace)
         : loadConfig()) || { providers: {} };
-      
+
       if (config.providers && config.providers[providerId]) {
         const keychainName = config.providers[providerId].api_key_keychain_name;
         if (keychainName) {
           try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
         }
-        
+
         delete config.providers[providerId];
-        
-        if (target === 'workspace' && workspacePath) {
-          saveWorkspaceConfig(workspacePath, config);
+
+        if (resolvedWorkspace) {
+          saveWorkspaceConfig(resolvedWorkspace, config);
         } else {
           saveConfig(config);
         }
       }
-      
+
       res.json({ success: true });
       state.notifyModelsChanged('provider_removed');
     } catch (err: unknown) {
@@ -767,6 +1311,11 @@ export function createWebApp(state: DaemonState): Express {
   // POST /api/mcp-servers/:id/reconnect — reconnect a failed MCP server
   app.post('/api/mcp-servers/:id/reconnect', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       await state.mcpClientPool.reconnect(req.params.id);
       res.json({ success: true });
     } catch (err: unknown) {
@@ -811,26 +1360,19 @@ export function createWebApp(state: DaemonState): Express {
   // POST /api/policies — upsert a custom policy
   app.post('/api/policies', (req, res) => {
     try {
-      const { name, config } = req.body as { name: string; config: PolicyConfig };
-      if (!name || typeof name !== 'string') {
-        res.status(400).json({ error: 'Policy name is required' });
+      const parsed = parseRequestBody(PostPolicyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
-      if (!isValidVirtualName(name)) {
-        res.status(400).json({ error: 'Policy name must be lowercase alphanumeric with dots, hyphens, or underscores' });
-        return;
-      }
+      const { name, config } = parsed.data;
       if (BUILTIN_POLICY_NAMES.includes(name)) {
         res.status(400).json({ error: `Cannot overwrite built-in policy "${name}". Duplicate it with a different name.` });
         return;
       }
-      if (!config || typeof config !== 'object') {
-        res.status(400).json({ error: 'Policy config is required' });
-        return;
-      }
 
       const custom = loadCustomPolicies();
-      custom[name] = config;
+      custom[name] = config as PolicyConfig;
       saveCustomPolicies(custom);
       res.json({ success: true, name });
     } catch (err: unknown) {
@@ -842,6 +1384,11 @@ export function createWebApp(state: DaemonState): Express {
   // DELETE /api/policies/:name — delete a custom policy
   app.delete('/api/policies/:name', (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       const { name } = req.params;
       if (BUILTIN_POLICY_NAMES.includes(name)) {
         res.status(400).json({ error: `Cannot delete built-in policy "${name}"` });
@@ -869,8 +1416,13 @@ export function createWebApp(state: DaemonState): Express {
   });
 
   // POST /api/mcp-server/start — start the MCP server on this Express app
-  app.post('/api/mcp-server/start', async (_req, res) => {
+  app.post('/api/mcp-server/start', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       if (state.mcpServer.isRunning) {
         res.json({ success: true, message: 'MCP server already running' });
         return;
@@ -884,8 +1436,13 @@ export function createWebApp(state: DaemonState): Express {
   });
 
   // POST /api/mcp-server/stop — stop the MCP server
-  app.post('/api/mcp-server/stop', async (_req, res) => {
+  app.post('/api/mcp-server/stop', async (req, res) => {
     try {
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
       await state.mcpServer.stop();
       res.json({ success: true });
     } catch (err: unknown) {
@@ -896,14 +1453,24 @@ export function createWebApp(state: DaemonState): Express {
 
   // ── Session Management ───────────────────────────────────────────────
 
+  const sessionOwner = (req: Request): string =>
+    (req as RequestWithOwner).abbenayOwner || LOCAL_SESSION_OWNER;
+
   app.post('/api/sessions', async (req, res) => {
     try {
-      const { model, title, policy, metadata } = req.body;
-      if (!model) {
-        res.status(400).json({ error: 'model is required' });
+      const parsed = parseRequestBody(PostSessionBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
         return;
       }
-      const session = await state.sessionStore.create(model, title, policy, metadata);
+      const { model, title, policy, metadata } = parsed.data;
+      const session = await state.sessionStore.create(
+        model,
+        title,
+        policy,
+        metadata,
+        sessionOwner(req),
+      );
       res.json(session);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -934,7 +1501,12 @@ export function createWebApp(state: DaemonState): Express {
         }
       }
 
-      const result = await state.sessionStore.list({ model, limit, offset });
+      const result = await state.sessionStore.list({
+        model,
+        limit,
+        offset,
+        owner: sessionOwner(req),
+      });
       res.json(result);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -946,7 +1518,11 @@ export function createWebApp(state: DaemonState): Express {
   app.get('/api/sessions/:id', async (req, res) => {
     try {
       const includeMessages = req.query.includeMessages !== 'false';
-      const session = await state.sessionStore.get(req.params.id, includeMessages);
+      const session = await state.sessionStore.getOwned(
+        req.params.id,
+        sessionOwner(req),
+        includeMessages,
+      );
       res.json(session);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -961,7 +1537,12 @@ export function createWebApp(state: DaemonState): Express {
 
   app.delete('/api/sessions/:id', async (req, res) => {
     try {
-      await state.sessionStore.delete(req.params.id);
+      const parsed = parseRequestBody(EmptyBodySchema, req.body);
+      if (!parsed.success) {
+        sendBadRequest(res, parsed.error);
+        return;
+      }
+      await state.sessionStore.deleteOwned(req.params.id, sessionOwner(req));
       res.json({ success: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -976,7 +1557,7 @@ export function createWebApp(state: DaemonState): Express {
 
   app.get('/api/sessions/:id/summary', async (req, res) => {
     try {
-      const session = await state.sessionStore.get(req.params.id, true);
+      const session = await state.sessionStore.getOwned(req.params.id, sessionOwner(req), true);
       const userCount = session.messages.filter((m) => m.role === 'user').length;
 
       if (session.summary && session.summaryMessageCount === userCount) {
@@ -1003,21 +1584,22 @@ export function createWebApp(state: DaemonState): Express {
 
   app.post('/api/sessions/:id/chat', async (req, res) => {
     const sessionId = req.params.id;
-    const { message } = req.body;
+    const owner = sessionOwner(req);
 
-    if (!message || !message.content) {
-      res.status(400).json({ error: 'message with content is required' });
+    const parsed = parseRequestBody(PostSessionChatBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
       return;
     }
 
     const chatMessage = {
-      role: (message.role as string) || 'user',
-      content: message.content as string,
+      role: parsed.data.message.role || 'user',
+      content: parsed.data.message.content,
     };
 
     let session;
     try {
-      session = await state.sessionStore.get(sessionId, true);
+      session = await state.sessionStore.getOwned(sessionId, owner, true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('not found') || msg.includes('Invalid session ID')) {
@@ -1117,6 +1699,21 @@ export function createWebApp(state: DaemonState): Express {
   // ── OpenAI-compatible API (/v1/*) ─────────────────────────────────────
   registerOpenAIRoutes(app, state);
 
+  // Unknown API/OpenAI/MCP GETs stay JSON 404s — never SPA HTML or /login.
+  const isApiStylePath = (p: string): boolean =>
+    p === '/api' || p.startsWith('/api/') ||
+    p === '/v1' || p.startsWith('/v1/') ||
+    p === '/mcp' || p.startsWith('/mcp/');
+
+  app.get('*', (req, res) => {
+    if (isApiStylePath(req.path)) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    // SPA fallback — same locality /login policy as `/` and `/index.html`.
+    serveDashboardHtml(req, res);
+  });
+
   return app;
 }
 
@@ -1124,44 +1721,99 @@ export function createWebApp(state: DaemonState): Express {
 
 let _httpServer: http.Server | null = null;
 let _webPort: number | null = null;
+let _webHost: string | null = null;
 let _lastApp: Express | null = null;
+let _lastSecurity: ResolvedHttpSecurity | null = null;
 
 /**
  * Start the embedded web server in the daemon process.
- * Returns the actual port and URL.
+ * Returns the actual port, URL, app, and resolved security settings.
+ *
+ * Binds to 127.0.0.1 by default. Non-localhost bind requires explicit opt-in
+ * via `host`, `ABBENAY_HTTP_HOST`, or `server.host` in config.yaml.
  */
 export async function startEmbeddedWebServer(
   state: DaemonState,
   port: number = DEFAULT_WEB_PORT,
-): Promise<{ port: number; url: string; app: Express }> {
+  host?: string,
+  options?: WebSecurityOptions,
+): Promise<{ port: number; url: string; app: Express; security: ResolvedHttpSecurity }> {
   if (_httpServer) {
-    return { port: _webPort!, url: `http://localhost:${_webPort}`, app: _lastApp! };
+    return {
+      port: _webPort!,
+      url: `http://${_webHost === '0.0.0.0' ? '127.0.0.1' : _webHost}:${_webPort}`,
+      app: _lastApp!,
+      security: _lastSecurity!,
+    };
   }
-  
-  const app = createWebApp(state);
-  
-  // SPA fallback (serve index.html for non-API routes)
-  app.get('*', (req, res) => {
-    const indexPath = path.join(STATIC_PATH, 'index.html');
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(404).send('Web dashboard not found. Static files not at: ' + STATIC_PATH);
-    }
+
+  const security = resolveHttpSecurity(port, host, options);
+  const bindHost = security.host || DEFAULT_HTTP_HOST;
+  assertHttpAuthBindAllowed(bindHost, security.authEnabled);
+  const app = createWebApp(state, {
+    ...options,
+    apiToken: security.apiToken,
+    port,
+    host: bindHost,
+    corsOrigins: security.corsOrigins,
+    skipConfig: true,
   });
-  
+
   _webPort = port;
-  
+
+  // Keep MCP self-connection guard in sync with the live HTTP listen port
+  state.mcpClientPool?.setListenEndpoints?.({ httpPorts: [port] });
+
+  _webHost = bindHost;
+
+  if (!security.authEnabled) {
+    console.warn(
+      '[Web] WARNING: HTTP authentication is DISABLED (ABBENAY_HTTP_AUTH). ' +
+      'Any local process (and any site that can reach this bind address) can ' +
+      'read/write secrets, config, chat, MCP, and sessions. ' +
+      'Re-enable auth for anything beyond throwaway local development.',
+    );
+  }
+
+  if (!isLocalhostBind(bindHost)) {
+    console.warn(
+      `[Web] WARNING: HTTP server is bound to ${bindHost} — accessible beyond loopback. ` +
+      'Ensure ABBENAY_API_TOKEN (or server.api_token) is set and CORS origins are restricted. ' +
+      'Prefer --host 127.0.0.1 unless you intentionally expose the API.',
+    );
+  }
+
   await new Promise<void>((resolve, reject) => {
-    _httpServer = app.listen(port, () => {
-      console.log(`[Web] Dashboard started: http://localhost:${port}`);
+    _httpServer = app.listen(port, bindHost, () => {
+      const displayHost = bindHost === '0.0.0.0' ? '127.0.0.1' : bindHost;
+      console.log(`[Web] Dashboard started: http://${displayHost}:${port} (bind ${bindHost})`);
+      if (security.authEnabled) {
+        if (security.generated) {
+          console.log(
+            '[Web] Generated API token and saved to config dir (http-api-token). ' +
+            'Prefer setting ABBENAY_API_TOKEN explicitly in containers — auto-generated ' +
+            'tokens are hard to retrieve from inside the image.',
+          );
+        }
+        console.log(`[Web] Authenticate with: Authorization: Bearer <token>`);
+        console.log(`[Web] Dashboard login: http://${displayHost}:${port}/login`);
+      } else {
+        console.log(`[Web] HTTP auth disabled — requests are accepted without a Bearer token`);
+      }
       resolve();
     });
     _httpServer.on('error', reject);
   });
-  
+
   _lastApp = app;
-  return { port, url: `http://localhost:${port}`, app };
+  _lastSecurity = security;
+  const displayHost = bindHost === '0.0.0.0' ? '127.0.0.1' : bindHost;
+  return {
+    port,
+    url: `http://${displayHost}:${port}`,
+    app,
+    security,
+  };
 }
 
 /**
@@ -1179,6 +1831,9 @@ export async function stopEmbeddedWebServer(): Promise<void> {
   
   _httpServer = null;
   _webPort = null;
+  _webHost = null;
+  _lastApp = null;
+  _lastSecurity = null;
 }
 
 /**

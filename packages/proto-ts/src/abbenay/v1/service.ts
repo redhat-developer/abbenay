@@ -1016,7 +1016,11 @@ export interface Engine {
     | string
     | undefined;
   /** Default environment variable for API key */
-  defaultEnvVar?: string | undefined;
+  defaultEnvVar?:
+    | string
+    | undefined;
+  /** Human-friendly name for UI display */
+  displayName?: string | undefined;
 }
 
 export interface ListToolsRequest {
@@ -9767,7 +9771,7 @@ export const ListEnginesResponse: MessageFns<ListEnginesResponse> = {
 };
 
 function createBaseEngine(): Engine {
-  return { id: "", requiresKey: false, defaultBaseUrl: undefined, defaultEnvVar: undefined };
+  return { id: "", requiresKey: false, defaultBaseUrl: undefined, defaultEnvVar: undefined, displayName: undefined };
 }
 
 export const Engine: MessageFns<Engine> = {
@@ -9783,6 +9787,9 @@ export const Engine: MessageFns<Engine> = {
     }
     if (message.defaultEnvVar !== undefined) {
       writer.uint32(34).string(message.defaultEnvVar);
+    }
+    if (message.displayName !== undefined) {
+      writer.uint32(42).string(message.displayName);
     }
     return writer;
   },
@@ -9826,6 +9833,14 @@ export const Engine: MessageFns<Engine> = {
           message.defaultEnvVar = reader.string();
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.displayName = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -9853,6 +9868,11 @@ export const Engine: MessageFns<Engine> = {
         : isSet(object.default_env_var)
         ? globalThis.String(object.default_env_var)
         : undefined,
+      displayName: isSet(object.displayName)
+        ? globalThis.String(object.displayName)
+        : isSet(object.display_name)
+        ? globalThis.String(object.display_name)
+        : undefined,
     };
   },
 
@@ -9870,6 +9890,9 @@ export const Engine: MessageFns<Engine> = {
     if (message.defaultEnvVar !== undefined) {
       obj.defaultEnvVar = message.defaultEnvVar;
     }
+    if (message.displayName !== undefined) {
+      obj.displayName = message.displayName;
+    }
     return obj;
   },
 
@@ -9882,6 +9905,7 @@ export const Engine: MessageFns<Engine> = {
     message.requiresKey = object.requiresKey ?? false;
     message.defaultBaseUrl = object.defaultBaseUrl ?? undefined;
     message.defaultEnvVar = object.defaultEnvVar ?? undefined;
+    message.displayName = object.displayName ?? undefined;
     return message;
   },
 };

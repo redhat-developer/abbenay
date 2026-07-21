@@ -30,6 +30,7 @@ interface ProviderInfo {
 
 interface EngineInfo {
   id: string;
+  displayName?: string;
   requiresKey: boolean;
   defaultBaseUrl?: string;
   defaultEnvVar?: string;
@@ -314,10 +315,10 @@ function renderAccordion(): void {
   engineDefaultOption.textContent = 'Choose an engine...';
   engineSelect.appendChild(engineDefaultOption);
 
-  [...engines].sort((a, b) => a.id.localeCompare(b.id)).forEach((e) => {
+  [...engines].sort((a, b) => (a.displayName || a.id).localeCompare(b.displayName || b.id)).forEach((e) => {
     const option = document.createElement('vscode-option') as HTMLElement;
     option.setAttribute('value', e.id);
-    option.textContent = e.id;
+    option.textContent = e.displayName || e.id;
     if (e.id === selectedEngine) {
       option.setAttribute('selected', '');
     }

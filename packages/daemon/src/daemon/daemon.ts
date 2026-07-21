@@ -21,7 +21,17 @@ import {
 } from './transport.js';
 import { DaemonState } from './state.js';
 import { createAbbenayService } from './server/abbenay-service.js';
-import { stopEmbeddedWebServer } from './web/server.js';
+import {
+  assertConsumersConfiguredForBind,
+  buildConsumerAuthContext,
+  hasConfiguredConsumers,
+  resolveAllowOpenAuth,
+} from './server/consumer-auth.js';import { stopEmbeddedWebServer } from './web/server.js';
+import { loadConfig } from '../core/config.js';
+import {
+  resolveTcpGrpcBind,
+  type GrpcTlsOptions,
+} from './grpc-tls.js';
 
 export type { DaemonState };
 
@@ -85,6 +95,18 @@ export interface DaemonOptions {
   grpcPort?: number;
   /** Host/IP to bind the TCP gRPC listener to (default: 127.0.0.1). */
   grpcHost?: string;
+  /**
+   * Expected HTTP/web port for self-connection detection.
+   * Set even before the web server binds so MCP init cannot recurse into /mcp.
+   */
+  httpPort?: number;
+  /** TLS / insecure bind options for the TCP gRPC listener. */
+  grpcTls?: GrpcTlsOptions;
+  /**
+   * Explicit open consumer auth (`--allow-open-auth`).
+   * Also implied by `--insecure` / `ABBENAY_ALLOW_OPEN_AUTH`.
+   */
+  allowOpenAuth?: boolean;
 }
 
 /**
@@ -110,21 +132,38 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
   
   // Create state
   state = new DaemonState();
-  
+
+  // Register known listen ports before MCP init so self-connections are blocked
+  state.mcpClientPool.setListenEndpoints({
+    httpPorts: opts?.httpPort != null ? [opts.httpPort] : [],
+    grpcPorts: opts?.grpcPort != null ? [opts.grpcPort] : [],
+  });
+
   // Load proto and create server
   const proto = loadProto();
   const abbenayProto = (proto as unknown as { abbenay: { v1: { Abbenay: { service: grpc.ServiceDefinition } } } }).abbenay.v1;
   
   server = new grpc.Server();
-  
+
+  const allowOpenAuth = resolveAllowOpenAuth({
+    allowOpenAuth: opts?.allowOpenAuth,
+    insecure: opts?.grpcTls?.insecure,
+  });
+  const authContext = buildConsumerAuthContext({
+    grpcHost: opts?.grpcHost,
+    grpcPort: opts?.grpcPort,
+    allowOpenAuth,
+  });
+
   // Add Abbenay service
-  const abbenayService = createAbbenayService(state);
+  const abbenayService = createAbbenayService(state, authContext);
   server.addService(abbenayProto.Abbenay.service, abbenayService);
   
   const socketPath = getDefaultSocketPath();
 
   try {
-    // Bind to Unix socket
+    // Unix socket / named pipe: local IPC only (filesystem permissions).
+    // TLS is not used here — the TCP listener below is the network exposure path (C2).
     await new Promise<void>((resolve, reject) => {
       server!.bindAsync(
         `unix://${socketPath}`,
@@ -144,24 +183,51 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
     // Optionally bind gRPC to a TCP port for remote / container access
     if (opts?.grpcPort) {
       const grpcHost = opts.grpcHost ?? '127.0.0.1';
+      const tlsOpts: GrpcTlsOptions = opts.grpcTls ?? {};
+      const resolved = resolveTcpGrpcBind(grpcHost, tlsOpts);
 
-      if (grpcHost === '0.0.0.0') {
+      // DR-037: non-loopback binds require consumers (or explicit open auth)
+      assertConsumersConfiguredForBind(grpcHost, loadConfig(), { allowOpenAuth });
+
+      if (!resolved.tlsEnabled && tlsOpts.insecure) {
         console.warn(
-          '[Daemon] WARNING: gRPC is bound to 0.0.0.0 — the API is accessible from ' +
-          'any network interface. Ensure a consumers section is configured in config.yaml ' +
-          'to require authentication, or use --grpc-host 127.0.0.1 to restrict access.',
+          `[Daemon] WARNING: gRPC is bound to ${grpcHost} with --insecure (plaintext). ` +
+          'API keys, chat, and provider config travel unencrypted. Prefer --grpc-tls.',
+        );
+      }
+      // Only warn when open auth is actually active (empty consumers + escape hatch).
+      // When consumers are configured, RPCs remain gated even with --allow-open-auth/--insecure.
+      if (
+        allowOpenAuth
+        && !authContext.loopbackOnly
+        && !hasConfiguredConsumers(loadConfig())
+      ) {
+        console.warn(
+          `[Daemon] WARNING: gRPC on ${grpcHost} allows open consumer auth ` +
+          '(--allow-open-auth / --insecure). Sensitive RPCs are not gated by consumers.',
+        );
+      } else if (resolved.tlsEnabled && (grpcHost === '0.0.0.0' || grpcHost === '::')) {
+        console.warn(
+          `[Daemon] gRPC TLS is enabled on ${grpcHost} — accessible from any network interface. ` +
+          'Consumer authentication is required for sensitive RPCs.',
         );
       }
 
       await new Promise<void>((resolve, reject) => {
         server!.bindAsync(
           `${grpcHost}:${opts.grpcPort}`,
-          grpc.ServerCredentials.createInsecure(),
+          resolved.serverCredentials,
           (error, boundPort) => {
             if (error) {
               reject(error);
             } else {
-              console.log(`Abbenay gRPC listening on ${grpcHost}:${boundPort}`);
+              const mode = resolved.tlsEnabled ? 'TLS' : 'plaintext';
+              console.log(`Abbenay gRPC listening on ${grpcHost}:${boundPort} (${mode})`);
+              if (resolved.tlsEnabled && resolved.caPath) {
+                console.log(
+                  `  TLS: auto-generated self-signed cert; clients should trust ${resolved.caPath}`,
+                );
+              }
               resolve();
             }
           }

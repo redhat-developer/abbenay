@@ -44,7 +44,8 @@ vi.mock('@ai-sdk/mcp/mcp-stdio', () => ({
 
 // ── Import (after mocks) ──────────────────────────────────────────────────
 
-import { McpClientPool } from './mcp-client-pool.js';
+import { McpClientPool, isSelfConnectionUrl, normalizeHost } from './mcp-client-pool.js';
+import * as os from 'node:os';
 
 // ── Test setup ────────────────────────────────────────────────────────────
 
@@ -388,5 +389,142 @@ describe('callTool', () => {
 
     await pool.connect('empty', { transport: 'stdio', command: 'x', enabled: true });
     await expect(pool.callTool('mcp:empty', 'missing', {})).rejects.toThrow('not found');
+  });
+});
+
+// ── self-connection guard ─────────────────────────────────────────────────
+
+describe('isSelfConnectionUrl', () => {
+  const endpoints = { httpPorts: [8787], grpcPorts: [50051] };
+
+  it('detects localhost / 127.0.0.1 / IPv6 loopback on HTTP port', () => {
+    expect(isSelfConnectionUrl('http://localhost:8787/mcp', endpoints)).toBe(true);
+    expect(isSelfConnectionUrl('http://127.0.0.1:8787/mcp', endpoints)).toBe(true);
+    expect(isSelfConnectionUrl('http://[::1]:8787/mcp', endpoints)).toBe(true);
+    expect(isSelfConnectionUrl('HTTP://LocalHost:8787/MCP', endpoints)).toBe(true);
+  });
+
+  it('detects IPv4-mapped IPv6 loopback', () => {
+    // Node URL canonicalizes ::ffff:127.0.0.1 → ::ffff:7f00:1
+    expect(isSelfConnectionUrl('http://[::ffff:127.0.0.1]:8787/mcp', endpoints)).toBe(true);
+    expect(isSelfConnectionUrl('http://[::ffff:7f00:1]:8787/mcp', endpoints)).toBe(true);
+    expect(normalizeHost('::ffff:127.0.0.1')).toBe('127.0.0.1');
+    expect(normalizeHost('::ffff:7f00:1')).toBe('127.0.0.1');
+  });
+
+  it('detects self on gRPC listen port', () => {
+    expect(isSelfConnectionUrl('http://127.0.0.1:50051/', endpoints)).toBe(true);
+  });
+
+  it('detects machine hostname when port matches', () => {
+    const host = normalizeHost(os.hostname());
+    expect(isSelfConnectionUrl(`http://${host}:8787/mcp`, endpoints)).toBe(true);
+  });
+
+  it('allows remote hosts even when port number matches', () => {
+    expect(isSelfConnectionUrl('http://mcp.example.com:8787/mcp', endpoints)).toBe(false);
+    expect(isSelfConnectionUrl('https://remote.example.org/mcp', endpoints)).toBe(false);
+  });
+
+  it('allows localhost on a different port', () => {
+    expect(isSelfConnectionUrl('http://127.0.0.1:3001/sse', endpoints)).toBe(false);
+    expect(isSelfConnectionUrl('http://localhost:9999/mcp', endpoints)).toBe(false);
+  });
+
+  it('fail-closes local hosts when no listen ports are configured', () => {
+    const empty = { httpPorts: [] as number[], grpcPorts: [] as number[] };
+    expect(isSelfConnectionUrl('http://127.0.0.1:8787/mcp', empty)).toBe(true);
+    expect(isSelfConnectionUrl('http://localhost:3001/sse', empty)).toBe(true);
+    expect(isSelfConnectionUrl('http://[::1]:9999/mcp', empty)).toBe(true);
+  });
+
+  it('allows remote hosts when no listen ports are configured', () => {
+    expect(isSelfConnectionUrl('http://mcp.example.com:8787/mcp', {
+      httpPorts: [],
+      grpcPorts: [],
+    })).toBe(false);
+  });
+
+  it('returns false for invalid URLs', () => {
+    expect(isSelfConnectionUrl('not-a-url', endpoints)).toBe(false);
+  });
+});
+
+describe('self-connection rejection', () => {
+  beforeEach(() => {
+    pool.setListenEndpoints({ httpPorts: [8787], grpcPorts: [] });
+  });
+
+  it('rejects config connect to own /mcp (cannot remain a no-op)', async () => {
+    await expect(pool.connect('self', {
+      transport: 'http',
+      url: 'http://127.0.0.1:8787/mcp',
+      enabled: true,
+    })).rejects.toThrow(/self-connection/i);
+
+    expect(pool.connectedCount).toBe(0);
+    expect(mockCreateMCPClient).not.toHaveBeenCalled();
+    const status = pool.getStatus('self');
+    expect(status?.connected).toBe(false);
+    expect(status?.error).toMatch(/self-connection/i);
+  });
+
+  it('rejects all localhost URL variants for dynamic registration', async () => {
+    const variants = [
+      'http://localhost:8787/mcp',
+      'http://127.0.0.1:8787/mcp',
+      'http://[::1]:8787/mcp',
+      `http://${normalizeHost(os.hostname())}:8787/mcp`,
+    ];
+
+    for (const [i, url] of variants.entries()) {
+      await expect(pool.connectDynamic(`self-${i}`, {
+        transport: 'http',
+        url,
+        enabled: true,
+      })).rejects.toThrow(/self-connection/i);
+    }
+
+    expect(mockCreateMCPClient).not.toHaveBeenCalled();
+  });
+
+  it('rejects SSE transport self-connections', async () => {
+    await expect(pool.connectDynamic('self-sse', {
+      transport: 'sse',
+      url: 'http://localhost:8787/sse',
+      enabled: true,
+    })).rejects.toThrow(/self-connection/i);
+  });
+
+  it('allows non-self remote HTTP MCP URLs', async () => {
+    await pool.connectDynamic('remote', {
+      transport: 'http',
+      url: 'http://mcp.example.com:443/mcp',
+      enabled: true,
+    });
+
+    expect(pool.getStatus('remote')?.connected).toBe(true);
+    expect(mockCreateMCPClient).toHaveBeenCalled();
+  });
+
+  it('allows localhost MCP on a different port', async () => {
+    await pool.connect('other-local', {
+      transport: 'http',
+      url: 'http://127.0.0.1:3001/sse',
+      enabled: true,
+    });
+
+    expect(pool.getStatus('other-local')?.connected).toBe(true);
+  });
+
+  it('skips self URLs during connectAll without aborting other servers', async () => {
+    await pool.connectAll({
+      self: { transport: 'http', url: 'http://localhost:8787/mcp', enabled: true },
+      ok: { transport: 'stdio', command: 'ok', enabled: true },
+    });
+
+    expect(pool.getStatus('self')?.connected).toBe(false);
+    expect(pool.getStatus('self')?.error).toMatch(/self-connection/i);
+    expect(pool.getStatus('ok')?.connected).toBe(true);
   });
 });

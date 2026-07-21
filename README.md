@@ -4,7 +4,7 @@
 
 <img src="logos/abbenay-logo-sq.png" width="100" height="100" style="float: left; margin-right: 15px;">
 
-A unified AI daemon and library for OpenAI, Anthropic, Google Gemini, Mistral, Ollama, and 10+ more providers.
+A unified AI daemon and library for OpenAI, Anthropic, Google Gemini, Mistral, Red Hat AI, Ollama, and 10+ more providers.
 
 <p style="clear: left;">
 
@@ -19,7 +19,8 @@ Abbenay produces two packages from a single source tree:
 
 ## Features
 
-- **19 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
+- **20 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
+- **Red Hat AI** — Inference Server or OpenShift AI MaaS via dedicated `redhat` engine
 - **OpenAI-compatible API**: Drop-in `/v1/chat/completions` for Cursor, Continue, aider, etc.
 - **CLI chat**: Interactive terminal chat with tool approval and session persistence
 - **Session management**: Persistent conversations with periodic LLM-generated summaries
@@ -129,14 +130,21 @@ Any tool that speaks the OpenAI protocol can use Abbenay as a backend:
 ```bash
 aby serve -p 8787
 
-# Then point your client at it:
-curl http://localhost:8787/v1/models
-curl http://localhost:8787/v1/chat/completions \
+# HTTP routes require a Bearer token (ABBENAY_API_TOKEN or auto-generated http-api-token):
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/v1/models
+curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  http://127.0.0.1:8787/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-Works with Cursor, Continue, aider, and any `openai` SDK script.
+Works with Cursor, Continue, aider, and any `openai` SDK script (use the same
+token as the client API key). The HTTP server binds to `127.0.0.1` by default;
+use `--host 0.0.0.0` only when you intentionally expose it.
+
+> **WARNING:** Auth is on by default. `ABBENAY_HTTP_AUTH=0` disables it for
+> local development only — do not use with a non-loopback bind. See
+> [Configuration](docs/CONFIGURATION.md#http-api-security-server).
 
 ### Using the core library
 
@@ -203,6 +211,7 @@ See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for a complete walkthroug
 | LM Studio | `lmstudio` | No | Yes | `@ai-sdk/openai-compatible` |
 | Cerebras | `cerebras` | Yes | Yes | `@ai-sdk/openai-compatible` |
 | Meta (Llama) | `meta` | Yes | Yes | `@ai-sdk/openai-compatible` |
+| Red Hat AI | `redhat` | No | Yes | `@ai-sdk/openai-compatible` |
 | Mock | `mock` | No | No | *(built-in)* |
 
 \* Amazon Bedrock uses AWS credential chain, not an API key.
@@ -286,6 +295,7 @@ abbenay/
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Testing](docs/TESTING.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Red Hat AI Provider](docs/REDHAT_AI.md)
 - [Product Overview](docs/PRODUCT_OVERVIEW.md)
 - [Landscape Comparison](docs/LANDSCAPE.md)
 

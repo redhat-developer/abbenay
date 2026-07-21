@@ -259,6 +259,38 @@ function handleCancel(): void {
   removeThinkingIndicator();
 }
 
+// Handle a prompt injected by the extension host.
+function handleInjectPrompt(message: string): void {
+  if (state.isStreaming || state.approvalWaiting) {
+    $textarea.value = message;
+    autoResize();
+    $textarea.focus();
+    return;
+  }
+
+  if (!state.currentSessionId) {
+    const model = state.currentModel || state.models[0]?.id;
+    if (!model) {
+      $textarea.value = message;
+      autoResize();
+      $textarea.focus();
+      return;
+    }
+    $modelSelect.value = model;
+    state.currentModel = model;
+
+    pendingInjectedPrompt = message;
+    api.postMessage({ type: 'createSession', model, topic: 'New Chat' });
+    return;
+  }
+
+  $textarea.value = message;
+  autoResize();
+  handleSend();
+}
+
+let pendingInjectedPrompt: string | null = null;
+
 function handleTextareaKeydown(e: KeyboardEvent): void {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -297,7 +329,16 @@ function onMessage(event: MessageEvent): void {
       state.approvalWaiting = false;
       renderMessages();
       updateInputState();
-      $textarea.focus();
+
+      if (pendingInjectedPrompt) {
+        const prompt = pendingInjectedPrompt;
+        pendingInjectedPrompt = null;
+        $textarea.value = prompt;
+        autoResize();
+        handleSend();
+      } else {
+        $textarea.focus();
+      }
       break;
 
     case 'sessionLoaded':
@@ -343,6 +384,10 @@ function onMessage(event: MessageEvent): void {
       updateInputState();
       state.userScrolledUp = false;
       scrollToBottom();
+      break;
+
+    case 'injectPrompt':
+      handleInjectPrompt(msg.message);
       break;
 
     case 'error':

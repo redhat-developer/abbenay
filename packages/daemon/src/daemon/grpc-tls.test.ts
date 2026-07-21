@@ -1,0 +1,233 @@
+/**
+ * Unit tests for gRPC TLS bind policy and credential helpers.
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import * as grpc from '@grpc/grpc-js';
+
+import {
+  assertTcpBindAllowed,
+  createClientCredentials,
+  createTcpServerCredentials,
+  generateSelfSignedPem,
+  grpcTlsChannelOptions,
+  isLoopbackHost,
+  isWildcardHost,
+  resolveTcpGrpcBind,
+  shouldEnableTls,
+  writeAutoTlsMaterial,
+  GrpcBindSecurityError,
+  GRPC_TLS_DEFAULT_CN,
+} from './grpc-tls.js';
+
+describe('isLoopbackHost', () => {
+  it('accepts common loopback forms', () => {
+    expect(isLoopbackHost('127.0.0.1')).toBe(true);
+    expect(isLoopbackHost('::1')).toBe(true);
+    expect(isLoopbackHost('localhost')).toBe(true);
+    expect(isLoopbackHost('LOCALHOST')).toBe(true);
+    expect(isLoopbackHost('::ffff:127.0.0.1')).toBe(true);
+  });
+
+  it('rejects non-loopback and wildcards', () => {
+    expect(isLoopbackHost('0.0.0.0')).toBe(false);
+    expect(isLoopbackHost('::')).toBe(false);
+    expect(isLoopbackHost('192.168.1.10')).toBe(false);
+    expect(isLoopbackHost('10.0.0.1')).toBe(false);
+  });
+});
+
+describe('isWildcardHost', () => {
+  it('detects all-interfaces binds', () => {
+    expect(isWildcardHost('0.0.0.0')).toBe(true);
+    expect(isWildcardHost('::')).toBe(true);
+    expect(isWildcardHost('[::]')).toBe(true);
+    expect(isWildcardHost('127.0.0.1')).toBe(false);
+  });
+});
+
+describe('assertTcpBindAllowed', () => {
+  it('allows localhost plaintext for local DX', () => {
+    expect(() =>
+      assertTcpBindAllowed('127.0.0.1', { tlsEnabled: false, insecure: false }),
+    ).not.toThrow();
+    expect(() =>
+      assertTcpBindAllowed('localhost', { tlsEnabled: false, insecure: false }),
+    ).not.toThrow();
+    expect(() =>
+      assertTcpBindAllowed('::1', { tlsEnabled: false, insecure: false }),
+    ).not.toThrow();
+  });
+
+  it('refuses 0.0.0.0 without TLS or --insecure', () => {
+    expect(() =>
+      assertTcpBindAllowed('0.0.0.0', { tlsEnabled: false, insecure: false }),
+    ).toThrow(GrpcBindSecurityError);
+    expect(() =>
+      assertTcpBindAllowed('0.0.0.0', { tlsEnabled: false, insecure: false }),
+    ).toThrow(/--insecure/);
+  });
+
+  it('refuses other non-loopback hosts without TLS or --insecure', () => {
+    expect(() =>
+      assertTcpBindAllowed('192.168.1.5', { tlsEnabled: false, insecure: false }),
+    ).toThrow(GrpcBindSecurityError);
+  });
+
+  it('allows non-loopback when TLS is enabled', () => {
+    expect(() =>
+      assertTcpBindAllowed('0.0.0.0', { tlsEnabled: true, insecure: false }),
+    ).not.toThrow();
+    expect(() =>
+      assertTcpBindAllowed('10.0.0.2', { tlsEnabled: true, insecure: false }),
+    ).not.toThrow();
+  });
+
+  it('allows non-loopback plaintext only with explicit insecure opt-in', () => {
+    expect(() =>
+      assertTcpBindAllowed('0.0.0.0', { tlsEnabled: false, insecure: true }),
+    ).not.toThrow();
+  });
+});
+
+describe('shouldEnableTls', () => {
+  it('is true when enabled flag or cert paths are set', () => {
+    expect(shouldEnableTls({})).toBe(false);
+    expect(shouldEnableTls({ insecure: true })).toBe(false);
+    expect(shouldEnableTls({ enabled: true })).toBe(true);
+    expect(shouldEnableTls({ certPath: '/a.crt', keyPath: '/a.key' })).toBe(true);
+  });
+});
+
+describe('generateSelfSignedPem / writeAutoTlsMaterial', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-tls-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('generates a parseable self-signed certificate', () => {
+    const { certPem, keyPem } = generateSelfSignedPem();
+    const x509 = new crypto.X509Certificate(certPem);
+    expect(x509.subject).toContain(GRPC_TLS_DEFAULT_CN);
+    expect(x509.issuer).toContain(GRPC_TLS_DEFAULT_CN);
+    expect(keyPem).toContain('PRIVATE KEY');
+  });
+
+  it('writes cert, key, and ca under the runtime tls dir', () => {
+    const paths = writeAutoTlsMaterial(tmpDir);
+    expect(fs.existsSync(paths.certPath)).toBe(true);
+    expect(fs.existsSync(paths.keyPath)).toBe(true);
+    expect(fs.existsSync(paths.caPath)).toBe(true);
+    expect(fs.readFileSync(paths.certPath, 'utf8')).toEqual(
+      fs.readFileSync(paths.caPath, 'utf8'),
+    );
+  });
+});
+
+describe('createTcpServerCredentials', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-tls-creds-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns insecure credentials when TLS is not enabled', () => {
+    const resolved = createTcpServerCredentials({});
+    expect(resolved.tlsEnabled).toBe(false);
+    expect(resolved.autoGenerated).toBe(false);
+  });
+
+  it('rejects cert without key (and vice versa)', () => {
+    expect(() =>
+      createTcpServerCredentials({ enabled: true, certPath: '/only.crt' }),
+    ).toThrow(/Both certPath and keyPath/);
+    expect(() =>
+      createTcpServerCredentials({ enabled: true, keyPath: '/only.key' }),
+    ).toThrow(/Both certPath and keyPath/);
+  });
+
+  it('loads user-provided cert and key', () => {
+    const { certPem, keyPem } = generateSelfSignedPem();
+    const certPath = path.join(tmpDir, 'server.crt');
+    const keyPath = path.join(tmpDir, 'server.key');
+    fs.writeFileSync(certPath, certPem);
+    fs.writeFileSync(keyPath, keyPem);
+
+    const resolved = createTcpServerCredentials({
+      enabled: true,
+      certPath,
+      keyPath,
+    });
+    expect(resolved.tlsEnabled).toBe(true);
+    expect(resolved.autoGenerated).toBe(false);
+    expect(resolved.certPath).toBe(path.resolve(certPath));
+    expect(resolved.serverCredentials).toBeInstanceOf(grpc.ServerCredentials);
+  });
+});
+
+describe('resolveTcpGrpcBind', () => {
+  it('allows localhost plaintext without writing TLS material', () => {
+    const resolved = resolveTcpGrpcBind('127.0.0.1', {});
+    expect(resolved.tlsEnabled).toBe(false);
+    expect(resolved.autoGenerated).toBe(false);
+  });
+
+  it('refuses 0.0.0.0 plaintext without --insecure before any bind', () => {
+    expect(() => resolveTcpGrpcBind('0.0.0.0', {})).toThrow(GrpcBindSecurityError);
+    expect(() => resolveTcpGrpcBind('0.0.0.0', {})).toThrow(/Refusing to bind gRPC/);
+  });
+
+  it('allows 0.0.0.0 with --insecure (plaintext escape hatch)', () => {
+    const resolved = resolveTcpGrpcBind('0.0.0.0', { insecure: true });
+    expect(resolved.tlsEnabled).toBe(false);
+  });
+
+  it('allows 0.0.0.0 with --grpc-tls and auto-generates certs', () => {
+    const prev = process.env.XDG_RUNTIME_DIR;
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-resolve-tls-'));
+    process.env.XDG_RUNTIME_DIR = tmp;
+    try {
+      const resolved = resolveTcpGrpcBind('0.0.0.0', { enabled: true });
+      expect(resolved.tlsEnabled).toBe(true);
+      expect(resolved.autoGenerated).toBe(true);
+      expect(resolved.caPath).toBeTruthy();
+      expect(fs.existsSync(resolved.caPath!)).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.XDG_RUNTIME_DIR;
+      else process.env.XDG_RUNTIME_DIR = prev;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('createClientCredentials', () => {
+  it('returns insecure by default', () => {
+    const creds = createClientCredentials({});
+    expect(creds).toBeInstanceOf(grpc.ChannelCredentials);
+  });
+
+  it('builds SSL credentials from PEM', () => {
+    const { certPem } = generateSelfSignedPem();
+    const creds = createClientCredentials({ tls: true, caPem: certPem });
+    expect(creds).toBeInstanceOf(grpc.ChannelCredentials);
+  });
+
+  it('exposes channel options for auto-generated CN', () => {
+    const opts = grpcTlsChannelOptions();
+    expect(opts['grpc.ssl_target_name_override']).toBe(GRPC_TLS_DEFAULT_CN);
+    expect(opts['grpc.default_authority']).toBe(GRPC_TLS_DEFAULT_CN);
+  });
+});

@@ -56,21 +56,27 @@ async def main():
 
 ## Connecting to a Container
 
-When the daemon runs in a container, connect via TCP instead of the
-default Unix socket:
+When the daemon runs in a container with TLS (default image CMD), connect
+via TCP and trust the daemon CA:
 
 ```python
-async with AbbenayClient(host="localhost", port=50051) as client:
+async with AbbenayClient(
+    host="localhost",
+    port=50051,
+    tls=True,
+    ca_cert="/path/to/ca.crt",
+) as client:
     async for chunk in client.chat("openrouter/anthropic/claude-sonnet-4", "Hello!"):
         if chunk.text:
             print(chunk.text, end="")
 ```
 
 The container must be started with `--grpc-port 50051` (the default
-`Containerfile` CMD does this) and the port published (`-p 50051:50051`).
+`Containerfile` CMD does this with `--grpc-tls`) and the port published
+(`-p 50051:50051`). Copy or mount `<runtime-dir>/tls/ca.crt` for client trust.
 
 See [docs/CONTAINER.md](../../docs/CONTAINER.md) for full container
-deployment instructions.
+deployment instructions and the `--insecure` escape hatch.
 
 ## Features
 

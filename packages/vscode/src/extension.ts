@@ -14,9 +14,9 @@ import { ProviderPanel } from './webviews/provider/ProviderPanel';
 // Default dashboard URL - daemon serves web UI here
 const DASHBOARD_URL = 'http://localhost:8787';
 
-let daemonConnected = false;
 let languageModelProvider: AbbenayLanguageModelProvider | null = null;
 let backchannelHandler: BackchannelHandler | null = null;
+let chatViewProvider: ChatViewProvider | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('[Abbenay] activate() called');
@@ -32,7 +32,6 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.info('[Daemon] Connecting to Abbenay daemon...');
     await initializeDaemon();
     logger.info('[Daemon] Connected and registered');
-    daemonConnected = true;
     
     // Check daemon health
     const client = getDaemonClient();
@@ -81,26 +80,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register chat sidebar webview
   const client = getDaemonClient();
-  const chatViewProvider = new ChatViewProvider(context.extensionUri, client);
+  chatViewProvider = new ChatViewProvider(context.extensionUri, client);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatViewProvider),
   );
 
   // Register commands
-  registerCommands(context);
-
-  // Create status bar item
-  const statusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100
-  );
-  statusBarItem.text = daemonConnected ? '$(sparkle) Abbenay' : '$(warning) Abbenay';
-  statusBarItem.tooltip = daemonConnected 
-    ? 'Abbenay Daemon Connected - Click to open dashboard' 
-    : 'Abbenay Daemon Not Connected';
-  statusBarItem.command = 'abbenay.openDashboard';
-  statusBarItem.show();
-  context.subscriptions.push(statusBarItem);
+  registerCommands(context, chatViewProvider);
 
   // Watch for configuration changes
   context.subscriptions.push(
@@ -142,7 +128,7 @@ export async function deactivate() {
   disposeLogger();
 }
 
-function registerCommands(context: vscode.ExtensionContext): void {
+function registerCommands(context: vscode.ExtensionContext, chat: ChatViewProvider): void {
   // Daemon status command
   context.subscriptions.push(
     vscode.commands.registerCommand('abbenay.daemonStatus', async () => {
@@ -223,6 +209,17 @@ function registerCommands(context: vscode.ExtensionContext): void {
       console.log('[Abbenay] configureProvider command');
       const client = getDaemonClient();
       ProviderPanel.createOrShow(context.extensionUri, client);
+    })
+  );
+
+  // Chat send command — allows other extensions to inject a prompt
+  context.subscriptions.push(
+    vscode.commands.registerCommand('abbenay.chat.send', async (args: { message: string }) => {
+      if (!args?.message) {
+        vscode.window.showWarningMessage('abbenay.chat.send requires a { message } argument.');
+        return;
+      }
+      await chat.injectPrompt(args.message);
     })
   );
 

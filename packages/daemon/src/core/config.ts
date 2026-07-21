@@ -17,23 +17,9 @@ import {
   getWorkspaceConfigPath as _getWorkspaceConfigPath,
 } from './paths.js';
 
-// ── Name validation ────────────────────────────────────────────────────
+// ── Name validation (canonical implementation in config-schema.ts) ─────
 
-/**
- * Regex for virtual provider and model names.
- * Lowercase alphanumeric, dots, hyphens, underscores. No slashes, no spaces.
- * Engine model IDs from discovery (which may contain slashes) are exempt.
- */
-const VIRTUAL_NAME_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
-
-/**
- * Validate a virtual name (provider or model).
- * Returns true if valid, false otherwise.
- * Engine model IDs (containing slashes) are NOT validated by this — they pass through.
- */
-export function isValidVirtualName(name: string): boolean {
-  return VIRTUAL_NAME_REGEX.test(name);
-}
+export { isValidVirtualName, VIRTUAL_NAME_REGEX } from './config-schema.js';
 
 // ── Config interfaces ──────────────────────────────────────────────────
 
@@ -45,6 +31,9 @@ export function isValidVirtualName(name: string): boolean {
  * - Key with `model_id` → the key is a virtual name, model_id is the actual engine model
  * - `{}` = enabled with all default params
  */
+/** Opt-in mode for OpenAI-compatible `/v1` tools (DR-032). */
+export type OpenAICompatToolsMode = 'off' | 'passthrough';
+
 export interface ModelConfig {
   /** Actual engine model ID — required when the key is a virtual name */
   model_id?: string;
@@ -64,6 +53,11 @@ export interface ModelConfig {
   max_tokens?: number;
   /** Request timeout in milliseconds */
   timeout?: number;
+  /**
+   * Per-model override for OpenAI-compatible `/v1` tools passthrough.
+   * When unset, inherits `openai_compat.tools` (default `off`).
+   */
+  openai_compat_tools?: OpenAICompatToolsMode;
 }
 
 /**
@@ -114,12 +108,23 @@ export interface McpServerConfig {
 /**
  * Capabilities a consumer can be granted.
  * Extensible: add new boolean flags as new gated features are introduced.
+ * When a `consumers` section is present, sensitive RPCs require the matching flag.
  */
 export interface ConsumerCapabilities {
-  /** Allow sending inline PolicyConfig on ChatRequest */
+  /** Allow sending inline PolicyConfig on ChatRequest / SessionChatRequest */
   inline_policy?: boolean;
   /** Allow dynamic MCP server registration via RegisterMcpServer RPC */
   mcp_register?: boolean;
+  /** Allow GetSecret / SetSecret / DeleteSecret / ListSecrets / GetKeyStatus */
+  secrets?: boolean;
+  /** Allow GetConfig / UpdateConfig / policy CRUD / web server start-stop */
+  config?: boolean;
+  /** Allow ConfigureProvider / RemoveProvider / DiscoverModels */
+  providers?: boolean;
+  /** Allow Shutdown RPC */
+  shutdown?: boolean;
+  /** Allow Chat / SessionChat (base chat; inline_policy is separate) */
+  chat?: boolean;
 }
 
 /**
@@ -136,9 +141,43 @@ export interface ConsumerConfig {
 }
 
 /**
+ * HTTP / web server security settings.
+ * Secure defaults live in code (localhost bind + required Bearer auth);
+ * this block overrides them when intentional network exposure is needed.
+ */
+export interface ServerConfig {
+  /**
+   * HTTP API Bearer token. Prefer `api_token_env` or the `ABBENAY_API_TOKEN`
+   * environment variable so the secret is not stored in plaintext YAML.
+   */
+  api_token?: string;
+  /** Environment variable name holding the HTTP API Bearer token */
+  api_token_env?: string;
+  /**
+   * Host/IP to bind the HTTP server.
+   * Default: 127.0.0.1. Use 0.0.0.0 only with an explicit opt-in (CLI/env/config).
+   */
+  host?: string;
+  /**
+   * Extra CORS allowed origins (in addition to http://127.0.0.1:<port>
+   * and http://localhost:<port>).
+   */
+  cors_origins?: string[];
+}
+
+/**
  * Full configuration file structure.
  * Keys in `providers` are virtual provider names (user-defined IDs).
  */
+/**
+ * Global defaults for the OpenAI-compatible HTTP API (`/v1/*`).
+ * Secure-by-default: tools stay off unless opted in (DR-019 / DR-032).
+ */
+export interface OpenAICompatConfig {
+  /** `off` (default) | `passthrough` — forward client tools / return tool_calls */
+  tools?: OpenAICompatToolsMode;
+}
+
 export interface ConfigFile {
   providers?: Record<string, ProviderConfig>;
   /** External MCP servers for tool aggregation */
@@ -147,6 +186,10 @@ export interface ConfigFile {
   tool_policy?: import('./tool-registry.js').ToolPolicyConfig;
   /** Consumer applications with token-based auth and capability gating */
   consumers?: Record<string, ConsumerConfig>;
+  /** HTTP / web dashboard server security */
+  server?: ServerConfig;
+  /** OpenAI-compatible `/v1` API defaults */
+  openai_compat?: OpenAICompatConfig;
 }
 
 // ── Path helpers ───────────────────────────────────────────────────────
@@ -325,6 +368,14 @@ export function mergeConfigs(userConfig: ConfigFile, workspaceConfig: ConfigFile
       require_approval: [...(up.require_approval || []), ...(wp.require_approval || [])],
       disabled_tools: [...(up.disabled_tools || []), ...(wp.disabled_tools || [])],
       aliases: { ...up.aliases, ...wp.aliases },
+    };
+  }
+
+  // openai_compat: workspace overrides user at field level
+  if (userConfig.openai_compat || workspaceConfig.openai_compat) {
+    merged.openai_compat = {
+      ...userConfig.openai_compat,
+      ...workspaceConfig.openai_compat,
     };
   }
   

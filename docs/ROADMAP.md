@@ -61,6 +61,7 @@ All three tiers are enforced. The default for tools matching no tier is
 - **M2**: CLI `aby chat` with interactive approval — **done**
 - **M3**: VS Code backchannel approval flow
 - **M4**: `max_tool_iterations` enforcement — **done**
+- **M5**: MCP HTTP (`/mcp`) uses the same tool_policy path as chat (DR-033) — **done**
 
 ---
 
@@ -121,7 +122,7 @@ aider, any `openai` SDK script, etc.). See DR-020.
 | `POST /v1/completions` | low — legacy |
 | `POST /v1/embeddings` | low — if engines support it |
 | Usage/token stats (real counts from providers) | medium |
-| Optional Bearer token auth (`config.yaml → server.api_key`) | medium |
+| Bearer token auth on all HTTP routes (`server.api_token` / `ABBENAY_API_TOKEN`) | **done** |
 | Rate limiting | low |
 
 ### Key files
@@ -133,7 +134,7 @@ aider, any `openai` SDK script, etc.). See DR-020.
 ### Milestones
 
 - **M1**: `/v1/models` + `/v1/chat/completions` (streaming + non-streaming + tools) — **done**
-- **M2**: Usage stats, optional auth
+- **M2**: Usage stats, HTTP Bearer auth — **auth done** (usage stats remaining)
 - **M3**: Rate limiting, `/v1/completions` (legacy)
 
 ---

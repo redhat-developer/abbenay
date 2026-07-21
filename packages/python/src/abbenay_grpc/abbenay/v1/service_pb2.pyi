@@ -889,16 +889,18 @@ class ListEnginesResponse(_message.Message):
     def __init__(self, engines: _Optional[_Iterable[_Union[Engine, _Mapping]]] = ...) -> None: ...
 
 class Engine(_message.Message):
-    __slots__ = ("id", "requires_key", "default_base_url", "default_env_var")
+    __slots__ = ("id", "requires_key", "default_base_url", "default_env_var", "display_name")
     ID_FIELD_NUMBER: _ClassVar[int]
     REQUIRES_KEY_FIELD_NUMBER: _ClassVar[int]
     DEFAULT_BASE_URL_FIELD_NUMBER: _ClassVar[int]
     DEFAULT_ENV_VAR_FIELD_NUMBER: _ClassVar[int]
+    DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
     id: str
     requires_key: bool
     default_base_url: str
     default_env_var: str
-    def __init__(self, id: _Optional[str] = ..., requires_key: bool = ..., default_base_url: _Optional[str] = ..., default_env_var: _Optional[str] = ...) -> None: ...
+    display_name: str
+    def __init__(self, id: _Optional[str] = ..., requires_key: bool = ..., default_base_url: _Optional[str] = ..., default_env_var: _Optional[str] = ..., display_name: _Optional[str] = ...) -> None: ...
 
 class ListToolsRequest(_message.Message):
     __slots__ = ("server_filter",)
