@@ -331,8 +331,10 @@ Manages connections to external MCP servers defined in config. Uses `@ai-sdk/mcp
 - Hot-reloads when config changes (connects new, disconnects removed)
 - Refuses self-connections: HTTP/SSE URLs that target this daemon's own
   listening HTTP or gRPC ports on a local address (`localhost`, `127.0.0.1`,
-  `::1`, hostname, or any local interface IP) are rejected so the daemon
-  cannot recurse into its own `/mcp` endpoint
+  `::1`, IPv4-mapped loopback, hostname, or any local interface IP) are
+  rejected so the daemon cannot recurse into its own `/mcp` endpoint
+  (DR-039). When listen ports are not yet registered, local hosts are
+  refused fail-closed.
 
 ```yaml
 # In config.yaml

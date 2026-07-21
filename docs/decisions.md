@@ -410,8 +410,6 @@ incomplete builds from reaching end users.
 
 ---
 
----
-
 ## DR-029: Fail-closed TLS for non-loopback gRPC TCP binds
 
 **Date:** 2026-07-15
@@ -608,18 +606,23 @@ compare closes token oracle leaks.
 
 ---
 
-## DR-038: Block MCP self-connections to the daemon's own endpoints
+## DR-039: Block MCP self-connections to the daemon's own endpoints
 
 **Date:** 2026-07-20
 **Decision:** `McpClientPool` tracks the daemon's HTTP and gRPC listen ports
 via `setListenEndpoints()` and rejects HTTP/SSE MCP server URLs whose host is
-a local address (loopback, hostname, or any local interface IP) and whose port
-matches a tracked listen port. Both config `connect()` and dynamic
-`connectDynamic()` throw a clear self-connection error. Listen ports are
-registered at daemon start (`httpPort` / `grpcPort` options) and when the
-embedded web server binds.
+a local address (loopback including IPv4-mapped forms such as
+`::ffff:127.0.0.1`, hostname, or any local interface IP) and whose port
+matches a tracked listen port. When no listen ports are registered yet, local
+hosts are refused fail-closed (remote hosts remain allowed). Both config
+`connect()` and dynamic `connectDynamic()` throw a clear self-connection error
+and record a failed status. Listen ports are registered at daemon start
+(`httpPort` / `grpcPort` options) and when the embedded web server binds.
+Self URLs may still appear in saved config; rejection is at connect time.
 **Rationale:** `isSelfConnection()` previously always returned `false`, so the
 daemon could register its own `/mcp` HTTP endpoint as an external MCP server
 and amplify tool calls recursively. Comparing target URL host+port against
 known listen endpoints closes that loop without blocking legitimate remote or
-other-localhost MCP servers on different ports.
+other-localhost MCP servers on different ports once ports are known. Fail-closed
+behavior when the listen set is empty closes the race before
+`setListenEndpoints()` runs (finding H7 / AAP-82830).

@@ -404,6 +404,14 @@ describe('isSelfConnectionUrl', () => {
     expect(isSelfConnectionUrl('HTTP://LocalHost:8787/MCP', endpoints)).toBe(true);
   });
 
+  it('detects IPv4-mapped IPv6 loopback', () => {
+    // Node URL canonicalizes ::ffff:127.0.0.1 → ::ffff:7f00:1
+    expect(isSelfConnectionUrl('http://[::ffff:127.0.0.1]:8787/mcp', endpoints)).toBe(true);
+    expect(isSelfConnectionUrl('http://[::ffff:7f00:1]:8787/mcp', endpoints)).toBe(true);
+    expect(normalizeHost('::ffff:127.0.0.1')).toBe('127.0.0.1');
+    expect(normalizeHost('::ffff:7f00:1')).toBe('127.0.0.1');
+  });
+
   it('detects self on gRPC listen port', () => {
     expect(isSelfConnectionUrl('http://127.0.0.1:50051/', endpoints)).toBe(true);
   });
@@ -423,8 +431,15 @@ describe('isSelfConnectionUrl', () => {
     expect(isSelfConnectionUrl('http://localhost:9999/mcp', endpoints)).toBe(false);
   });
 
-  it('returns false when no listen ports are configured', () => {
-    expect(isSelfConnectionUrl('http://127.0.0.1:8787/mcp', {
+  it('fail-closes local hosts when no listen ports are configured', () => {
+    const empty = { httpPorts: [] as number[], grpcPorts: [] as number[] };
+    expect(isSelfConnectionUrl('http://127.0.0.1:8787/mcp', empty)).toBe(true);
+    expect(isSelfConnectionUrl('http://localhost:3001/sse', empty)).toBe(true);
+    expect(isSelfConnectionUrl('http://[::1]:9999/mcp', empty)).toBe(true);
+  });
+
+  it('allows remote hosts when no listen ports are configured', () => {
+    expect(isSelfConnectionUrl('http://mcp.example.com:8787/mcp', {
       httpPorts: [],
       grpcPorts: [],
     })).toBe(false);
@@ -449,6 +464,9 @@ describe('self-connection rejection', () => {
 
     expect(pool.connectedCount).toBe(0);
     expect(mockCreateMCPClient).not.toHaveBeenCalled();
+    const status = pool.getStatus('self');
+    expect(status?.connected).toBe(false);
+    expect(status?.error).toMatch(/self-connection/i);
   });
 
   it('rejects all localhost URL variants for dynamic registration', async () => {
@@ -505,7 +523,8 @@ describe('self-connection rejection', () => {
       ok: { transport: 'stdio', command: 'ok', enabled: true },
     });
 
-    expect(pool.getStatus('self')?.connected).not.toBe(true);
+    expect(pool.getStatus('self')?.connected).toBe(false);
+    expect(pool.getStatus('self')?.error).toMatch(/self-connection/i);
     expect(pool.getStatus('ok')?.connected).toBe(true);
   });
 });
