@@ -984,8 +984,8 @@ export async function* streamChat(
     }
 
     const sdkTimeout = toSdkTimeout(params?.timeout);
-    /** toolCallId → name for mapping tool-output-denied (part has no toolName). */
-    const toolCallNames = new Map<string, string>();
+    /** toolCallId → name/input for mapping tool-output-denied (part has no toolName/input). */
+    const toolCallMeta = new Map<string, { name: string; input: unknown }>();
 
     const result = streamText({
       model,
@@ -1036,7 +1036,7 @@ export async function* streamChat(
 
         case 'tool-call':
           if (part.toolCallId && part.toolName) {
-            toolCallNames.set(part.toolCallId, part.toolName);
+            toolCallMeta.set(part.toolCallId, { name: part.toolName, input: part.input });
           }
           yield {
             type: 'tool',
@@ -1049,7 +1049,7 @@ export async function* streamChat(
 
         case 'tool-result':
           if (part.toolCallId) {
-            toolCallNames.delete(part.toolCallId);
+            toolCallMeta.delete(part.toolCallId);
           }
           yield {
             type: 'tool',
@@ -1061,17 +1061,18 @@ export async function* streamChat(
           break;
 
         case 'tool-output-denied': {
-          // Preserve prior deny UX: clients see a completed tool with error payload.
-          const deniedName = toolCallNames.get(part.toolCallId) || 'unknown';
+          // Preserve prior deny UX: clients see a completed tool with error payload
+          // and the original args from the preceding tool-call part.
+          const denied = part.toolCallId ? toolCallMeta.get(part.toolCallId) : undefined;
           if (part.toolCallId) {
-            toolCallNames.delete(part.toolCallId);
+            toolCallMeta.delete(part.toolCallId);
           }
           yield {
             type: 'tool',
-            name: deniedName,
+            name: denied?.name || 'unknown',
             state: 'completed',
             call: {
-              params: undefined,
+              params: denied?.input,
               result: { error: 'Tool execution denied by policy' },
             },
             done: true,
