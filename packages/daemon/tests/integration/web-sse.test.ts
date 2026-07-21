@@ -404,7 +404,7 @@ describe('Web API - Config Endpoints', () => {
     expect(statusCode).toBe(200);
     expect(body.success).toBe(true);
     const savedPath = path.join(tmpWorkspaceDir, '.config', 'abbenay', 'config.yaml');
-    expect(body.path).toBe(savedPath);
+    expect(body.path).toBe(fs.realpathSync(savedPath));
     expect(fs.existsSync(savedPath)).toBe(true);
     expect(fs.readFileSync(savedPath, 'utf-8')).toContain('openai');
   });
