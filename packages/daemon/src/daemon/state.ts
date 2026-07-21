@@ -25,9 +25,10 @@ export type { SecretStore } from '../core/secrets.js';
 export type { RegisteredTool, ToolPolicyConfig, ToolSourceType } from '../core/tool-registry.js';
 export { ToolRegistry } from '../core/tool-registry.js';
 export { ToolRouter } from './tool-router.js';
-export { McpClientPool } from './mcp-client-pool.js';
+export { McpClientPool, isSelfConnectionUrl, normalizeHost, localHostAddresses } from './mcp-client-pool.js';
 export type {
   McpServerStatus,
+  DaemonListenEndpoints,
   PendingStdioSpawn,
   OnStdioSpawnApprovalNeeded,
   StdioSpawnApprovalDecision,

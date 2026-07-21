@@ -208,11 +208,11 @@ async function runServer(opts: ServerOptions): Promise<void> {
       keepAlive: false,
       grpcPort,
       grpcHost,
+      httpPort: port,
       grpcTls,
       allowOpenAuth,
     });
     const { url, app, security } = await startEmbeddedWebServer(daemonState, port, host);
-
     if (mcp && app) {
       await daemonState.mcpServer.start(app);
     }

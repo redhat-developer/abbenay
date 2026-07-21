@@ -332,6 +332,12 @@ Manages connections to external MCP servers defined in config. Uses `@ai-sdk/mcp
 - Dynamic stdio registration requires `security.stdio_command_allowlist` +
   operator approval (`/api/mcp/stdio-spawns`) before any process is spawned
 - Hot-reloads when config changes (connects new, disconnects removed)
+- Refuses self-connections: HTTP/SSE URLs that target this daemon's own
+  listening HTTP or gRPC ports on a local address (`localhost`, `127.0.0.1`,
+  `::1`, IPv4-mapped loopback, hostname, or any local interface IP) are
+  rejected so the daemon cannot recurse into its own `/mcp` endpoint
+  (DR-039). When listen ports are not yet registered, local hosts are
+  refused fail-closed.
 
 ```yaml
 # In config.yaml
