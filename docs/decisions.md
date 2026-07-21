@@ -629,19 +629,19 @@ behavior when the listen set is empty closes the race before
 
 ---
 
-## DR-041: npm overrides for transitive security patches
+## DR-041: Prefer direct bumps and lockfile resolution over npm overrides
 
 **Date:** 2026-07-21
-**Decision:** Use root `package.json` `overrides` to pin patched versions of
-transitive dependencies when Dependabot/npm audit reports fixed advisories that
-direct dependency bumps alone cannot resolve (for example `undici` via cheerio,
-`brace-expansion` via minimatch major lines, `body-parser` via express 4/5).
-Keep major-compatible pins (`minimatch@3` → `brace-expansion@1.1.16`,
-`express@5` → `body-parser@2.3.0`, etc.) rather than forcing a single version
-across incompatible majors. Prefer direct dependency bumps when the vulnerable
-package is declared directly; use overrides only for transitive pins; regenerate
-the lockfile when adding or changing overrides so npm applies them.
-**Rationale:** Manual lockfile edits (used previously for undici) do not scale
-across nested copies and major lines. Overrides make the security pin reviewable
-in `package.json` and survive `npm install` / Dependabot refreshes.
+**Decision:** Resolve Dependabot/npm audit advisories by bumping direct
+dependencies and refreshing the lockfile to patched transitive versions that
+already fall within parent semver ranges. Do not add root `package.json`
+`overrides` unless a parent dependency pins a range that cannot reach a
+patched release (in which case prefer allowlisting via `.audit-allowlist` for
+dev-only/unfixable cases, or an override only as a last resort with a new
+decision entry explaining why).
+**Rationale:** Parent ranges for the current Dependabot set (`undici` via
+cheerio, `brace-expansion` via minimatch, `protobufjs` via proto-loader)
+already admit patched versions. Overrides force versions outside the normal
+resolution graph, increase review surface, and can surprise consumers; a
+lockfile refresh after direct bumps is enough when ranges allow the fix.
 
