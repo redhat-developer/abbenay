@@ -268,7 +268,10 @@ by wiring to `ToolRegistry`.
 Product copy historically overstated air-gap / privacy while defaults exposed
 HTTP on all interfaces, plaintext gRPC, and wildcard CORS. Docs now state the
 real defaults and that **network isolation alone does not secure Abbenay** —
-see [SECURITY.md](./SECURITY.md) (DR-038). Code fixes: DR-030 / DR-029.
+see [SECURITY.md](./SECURITY.md) (DR-038), including the operator checklist
+(bind, auth, CORS, TLS, consumers, MCP) and residual risks. Release notes:
+`packages/vscode/CHANGELOG.md` (Unreleased → Security). Code fixes: DR-030 /
+DR-029.
 
 ---
 

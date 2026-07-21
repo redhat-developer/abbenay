@@ -15,7 +15,8 @@ plaintext gRPC off-loopback) live in DR-030 / AAP-82788 and DR-029 /
 AAP-82804. This page aligns product claims with that posture (finding A4).
 
 Config details: [CONFIGURATION.md](./CONFIGURATION.md). Containers:
-[CONTAINER.md](./CONTAINER.md).
+[CONTAINER.md](./CONTAINER.md). Verify a live deploy with the
+[operator checklist](#operator-checklist) below.
 
 ---
 
@@ -64,6 +65,123 @@ defaults (or stronger) in place.
 - `--host 0.0.0.0`, `ABBENAY_HTTP_AUTH=0`, and `--insecure` deliberately weaken posture.
 - Cloud providers still receive prompts if you configure them.
 - HTTP on loopback remains plaintext; use a TLS-terminating proxy when exposing beyond the machine.
+
+---
+
+## Operator checklist
+
+Run these after a fresh default start (`aby web` or `abbenay daemon` with no
+host/TLS override). Replace `8787` if you use another HTTP port. Load the API
+token from `ABBENAY_API_TOKEN` or the auto-generated `http-api-token` file in
+the config directory (`~/Library/Application Support/abbenay` on macOS,
+`~/.config/abbenay` on Linux, `%APPDATA%\abbenay` on Windows).
+
+```bash
+export ABBENAY_API_TOKEN="${ABBENAY_API_TOKEN:-$(cat "$HOME/Library/Application Support/abbenay/http-api-token" 2>/dev/null || cat "$HOME/.config/abbenay/http-api-token")}"
+```
+
+### 1. Bind address
+
+Confirm HTTP listens on loopback only (not `0.0.0.0`):
+
+```bash
+# macOS / BSD
+lsof -nP -iTCP:8787 -sTCP:LISTEN
+# Linux
+ss -ltnp 'sport = :8787'
+```
+
+**Pass:** listener address is `127.0.0.1:8787` (or `[::1]:8787`).
+**Fail:** `*:8787`, `0.0.0.0:8787`, or a LAN IP without an intentional `--host` opt-in.
+
+### 2. HTTP auth
+
+```bash
+# Unauthenticated API → 401
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/health
+# Authenticated → 200
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  http://127.0.0.1:8787/api/health
+```
+
+**Pass:** first prints `401`, second prints `200`.
+**Fail:** unauthenticated request succeeds, or auth cannot be satisfied with the token.
+
+### 3. CORS allowlist
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H 'Origin: https://evil.example' \
+  -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  http://127.0.0.1:8787/api/health
+
+curl -s -D - -o /dev/null \
+  -H 'Origin: http://127.0.0.1:8787' \
+  -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
+  http://127.0.0.1:8787/api/health | grep -i access-control-allow-origin
+```
+
+**Pass:** foreign Origin returns `403` and no `Access-Control-Allow-Origin: *`;
+localhost Origin is echoed in `Access-Control-Allow-Origin`.
+**Fail:** response allows `*` or accepts an arbitrary website Origin.
+
+### 4. gRPC TLS (exposure path)
+
+Default daemon has no TCP gRPC listener. When you enable TCP:
+
+```bash
+# Loopback plaintext OK
+abbenay daemon --grpc-port 50051
+# Must fail without TLS or --insecure
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0
+# Must succeed only with explicit opt-in (+ consumers; see step 5)
+abbenay daemon --grpc-port 50051 --grpc-host 0.0.0.0 --grpc-tls
+```
+
+**Pass:** non-loopback without `--grpc-tls` / `--insecure` refuses to start;
+with `--grpc-tls`, logs show TLS (see [DEVELOPMENT.md](./DEVELOPMENT.md)).
+**Fail:** plaintext gRPC accepts connections on `0.0.0.0` without `--insecure`.
+
+### 5. Consumers (gRPC)
+
+On non-loopback TCP, an empty/missing `consumers` section must refuse to start
+unless `--allow-open-auth` or `--insecure` is set. Configure consumers per
+[CONFIGURATION.md](./CONFIGURATION.md#consumer-authentication-consumers), then:
+
+```bash
+# After consumers + --grpc-tls on 0.0.0.0: sensitive RPCs need x-abbenay-token
+# Wrong/missing token → PERMISSION_DENIED (see consumer-auth tests / client docs)
+```
+
+**Pass:** start fails with empty consumers on `0.0.0.0`; with consumers, wrong
+token is denied on gated RPCs.
+**Fail:** non-loopback gRPC allows all callers with no consumers and no opt-in.
+
+### 6. MCP HTTP endpoint
+
+```bash
+# Unauthenticated /mcp → 401
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -X POST http://127.0.0.1:8787/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+**Pass:** `401` without Bearer. With Bearer, connection consent is still
+required before a session is issued (`GET/POST /api/mcp/connections` — see
+[CONFIGURATION.md](./CONFIGURATION.md#mcp-client-connection-consent)).
+**Fail:** anonymous clients can open `/mcp` or skip consent.
+
+### Operator controls outside Abbenay
+
+These are **not** product features; confirm them in your environment if you
+need air-gap / offline posture:
+
+- Host firewall / security groups restrict who can reach any non-loopback bind
+- No unintended default route / NIC bridging for offline hosts
+- Strong tokens set via env (`ABBENAY_API_TOKEN`, consumer `token_env`) in
+  containers — do not rely on auto-generated files alone
 
 ---
 

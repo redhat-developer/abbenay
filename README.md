@@ -293,7 +293,7 @@ abbenay/
 ## Documentation
 
 - [Getting Started](docs/GETTING_STARTED.md)
-- [Security, Privacy & Air-Gap](docs/SECURITY.md) — defaults vs air-gap claims
+- [Security, Privacy & Air-Gap](docs/SECURITY.md) — defaults, residual risks, operator checklist
 - [Core Library (API Reference)](docs/CORE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)
