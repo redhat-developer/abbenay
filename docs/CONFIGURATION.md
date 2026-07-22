@@ -141,8 +141,8 @@ when unauthenticated.
 > **WARNING — disabling HTTP auth:** Auth is **on by default**. Setting
 > `ABBENAY_HTTP_AUTH=0` turns it off on any bind address (including
 > `--host 0.0.0.0`). That allows any process (and any website that can reach
-> the bind address) to call the daemon and read/write secrets, config, chat,
-> MCP, and sessions. The server logs a loud warning when auth is disabled.
+> this port) to call the daemon and read/write secrets, config, chat, MCP,
+> and sessions. The server logs a loud warning when auth is disabled.
 >
 > Legitimate cases for auth-off on a non-loopback bind include:
 > - **Cluster / production pod** — Abbenay as an internal Service, reachable

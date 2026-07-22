@@ -399,11 +399,14 @@ metadata:
   name: abbenay
 spec:
   type: ClusterIP
+  selector:
+    app: abbenay
   ports:
     - port: 8787
       targetPort: 8787
 ---
-# Optional: deny ingress except from your caller namespace/pods
+# Optional: deny ingress except from the caller namespace (name = ai-clients).
+# kubernetes.io/metadata.name is set automatically on the Namespace object.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -417,7 +420,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes: ai-clients
+              kubernetes.io/metadata.name: ai-clients
       ports:
         - protocol: TCP
           port: 8787
