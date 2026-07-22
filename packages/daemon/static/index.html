@@ -2322,10 +2322,11 @@ function dashboard() {
           body: JSON.stringify({ requestId, decision }),
         });
         // Clear the card here — approvals are no longer echoed as approval_result SSE.
+        const label = decision === 'allow' ? 'allowed' : decision === 'deny' ? 'denied' : 'aborted';
         const icon = decision === 'allow' ? '✅' : '❌';
         const idx = this.chatMessages.length - 1;
         if (idx >= 0 && this.chatMessages[idx]) {
-          this.chatMessages[idx].content += `${icon} Tool ${decision}ed\n`;
+          this.chatMessages[idx].content += `${icon} Tool ${label}\n`;
         }
         this.pendingApproval = null;
       } catch (e) {
