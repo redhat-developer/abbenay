@@ -6,8 +6,11 @@ A lightweight, transport-agnostic library for integrating 20 LLM engines into yo
 
 `@abbenay/core` is the reusable library extracted from the Abbenay daemon. It provides:
 
-- **Multi-engine abstraction** over 15+ LLM providers via the Vercel AI SDK
-- **Streaming chat** with tool calling support
+- **Multi-engine abstraction** over 20 LLM providers via the Vercel AI SDK 7
+  (requires Node.js 22.12+)
+- **Streaming chat** with tool calling; optional `reasoning` effort pass-through
+  to the model (reasoning deltas are not streamed to clients yet); flat
+  `timeout` ms maps to AI SDK `{ totalMs }`
 - **Model discovery** from provider APIs
 - **YAML configuration** management (user-level and workspace-level)
 - **Pluggable secret store** for API key management
@@ -281,7 +284,10 @@ for await (const chunk of core.chat(
 }
 ```
 
-The Vercel AI SDK handles the tool execution loop automatically (up to `maxSteps: 10`).
+The Vercel AI SDK (v7) handles the tool execution loop automatically via
+`stopWhen: isStepCount(...)` (default max 10 iterations, configurable through
+`tool_policy.max_tool_iterations`). Tool approval uses SDK-native `toolApproval`
+bridged to Abbenay's secure-by-default policy (DR-019 / DR-042).
 
 ## Supported Engines
 

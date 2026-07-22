@@ -662,3 +662,44 @@ endpoint policy + audits stop prompt/key exfiltration via fake endpoints
 without breaking local Ollama / RHAI loopback HTTP. Full encryption-at-rest /
 enclave isolation is deferred; OS keychain + 0600 config + auth gates + audits
 are the current control set.
+
+## DR-041: Prefer direct bumps and lockfile resolution over npm overrides
+
+**Date:** 2026-07-21
+**Decision:** Resolve Dependabot/npm audit advisories by bumping direct
+dependencies and refreshing the lockfile to patched transitive versions that
+already fall within parent semver ranges. Do not add root `package.json`
+`overrides` unless a parent dependency pins a range that cannot reach a
+patched release (in which case prefer allowlisting via `.audit-allowlist` for
+dev-only/unfixable cases, or an override only as a last resort with a new
+decision entry explaining why).
+**Rationale:** Parent ranges for the current Dependabot set (`undici` via
+cheerio, `brace-expansion` via minimatch, `protobufjs` via proto-loader)
+already admit patched versions. Overrides force versions outside the normal
+resolution graph, increase review surface, and can surprise consumers; a
+lockfile refresh after direct bumps is enough when ranges allow the fix.
+
+## DR-042: Upgrade to AI SDK 7 (phased)
+
+**Date:** 2026-07-21
+**Decision:** Upgrade the daemon from AI SDK 6 to AI SDK 7. Require Node.js
+`>=22.12.0` (root and `@abbenay/daemon` engines; SEA/esbuild target `node22`).
+Dependency bump and API renames (`stepCountIs` → `isStepCount`, `fullStream`
+→ `stream`, `maxTokens` → `maxOutputTokens`, JSON mode via `Output.json()`).
+Map Abbenay's flat `timeout` ms to `{ totalMs }` only (no invented step/tool
+half-budgets). Pass-through unified `reasoning` on chat params / model config /
+policy sampling (not streamed to clients yet). Register AI SDK telemetry only
+when `ABBENAY_AI_TELEMETRY` is `1` or `true`, with `recordInputs`/`recordOutputs: false` on
+`streamChat`. Bridge chat tool approval onto SDK `toolApproval` (executor path
+only) via a function that awaits Abbenay's `createToolValidator` /
+`onToolApprovalNeeded` and returns `approved` or `{ type: 'denied', reason }`;
+abort throws. Map `tool-output-denied` stream parts to Abbenay `tool`/`completed`
+chunks with the prior denial error payload. MCP HTTP continues to use
+`authorizeToolExecution` directly. Published `@abbenay/core` peers track AI SDK
+7 majors. Out of scope: HarnessAgent, realtime voice, generateVideo, MCP Apps,
+WorkflowAgent, HMAC-signed approvals.
+**Rationale:** AI SDK 7 is the supported agent runtime; Node 18/20 are no
+longer supported by the SDK. Total-only timeouts preserve prior budgets and
+avoid aborting human approval waits. Opt-in telemetry avoids surprise prompt
+export. Bridging `toolApproval` keeps DR-019 policy tiers without rewriting
+transport UX around SDK `user-approval` stream pauses.
