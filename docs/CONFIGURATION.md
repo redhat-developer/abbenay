@@ -138,14 +138,26 @@ that connects over loopback still cannot auto-establish a session for a public
 hostname. API routes (`/api/*`, `/v1/*`, `/mcp`) continue to return `401` JSON
 when unauthenticated.
 
-> **WARNING — disabling HTTP auth:** Auth is **on by default**. For throwaway
-> local development only you may set `ABBENAY_HTTP_AUTH=0`. That allows any
-> process (and any website that can reach the bind address) to call the
-> daemon and read/write secrets, config, chat, MCP, and sessions. The server
-> logs a loud warning when auth is disabled. Combining `ABBENAY_HTTP_AUTH=0`
-> with `--host 0.0.0.0` (or any non-loopback bind) fails closed — the HTTP
-> server refuses to start. Prefer keeping auth enabled and using a local
-> token instead.
+> **WARNING — disabling HTTP auth:** Auth is **on by default**. Setting
+> `ABBENAY_HTTP_AUTH=0` turns it off on any bind address (including
+> `--host 0.0.0.0`). That allows any process (and any website that can reach
+> the bind address) to call the daemon and read/write secrets, config, chat,
+> MCP, and sessions. The server logs a loud warning when auth is disabled.
+>
+> Legitimate cases for auth-off on a non-loopback bind include:
+> - **Cluster / production pod** — Abbenay as an internal Service, reachable
+>   only on a private network (NetworkPolicy, mesh, or equivalent), with no
+>   public ingress to the daemon port
+> - **Auth at the proxy** — a reverse proxy, API gateway, or ingress that
+>   already authenticates callers (OAuth2 proxy, mesh mTLS, corporate SSO)
+>   and forwards only trusted traffic to Abbenay
+>
+> Auth-off disables Abbenay’s Bearer **and** dashboard CSRF checks. Abbenay
+> does not verify proxy-injected identity headers; isolation must come from
+> the network (who can reach the port). See
+> [CONTAINER.md](CONTAINER.md#security-http-bind-and-authentication) for
+> sketch examples. If neither shape applies, keep auth enabled and use a
+> strong `ABBENAY_API_TOKEN`.
 
 ### Tool policy
 

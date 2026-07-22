@@ -218,7 +218,7 @@ describe('HTTP auth', () => {
   });
 });
 
-describe('ABBENAY_HTTP_AUTH disable escape hatch', () => {
+describe('ABBENAY_HTTP_AUTH disable opt-out', () => {
   let disabledServer: http.Server;
   let disabledBase: string;
 
@@ -276,15 +276,39 @@ describe('ABBENAY_HTTP_AUTH disable escape hatch', () => {
     expect(status).toBe(200);
   });
 
-  it('refuses to start when auth is disabled on a non-loopback bind', async () => {
+  it('allows auth-disabled start on a non-loopback bind', async () => {
     await stopEmbeddedWebServer();
     const state = createMockState();
-    await expect(
-      startEmbeddedWebServer(state, 18787, '0.0.0.0', {
-        authEnabled: false,
-        skipConfig: true,
-      }),
-    ).rejects.toThrow(/authentication disabled|ABBENAY_HTTP_AUTH/);
+    const probe = http.createServer();
+    const freePort = await new Promise<number>((resolve) => {
+      probe.listen(0, '127.0.0.1', () => {
+        const addr = probe.address();
+        resolve(typeof addr === 'object' && addr ? addr.port : 0);
+      });
+    });
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    const started = await startEmbeddedWebServer(state, freePort, '0.0.0.0', {
+      authEnabled: false,
+      skipConfig: true,
+    });
+    expect(started.security.authEnabled).toBe(false);
+    expect(started.security.host).toBe('0.0.0.0');
+
+    // Prove the contract: unauthenticated API access works (not only that listen succeeds).
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        `http://127.0.0.1:${freePort}/api/health`,
+        { method: 'GET' },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode || 0));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    expect(status).toBe(200);
     await stopEmbeddedWebServer();
   });
 
