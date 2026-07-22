@@ -1783,8 +1783,8 @@ export async function startEmbeddedWebServer(
 
   if (!security.authEnabled) {
     const scope = isLocalhostBind(bindHost)
-      ? 'Any local process (and any site that can reach this loopback bind)'
-      : `Bind is ${bindHost} (beyond loopback) — any host/process that can reach this address`;
+      ? 'Any local process (and any site that can reach this loopback port)'
+      : `Listening on ${bindHost}:${port} (beyond loopback) — any host/process that can reach this port`;
     console.warn(
       '[Web] WARNING: HTTP authentication is DISABLED (ABBENAY_HTTP_AUTH). ' +
       `${scope} can read/write secrets, config, chat, MCP, and sessions. ` +

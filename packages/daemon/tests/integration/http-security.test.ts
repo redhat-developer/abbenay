@@ -22,15 +22,18 @@ import { DEFAULT_HTTP_HOST } from '../../src/core/constants.js';
 
 const TEST_TOKEN = 'test-http-api-token-secure-defaults';
 
-/** Allocate an ephemeral TCP port on loopback; fail fast on listen/address errors. */
-function getEphemeralPort(): Promise<number> {
+/**
+ * Allocate an ephemeral TCP port on `host` (default loopback).
+ * Fail fast on listen/address errors — never return port 0.
+ */
+function getEphemeralPort(host = '127.0.0.1'): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, host, () => {
       const addr = server.address();
       if (typeof addr !== 'object' || addr === null || !addr.port) {
-        server.close(() => reject(new Error('Failed to allocate ephemeral port on 127.0.0.1')));
+        server.close(() => reject(new Error(`Failed to allocate ephemeral port on ${host}`)));
         return;
       }
       const port = addr.port;
@@ -297,7 +300,8 @@ describe('ABBENAY_HTTP_AUTH disable opt-out', () => {
   it('allows auth-disabled start on a non-loopback bind', async () => {
     await stopEmbeddedWebServer();
     const state = createMockState();
-    const freePort = await getEphemeralPort();
+    // Probe on the same bind host the server will use so the port is known free there.
+    const freePort = await getEphemeralPort('0.0.0.0');
 
     const started = await startEmbeddedWebServer(state, freePort, '0.0.0.0', {
       authEnabled: false,
