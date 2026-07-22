@@ -239,7 +239,7 @@ export function buildStreamChunk(
     };
   }
 
-  // approval_request, approval_result, tool results, errors — not mapped to OpenAI streaming
+  // tool results, errors, and other non-OpenAI chunk types — not mapped
   return null;
 }
 

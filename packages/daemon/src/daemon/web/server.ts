@@ -1011,8 +1011,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * POST /api/chat - Stream chat via Server-Sent Events
    *
    * Calls state.chat() directly — no gRPC in the loop.
-   * When a tool matches require_approval, an approval_request SSE event is
-   * emitted and the stream pauses until POST /api/chat/:chatId/approve resolves it.
+   * When a tool needs approval, onToolApprovalNeeded writes an approval_request
+   * SSE event (not a ChatChunk) and pauses until POST /api/chat/:chatId/approve.
    */
   app.post('/api/chat', (req, res) => {
     const parsed = parseRequestBody(PostChatBodySchema, req.body);
@@ -1131,10 +1131,6 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
               toolData.call = { params: chunk.call.params, result: chunk.call.result };
             }
             safeWrite(`data: ${JSON.stringify(toolData)}\n\n`);
-          } else if (chunk.type === 'approval_request') {
-            safeWrite(`data: ${JSON.stringify({ type: 'approval_request', chatId, requestId: chunk.requestId, toolName: chunk.toolName, args: chunk.args })}\n\n`);
-          } else if (chunk.type === 'approval_result') {
-            safeWrite(`data: ${JSON.stringify({ type: 'approval_result', requestId: chunk.requestId, decision: chunk.decision })}\n\n`);
           } else if (chunk.type === 'error') {
             safeWrite(`data: ${JSON.stringify({ type: 'error', error: chunk.error })}\n\n`);
           } else if (chunk.type === 'done') {

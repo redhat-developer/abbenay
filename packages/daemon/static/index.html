@@ -2292,10 +2292,6 @@ function dashboard() {
                     args: data.args,
                   };
                   this.chatMessages[idx].content += `\n\n⏸️ **Waiting for approval:** \`${data.toolName}\`\n`;
-                } else if (data.type === 'approval_result') {
-                  const icon = data.decision === 'allow' ? '✅' : '❌';
-                  this.chatMessages[idx].content += `${icon} Tool ${data.decision}ed\n`;
-                  this.pendingApproval = null;
                 } else if (data.type === 'error') {
                   this.chatMessages[idx].content += `\n\n**Error:** ${data.error}\n`;
                 } else if (data.type === 'done') {
