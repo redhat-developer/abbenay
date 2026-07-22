@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -20,6 +21,23 @@ import { SessionStore } from '../../src/core/session-store.js';
 import { DEFAULT_HTTP_HOST } from '../../src/core/constants.js';
 
 const TEST_TOKEN = 'test-http-api-token-secure-defaults';
+
+/** Allocate an ephemeral TCP port on loopback; fail fast on listen/address errors. */
+function getEphemeralPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (typeof addr !== 'object' || addr === null || !addr.port) {
+        server.close(() => reject(new Error('Failed to allocate ephemeral port on 127.0.0.1')));
+        return;
+      }
+      const port = addr.port;
+      server.close((err) => (err ? reject(err) : resolve(port)));
+    });
+  });
+}
 
 const mockSecretStore: SecretStore = {
   async get() { return null; },
@@ -279,14 +297,7 @@ describe('ABBENAY_HTTP_AUTH disable opt-out', () => {
   it('allows auth-disabled start on a non-loopback bind', async () => {
     await stopEmbeddedWebServer();
     const state = createMockState();
-    const probe = http.createServer();
-    const freePort = await new Promise<number>((resolve) => {
-      probe.listen(0, '127.0.0.1', () => {
-        const addr = probe.address();
-        resolve(typeof addr === 'object' && addr ? addr.port : 0);
-      });
-    });
-    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    const freePort = await getEphemeralPort();
 
     const started = await startEmbeddedWebServer(state, freePort, '0.0.0.0', {
       authEnabled: false,
@@ -315,14 +326,7 @@ describe('ABBENAY_HTTP_AUTH disable opt-out', () => {
   it('allows auth-disabled start on loopback', async () => {
     await stopEmbeddedWebServer();
     const state = createMockState();
-    const probe = http.createServer();
-    const freePort = await new Promise<number>((resolve) => {
-      probe.listen(0, '127.0.0.1', () => {
-        const addr = probe.address();
-        resolve(typeof addr === 'object' && addr ? addr.port : 0);
-      });
-    });
-    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    const freePort = await getEphemeralPort();
 
     const started = await startEmbeddedWebServer(state, freePort, '127.0.0.1', {
       authEnabled: false,
@@ -494,15 +498,8 @@ describe('bind address default', () => {
     // port 0 may not work with our listen — use a high free port instead
     await stopEmbeddedWebServer();
 
-    // Pick an ephemeral port via a probe, then start embedded on that port
-    const probe = http.createServer();
-    const freePort = await new Promise<number>((resolve) => {
-      probe.listen(0, '127.0.0.1', () => {
-        const addr = probe.address();
-        resolve(typeof addr === 'object' && addr ? addr.port : 0);
-      });
-    });
-    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    // Pick an ephemeral port, then start embedded on that port
+    const freePort = await getEphemeralPort();
 
     const started = await startEmbeddedWebServer(state, freePort, undefined, {
       apiToken: TEST_TOKEN,
