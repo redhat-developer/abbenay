@@ -22,25 +22,27 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@ai-sdk/amazon-bedrock": "^2.0.0",
-    "@ai-sdk/anthropic": "^3.0.0",
-    "@ai-sdk/cohere": "^3.0.0",
-    "@ai-sdk/deepseek": "^2.0.0",
-    "@ai-sdk/fireworks": "^2.0.0",
-    "@ai-sdk/google": "^3.0.0",
-    "@ai-sdk/google-vertex": "^4.0.0",
-    "@ai-sdk/groq": "^3.0.0",
-    "@ai-sdk/mcp": "^1.0.0",
-    "@ai-sdk/mistral": "^3.0.0",
-    "@ai-sdk/openai": "^3.0.0",
-    "@ai-sdk/openai-compatible": "^2.0.0",
-    "@ai-sdk/perplexity": "^1.0.0",
-    "@ai-sdk/togetherai": "^1.0.0",
-    "@ai-sdk/xai": "^3.0.0",
+    "@ai-sdk/amazon-bedrock": "^5.0.0",
+    "@ai-sdk/anthropic": "^4.0.0",
+    "@ai-sdk/cohere": "^4.0.0",
+    "@ai-sdk/deepseek": "^3.0.0",
+    "@ai-sdk/fireworks": "^3.0.0",
+    "@ai-sdk/google": "^4.0.0",
+    "@ai-sdk/google-vertex": "^5.0.0",
+    "@ai-sdk/groq": "^4.0.0",
+    "@ai-sdk/mcp": "^2.0.0",
+    "@ai-sdk/mistral": "^4.0.0",
+    "@ai-sdk/openai": "^4.0.0",
+    "@ai-sdk/openai-compatible": "^3.0.0",
+    "@ai-sdk/otel": "^1.0.0",
+    "@ai-sdk/perplexity": "^4.0.0",
+    "@ai-sdk/togetherai": "^3.0.0",
+    "@ai-sdk/xai": "^4.0.0",
     "@grpc/grpc-js": "^1.10.0",
     "@grpc/proto-loader": "^0.7.13",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "ai": "^6.0.0",
+    "@opentelemetry/api": "^1.9.1",
+    "ai": "^7.0.0",
     "commander": "^12.1.0",
     "express": "^4.22.2",
     "js-yaml": "^4.3.0",
@@ -64,6 +66,6 @@
     "vitest": "^4.1.9"
   },
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=22.12.0"
   }
 }

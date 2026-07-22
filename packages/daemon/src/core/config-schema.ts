@@ -53,6 +53,9 @@ export const ModelConfigSchema = z
     top_k: z.number().int().nonnegative().optional(),
     max_tokens: z.number().int().positive().optional(),
     timeout: z.number().positive().optional(),
+    reasoning: z
+      .enum(['provider-default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+      .optional(),
     openai_compat_tools: OpenAICompatToolsModeSchema.optional(),
   })
   .strict();
@@ -149,6 +152,9 @@ export const PolicyConfigSchema = z
         temperature: z.number().min(0).max(2).optional(),
         top_p: z.number().min(0).max(1).optional(),
         top_k: z.number().int().nonnegative().optional(),
+        reasoning: z
+          .enum(['provider-default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+          .optional(),
       })
       .strict()
       .optional(),

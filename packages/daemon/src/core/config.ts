@@ -16,6 +16,7 @@ import {
   getUserConfigPath as _getUserConfigPath,
   getWorkspaceConfigPath as _getWorkspaceConfigPath,
 } from './paths.js';
+import type { ReasoningLevel } from './engines.js';
 
 // ── Name validation (canonical implementation in config-schema.ts) ─────
 
@@ -53,6 +54,8 @@ export interface ModelConfig {
   max_tokens?: number;
   /** Request timeout in milliseconds */
   timeout?: number;
+  /** Unified AI SDK reasoning effort (DR-042). */
+  reasoning?: ReasoningLevel;
   /**
    * Per-model override for OpenAI-compatible `/v1` tools passthrough.
    * When unset, inherits `openai_compat.tools` (default `off`).
