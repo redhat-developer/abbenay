@@ -195,6 +195,28 @@ describe('loadConfigFromPath (old schema migration)', () => {
     expect(prov.base_url).toBe('https://custom.openai.com');
     expect((prov as Record<string, unknown>).api_base).toBeUndefined();
   });
+
+  it('should convert models array to models map', () => {
+    const filePath = writeYaml(path.join(tmpDir, 'array-models.yaml'), {
+      providers: {
+        mock: {
+          engine: 'mock',
+          models: ['echo', 'fixed', 'error'],
+        },
+      },
+    });
+
+    const config = loadConfigFromPath(filePath);
+
+    expect(config).not.toBeNull();
+    const prov = config!.providers!.mock;
+    expect(prov.models).toBeDefined();
+    expect(Array.isArray(prov.models)).toBe(false);
+    expect(Object.keys(prov.models!)).toHaveLength(3);
+    expect(prov.models!['echo']).toEqual({});
+    expect(prov.models!['fixed']).toEqual({});
+    expect(prov.models!['error']).toEqual({});
+  });
 });
 
 // ── mergeConfigs ─────────────────────────────────────────────────────────────
