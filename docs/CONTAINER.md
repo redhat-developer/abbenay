@@ -356,6 +356,11 @@ spec:
 
 ## Security: HTTP bind and authentication
 
+> Workstation CLI defaults bind HTTP to `127.0.0.1` with auth on. The
+> **container image CMD** intentionally uses `--host 0.0.0.0` so published
+> ports work — that is opt-in exposure, not “air-gap security.” See
+> [SECURITY.md](./SECURITY.md).
+
 | Flag | Default | Effect |
 |------|---------|--------|
 | `--host` / `ABBENAY_HTTP_HOST` / `server.host` | `127.0.0.1` | HTTP bind (dashboard, `/api/*`, `/v1/*`, `/mcp`) |

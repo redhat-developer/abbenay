@@ -612,6 +612,27 @@ compare closes token oracle leaks.
 
 ---
 
+## DR-038: Air-gap docs must match secure defaults (finding A4)
+
+**Date:** 2026-07-20
+**Decision:** After DR-029 / DR-030 land, product and feature documentation
+MUST describe the real localhost-first HTTP defaults, auth, CORS allowlist,
+and gRPC TLS posture, and MUST NOT claim that network isolation or air-gap
+alone secures Abbenay. Docs MUST also state that Abbenay does **not** provide
+network-isolation features (firewall / offline enforcement); isolation remains
+an operator/environment control, while bind/auth/CORS/TLS/consumers are the
+daemon controls. Residual risks, a step-by-step operator checklist (bind,
+auth, CORS, TLS, consumers, MCP), and changelog callouts for the security
+default changes are required in `docs/SECURITY.md` and
+`packages/vscode/CHANGELOG.md`.
+**Rationale:** Finding A4 — messaging emphasized air-gap / privacy while
+historical defaults (all-interface HTTP, plaintext gRPC, wildcard CORS) and
+the absence of product-level isolation controls could leave an admin believing
+isolation equals security. Technical fixes live in AAP-82788 / AAP-82804; this
+decision closes the docs / claims half.
+
+---
+
 ## DR-039: Block MCP self-connections to the daemon's own endpoints
 
 **Date:** 2026-07-20
