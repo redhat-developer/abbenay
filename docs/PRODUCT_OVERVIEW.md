@@ -2,7 +2,7 @@
 
 **Status:** MVP Complete  
 **Version:** 0.0.0-dev  
-**Last Updated:** March 2026
+**Last Updated:** July 2026
 
 ---
 
@@ -249,6 +249,19 @@ providers:
 |-----------|--------|-------|
 | VS Code Language Model API | ✅ Complete | `vscode.lm.selectChatModels({ vendor: 'abbenay' })` |
 | Web-based configuration | ✅ Complete | Dashboard at localhost:8787 |
+
+---
+
+## Security and air-gap posture
+
+Abbenay supports **local and on-prem engines** (Ollama, Red Hat AI, LM Studio,
+custom OpenAI-compatible endpoints) so operators can keep prompts inside their
+network. That is a routing choice — not a security boundary by itself.
+
+Defaults: HTTP on `127.0.0.1` with auth and CORS allowlist; gRPC TLS required
+off-loopback. Abbenay does **not** ship network-isolation controls (firewall /
+offline enforcement); operators own that layer. **Network isolation alone does
+not secure Abbenay.** See [SECURITY.md](./SECURITY.md).
 
 ---
 

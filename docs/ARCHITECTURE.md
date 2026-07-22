@@ -110,7 +110,7 @@ The core TypeScript/Node.js process that runs as a background daemon.
 
 The web dashboard runs inside the daemon process via Express:
 
-- **Port**: `localhost:8787` (configurable)
+- **Bind / port**: `127.0.0.1:8787` by default (configurable; auth required)
 - **Static assets**: Served from `packages/daemon/static/`
 - **API routes**: `/api/*` -> Direct calls to `DaemonState` (no gRPC in the loop)
 - **Chat SSE**: `POST /api/chat` -> Streaming responses via Server-Sent Events
@@ -493,7 +493,17 @@ internal MCP tool for cross-session retrieval.
 - **Secrets**: Stored in system keychain via keytar when available; never in config files
 - **Credential aggregation (A1)**: One daemon holds many provider keys — larger blast radius than per-extension storage; documented for Enterprise / Security-Conscious / air-gapped personas in [CONFIGURATION.md](CONFIGURATION.md#credential-aggregation-risk-operators--finding-a1); secret APIs auth-gated; mutate audits; HTTP lists presence only
 - **Provider supply chain / endpoints (A3)**: `@ai-sdk/*` packages load from a fixed in-code allowlist (config cannot add packages); unknown `engine` IDs rejected on write; `base_url` requires auth + scheme/host policy; audited in logs
-- **Socket**: Unix socket (or named pipe) with user-only permissions
-- **Web dashboard**: Listens on localhost only by default; Bearer auth required
+- **Socket**: Unix socket (or named pipe) with user-only permissions (local IPC)
+- **Web dashboard / HTTP API**: Binds to `127.0.0.1` by default; Bearer (or
+  cookie + CSRF) auth required; CORS allowlist only (never `*`) — DR-030
+- **gRPC TCP**: Loopback plaintext OK for local DX; non-loopback requires
+  `--grpc-tls` or explicit `--insecure` — DR-029. Empty `consumers` refused
+  off-loopback unless `--allow-open-auth` / `--insecure` — DR-037
+- **Air-gap / privacy**: Local and on-prem engines can keep prompts off the
+  public internet, but **network isolation alone does not secure the daemon**.
+  See [SECURITY.md](./SECURITY.md).
 - **Config files**: Created with mode `0o600` (user read/write only)
 - **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-040)
+
+Intentional exposure (containers, LAN) is opt-in via `--host` / image CMD —
+see [CONTAINER.md](./CONTAINER.md) and [SECURITY.md](./SECURITY.md).

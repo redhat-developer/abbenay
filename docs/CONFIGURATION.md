@@ -89,6 +89,10 @@ MCP endpoint (`/mcp`) require authentication by default. MCP tool calls also
 honor `tool_policy` (same approval path as chat — see [Tool policy](#tool-policy)
 below).
 
+For air-gap / privacy claims vs real defaults, see
+[SECURITY.md](./SECURITY.md). **Network isolation alone does not secure
+Abbenay.**
+
 | Setting / env | Purpose | Default |
 |---------------|---------|---------|
 | `ABBENAY_API_TOKEN` or `server.api_token` / `server.api_token_env` | Bearer token for all HTTP routes | Auto-generated and stored as `http-api-token` in the config directory |
