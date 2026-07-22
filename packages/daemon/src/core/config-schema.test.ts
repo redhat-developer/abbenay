@@ -104,7 +104,7 @@ describe('ConfigFileSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts security.stdio_command_allowlist (DR-038)', () => {
+  it('accepts security.stdio_command_allowlist (DR-043)', () => {
     const result = parseConfigFile({
       security: {
         max_dynamic_mcp_servers: 5,

@@ -4,7 +4,7 @@
  * Connects to MCP servers defined in config (stdio or HTTP/SSE transport),
  * discovers their tools, and registers them in the ToolRegistry.
  *
- * Dynamic stdio registration is gated (DR-038 / H6): command allowlist +
+ * Dynamic stdio registration is gated (DR-043 / H6): command allowlist +
  * explicit operator approval before any process is spawned.
  * HTTP/SSE targets that would recurse into this daemon are rejected (DR-039 / H7).
  *
@@ -305,7 +305,7 @@ export class McpClientPool {
    * Returns the list of discovered tool names (namespaced).
    *
    * For stdio transport: allowlist + optional operator approval run *before*
-   * any process is spawned (DR-038 / H6).
+   * any process is spawned (DR-043 / H6).
    */
   async connectDynamic(
     serverId: string,

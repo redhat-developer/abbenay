@@ -79,7 +79,7 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/transport.ts` | Unix socket and PID file management |
 | `daemon/tool-router.ts` | Tool execution routing (VS Code, MCP, local) |
 | `daemon/mcp-client-pool.ts` | MCP server connection pool (stdio allowlist + spawn approval) |
-| `daemon/stdio-command-policy.ts` | Dynamic stdio MCP command allowlist (H6 / DR-038) |
+| `daemon/stdio-command-policy.ts` | Dynamic stdio MCP command allowlist (H6 / DR-043) |
 | `daemon/mcp-server.ts` | Embedded MCP server (connection consent + tool_policy) |
 | `core/tool-approval.ts` | Shared tool validator (chat + MCP HTTP) |
 | `daemon/index.ts` | CLI entry point (Commander) |
@@ -111,7 +111,7 @@ The core TypeScript/Node.js process that runs as a background daemon.
 
 The web dashboard runs inside the daemon process via Express:
 
-- **Port**: `localhost:8787` (configurable)
+- **Bind / port**: `127.0.0.1:8787` by default (configurable; auth required)
 - **Static assets**: Served from `packages/daemon/static/`
 - **API routes**: `/api/*` -> Direct calls to `DaemonState` (no gRPC in the loop)
 - **Chat SSE**: `POST /api/chat` -> Streaming responses via Server-Sent Events
@@ -494,7 +494,16 @@ internal MCP tool for cross-session retrieval.
 ## Security
 
 - **Secrets**: Stored in system keychain via keytar when available; never in config files
-- **Socket**: Unix socket (or named pipe) with user-only permissions
-- **Web dashboard**: Listens on localhost only
-- **No remote access**: Daemon designed for local use only
+- **Socket**: Unix socket (or named pipe) with user-only permissions (local IPC)
+- **Web dashboard / HTTP API**: Binds to `127.0.0.1` by default; Bearer (or
+  cookie + CSRF) auth required; CORS allowlist only (never `*`) — DR-030
+- **gRPC TCP**: Loopback plaintext OK for local DX; non-loopback requires
+  `--grpc-tls` or explicit `--insecure` — DR-029. Empty `consumers` refused
+  off-loopback unless `--allow-open-auth` / `--insecure` — DR-037
+- **Air-gap / privacy**: Local and on-prem engines can keep prompts off the
+  public internet, but **network isolation alone does not secure the daemon**.
+  See [SECURITY.md](./SECURITY.md).
 - **Config files**: Created with mode `0o600` (user read/write only)
+
+Intentional exposure (containers, LAN) is opt-in via `--host` / image CMD —
+see [CONTAINER.md](./CONTAINER.md) and [SECURITY.md](./SECURITY.md).

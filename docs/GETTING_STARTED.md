@@ -257,7 +257,9 @@ same token as the API key.
 > logs a warning. Use auth-off when something else already protects the API
 > (for example a production pod on a private cluster network, or a reverse
 > proxy / gateway that authenticates callers). Otherwise keep auth on and
-> use `ABBENAY_API_TOKEN`.
+> use `ABBENAY_API_TOKEN`. Defaults bind HTTP to `127.0.0.1` with CORS
+> allowlisted — see [SECURITY.md](SECURITY.md). Offline / air-gap use with
+> local models does **not** replace these controls.
 
 ### With the OpenAI Python SDK
 
@@ -400,6 +402,7 @@ aby list-engines
 
 ## Next steps
 
+- [Security, Privacy & Air-Gap](SECURITY.md) — defaults vs air-gap claims
 - [Configuration Reference](CONFIGURATION.md) — all config options
 - [Core Library API](CORE.md) — use `@abbenay/core` in your own apps
 - [Architecture](ARCHITECTURE.md) — how the system fits together

@@ -321,7 +321,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // ── MCP connection consent + tool approval (DR-033 / DR-034) ───────────
   // Connection: initialize blocks until POST /api/mcp/connections resolves.
   // Tools: authorizeAndExecute blocks until POST /api/mcp/approvals resolves.
-  // Stdio spawn: RegisterMcpServer blocks until POST /api/mcp/stdio-spawns resolves (DR-038).
+  // Stdio spawn: RegisterMcpServer blocks until POST /api/mcp/stdio-spawns resolves (DR-043).
   // Abandoned pending entries auto-deny after mcpPendingTtlMs (default 5m).
   const DEFAULT_MCP_PENDING_TTL_MS = 5 * 60 * 1000;
   const mcpPendingTtlMs = options?.mcpPendingTtlMs != null && options.mcpPendingTtlMs > 0
@@ -600,7 +600,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   });
 
   /**
-   * GET /api/mcp/stdio-spawns — pending dynamic stdio MCP spawn approvals + recent denials (DR-038)
+   * GET /api/mcp/stdio-spawns — pending dynamic stdio MCP spawn approvals + recent denials (DR-043)
    */
   app.get('/api/mcp/stdio-spawns', (_req, res) => {
     const pending = [...pendingStdioSpawns.entries()].map(([requestId, p]) => ({
@@ -1836,7 +1836,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
 let _httpServer: http.Server | null = null;
 let _webPort: number | null = null;
-/** Clears stdio spawn approval handler when the web server stops (DR-038). */
+/** Clears stdio spawn approval handler when the web server stops (DR-043). */
 let _clearStdioSpawnHandler: (() => void) | null = null;
 let _webHost: string | null = null;
 let _lastApp: Express | null = null;

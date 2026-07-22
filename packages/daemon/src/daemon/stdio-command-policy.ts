@@ -1,5 +1,5 @@
 /**
- * Stdio MCP command allowlist + denial helpers (DR-038 / finding H6).
+ * Stdio MCP command allowlist + denial helpers (DR-043 / finding H6).
  *
  * Dynamic RegisterMcpServer with transport=stdio must not spawn arbitrary
  * binaries. Commands are matched against security.stdio_command_allowlist

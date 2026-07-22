@@ -320,7 +320,7 @@ When `consumers` is configured, only callers with `mcp_register: true` and a val
 ### Transport Restrictions
 
 - **http/sse** (recommended for dynamic): Low risk — Abbenay connects to a URL, no process spawning.
-- **stdio** (accepted for dynamic, discouraged): Spawns a subprocess. Hardened in DR-038 / H6:
+- **stdio** (accepted for dynamic, discouraged): Spawns a subprocess. Hardened in DR-043 / H6:
   require `security.stdio_command_allowlist`, interactive operator approval
   (`/api/mcp/stdio-spawns`), and authenticated `mcp_register` when consumers
   are configured. Empty allowlist denies all dynamic stdio.

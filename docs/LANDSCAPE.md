@@ -78,10 +78,14 @@ aggregation, and a web dashboard.
 **Strengths:** no infrastructure to deploy, works offline with local
 models, secrets stay on the developer's machine, same core powers CLI /
 daemon / extension / web, in-process tool execution with approval
-policies.
+policies. Secure-by-default HTTP (localhost bind, auth, CORS allowlist)
+and fail-closed gRPC TLS off-loopback — see [SECURITY.md](./SECURITY.md).
 
 **Trade-offs:** not designed for team-wide centralized control, no
-built-in cost tracking or billing, earlier in development.
+built-in cost tracking or billing, earlier in development. Offline /
+air-gap routing to local models reduces public-cloud egress; it does
+**not** by itself authenticate callers or replace daemon security
+controls.
 
 ---
 

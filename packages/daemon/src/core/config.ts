@@ -169,7 +169,7 @@ export interface ServerConfig {
 }
 
 /**
- * Daemon-wide security policy (DR-038 / finding H6).
+ * Daemon-wide security policy (DR-043 / finding H6).
  * Gates dynamic stdio MCP process spawning.
  */
 export interface SecurityConfig {

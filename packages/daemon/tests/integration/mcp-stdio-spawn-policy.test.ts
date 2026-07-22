@@ -1,5 +1,5 @@
 /**
- * Integration E2E: stdio MCP spawn policy (DR-038 / finding H6)
+ * Integration E2E: stdio MCP spawn policy (DR-043 / finding H6)
  *
  * Acceptance:
  * - Non-allowlisted command (e.g. /bin/sh) → rejected, no process spawned

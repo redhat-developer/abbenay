@@ -1469,7 +1469,7 @@ export function createAbbenayService(
     },
     
     /**
-     * Register a dynamic MCP server at runtime (DR-025 / DR-038).
+     * Register a dynamic MCP server at runtime (DR-025 / DR-043).
      * Stdio command/args are never accepted from unauthenticated callers when
      * consumers are configured; allowlist + approval gate process spawn (H6).
      */

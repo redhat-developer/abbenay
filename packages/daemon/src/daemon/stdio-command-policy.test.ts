@@ -1,5 +1,5 @@
 /**
- * Stdio MCP command allowlist unit tests (DR-038 / H6)
+ * Stdio MCP command allowlist unit tests (DR-043 / H6)
  */
 
 import { describe, it, expect } from 'vitest';
