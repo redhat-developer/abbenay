@@ -2316,11 +2316,16 @@ function dashboard() {
       if (!this.pendingApproval || !this.activeChatId) return;
       const { chatId, requestId } = this.pendingApproval;
       try {
-        await apiFetch(`/api/chat/${chatId}/approve`, {
+        const res = await apiFetch(`/api/chat/${chatId}/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId, decision }),
         });
+        // fetch() does not throw on HTTP errors — only clear the card on success.
+        if (!res.ok) {
+          console.error('Failed to send approval:', res.status, await res.text().catch(() => ''));
+          return;
+        }
         // Clear the card here — approvals are no longer echoed as approval_result SSE.
         const label = decision === 'allow' ? 'allowed' : decision === 'deny' ? 'denied' : 'aborted';
         const icon = decision === 'allow' ? '✅' : '❌';
