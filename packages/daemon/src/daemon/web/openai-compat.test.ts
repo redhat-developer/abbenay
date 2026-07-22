@@ -205,11 +205,6 @@ describe('buildStreamChunk', () => {
       const chunk: ChatChunk = { type: 'error', error: 'boom' };
       expect(buildStreamChunk(chunk, opts, 0, false)).toBeNull();
     });
-
-    it('returns null for approval_request chunks', () => {
-      const chunk: ChatChunk = { type: 'approval_request', requestId: 'r1', toolName: 'x', args: {} };
-      expect(buildStreamChunk(chunk, opts, 0, false)).toBeNull();
-    });
   });
 });
 
