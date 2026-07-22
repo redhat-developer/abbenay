@@ -55,7 +55,10 @@ export type { ProviderTemplate } from './engines.js';
 export type { ChatChunk } from './engines.js';
 
 /** Per-request chat parameters (temperature, maxTokens, etc.) */
-export type { ChatParams } from './engines.js';
+export type { ChatParams, ReasoningLevel } from './engines.js';
+
+/** Map Abbenay flat timeout ms → AI SDK 7 TimeoutConfiguration */
+export { toSdkTimeout } from './engines.js';
 
 /** Tool behavior options for chat() */
 export type { ChatToolOptions } from './state.js';

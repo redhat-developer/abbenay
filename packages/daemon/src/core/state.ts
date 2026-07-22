@@ -810,6 +810,7 @@ function mergeParams(
   if (pp?.top_k != null) { merged.top_k = pp.top_k; hasAny = true; }
   if (pp?.max_tokens != null) { merged.maxTokens = pp.max_tokens; hasAny = true; }
   if (pp?.timeout != null) { merged.timeout = pp.timeout; hasAny = true; }
+  if (pp?.reasoning != null) { merged.reasoning = pp.reasoning; hasAny = true; }
 
   // Layer 2: Explicit model config (overrides policy)
   if (configParams?.temperature != null) { merged.temperature = configParams.temperature; hasAny = true; }
@@ -817,6 +818,7 @@ function mergeParams(
   if (configParams?.top_k != null) { merged.top_k = configParams.top_k; hasAny = true; }
   if (configParams?.max_tokens != null) { merged.maxTokens = configParams.max_tokens; hasAny = true; }
   if (configParams?.timeout != null) { merged.timeout = configParams.timeout; hasAny = true; }
+  if (configParams?.reasoning != null) { merged.reasoning = configParams.reasoning; hasAny = true; }
 
   // Layer 3: Per-request params (overrides everything)
   if (requestParams?.temperature != null) { merged.temperature = requestParams.temperature; hasAny = true; }
@@ -824,6 +826,7 @@ function mergeParams(
   if (requestParams?.top_k != null) { merged.top_k = requestParams.top_k; hasAny = true; }
   if (requestParams?.maxTokens != null) { merged.maxTokens = requestParams.maxTokens; hasAny = true; }
   if (requestParams?.timeout != null) { merged.timeout = requestParams.timeout; hasAny = true; }
+  if (requestParams?.reasoning != null) { merged.reasoning = requestParams.reasoning; hasAny = true; }
 
   return hasAny ? merged : undefined;
 }
