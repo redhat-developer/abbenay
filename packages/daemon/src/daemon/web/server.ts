@@ -38,7 +38,6 @@ import {
   shouldRedirectDashboardToLogin,
   mayAutoEstablishDashboardSession,
   requestDashboardHost,
-  assertHttpAuthBindAllowed,
   type WebSecurityOptions,
   type ResolvedHttpSecurity,
   type RequestWithOwner,
@@ -106,7 +105,7 @@ const STATIC_PATH = resolveStaticPath();
  *
  * Used both for production (embedded in daemon) and testing.
  * All /api/*, /v1/*, and /mcp routes require Bearer (or cookie) auth unless
- * ABBENAY_HTTP_AUTH disables authentication for local development.
+ * ABBENAY_HTTP_AUTH disables authentication (explicit opt-out).
  */
 export function createWebApp(state: DaemonState, options?: WebSecurityOptions): Express {
   const app = express();
@@ -1867,7 +1866,6 @@ export async function startEmbeddedWebServer(
 
   const security = resolveHttpSecurity(port, host, options);
   const bindHost = security.host || DEFAULT_HTTP_HOST;
-  assertHttpAuthBindAllowed(bindHost, security.authEnabled);
   const app = createWebApp(state, {
     ...options,
     apiToken: security.apiToken,
@@ -1885,15 +1883,18 @@ export async function startEmbeddedWebServer(
   _webHost = bindHost;
 
   if (!security.authEnabled) {
+    const scope = isLocalhostBind(bindHost)
+      ? 'Any local process (and any site that can reach this loopback port)'
+      : `Listening on ${bindHost}:${port} (beyond loopback) — any host/process that can reach this port`;
     console.warn(
       '[Web] WARNING: HTTP authentication is DISABLED (ABBENAY_HTTP_AUTH). ' +
-      'Any local process (and any site that can reach this bind address) can ' +
-      'read/write secrets, config, chat, MCP, and sessions. ' +
-      'Re-enable auth for anything beyond throwaway local development.',
+      `${scope} can read/write secrets, config, chat, MCP, and sessions. ` +
+      'Use only when that is intentional (e.g. cluster-internal Service, or ' +
+      'a reverse proxy that already authenticates callers).',
     );
   }
 
-  if (!isLocalhostBind(bindHost)) {
+  if (!isLocalhostBind(bindHost) && security.authEnabled) {
     console.warn(
       `[Web] WARNING: HTTP server is bound to ${bindHost} — accessible beyond loopback. ` +
       'Ensure ABBENAY_API_TOKEN (or server.api_token) is set and CORS origins are restricted. ' +

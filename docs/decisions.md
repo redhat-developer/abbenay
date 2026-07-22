@@ -443,17 +443,23 @@ state-changing requests. Prefer `GET/POST /login` (token in the form/body)
 over `/?token=` query login to avoid leaking credentials via history,
 Referer, and access logs; the query form remains for compatibility and uses
 a timing-safe compare. Cookies set the `Secure` flag when the request is
-HTTPS or `X-Forwarded-Proto: https`. For local development only,
-`ABBENAY_HTTP_AUTH=0` (or `false`/`off`/`no`/`disabled`) turns auth off and
-logs a loud warning. Combining auth-disabled with a non-loopback bind
-(`0.0.0.0`, LAN IP, etc.) fails closed: the HTTP server refuses to start.
+HTTPS or `X-Forwarded-Proto: https`. `ABBENAY_HTTP_AUTH=0` (or
+`false`/`off`/`no`/`disabled`) turns auth off on any bind address (including
+non-loopback) and logs a loud warning — an explicit opt-out, not the default.
+Intended auth-off deployments include a production pod as a cluster-internal
+Service (private network / NetworkPolicy) and Abbenay behind a reverse proxy
+or gateway that already authenticates callers.
 **Rationale:** The previous defaults (no auth, `Access-Control-Allow-Origin: *`,
 `app.listen(port)` → `0.0.0.0`) allowed any website the user visited to
 cross-origin call the daemon and read/write secrets, config, chat, MCP, and
 sessions. Secure-by-default closes that gap while keeping intentional network
 exposure possible for containers with an explicit opt-in and a strong token.
-An env-var escape hatch keeps local DX workable without baking an insecure
-default back into production paths.
+An env-var opt-out (`ABBENAY_HTTP_AUTH=0`) supports trusted-network labs,
+cluster-internal Services, and proxy-terminated auth without baking an
+insecure default into production paths. Refusing auth-off on non-loopback was
+later dropped: ProdSec required auth **on by default**, not a permanent ban
+on intentional disable when the platform or proxy already provides the
+security boundary.
 
 ---
 

@@ -252,10 +252,12 @@ curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
 Point any OpenAI-compatible client at `http://127.0.0.1:8787/v1` and use the
 same token as the API key.
 
-> **WARNING:** HTTP auth is **enabled by default**. For throwaway local
-> development only you may set `ABBENAY_HTTP_AUTH=0` to skip Bearer tokens.
-> The server logs a warning. Combining that with `--host 0.0.0.0` refuses to
-> start. Prefer keeping auth on and using `ABBENAY_API_TOKEN` instead.
+> **WARNING:** HTTP auth is **enabled by default**. Set `ABBENAY_HTTP_AUTH=0`
+> to skip Bearer tokens on any bind (including `--host 0.0.0.0`). The server
+> logs a warning. Use auth-off when something else already protects the API
+> (for example a production pod on a private cluster network, or a reverse
+> proxy / gateway that authenticates callers). Otherwise keep auth on and
+> use `ABBENAY_API_TOKEN`.
 
 ### With the OpenAI Python SDK
 
@@ -295,8 +297,10 @@ Host can still auto-establish a session. Sign in with the API token (or
 `POST /login` with the token in the body). Avoid putting the token in the query
 string (it can leak via history, Referer, and logs).
 
-For throwaway local development only, `ABBENAY_HTTP_AUTH=0` disables HTTP auth
-(loopback bind only; refused with `--host 0.0.0.0`).
+`ABBENAY_HTTP_AUTH=0` disables HTTP auth on any bind (including `--host 0.0.0.0`);
+the server logs a loud warning. That is appropriate for a lab, a
+cluster-internal Service, or when a proxy already handles authentication —
+not for an unprotected public bind.
 
 Use the dashboard to:
 

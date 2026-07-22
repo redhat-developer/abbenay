@@ -375,12 +375,73 @@ beyond loopback.
 `Authorization: Bearer <token>` on every request. CORS is allowlist-only
 (never `*`).
 
-> **WARNING:** `ABBENAY_HTTP_AUTH=0` disables HTTP auth for local development
-> only. Combining it with `--host 0.0.0.0` (or any non-loopback bind) fails
-> closed — the HTTP server refuses to start.
+> **WARNING:** `ABBENAY_HTTP_AUTH=0` disables HTTP auth on any bind, including
+> the container default `--host 0.0.0.0`. The server starts and logs a loud
+> warning; any client that can reach the published port has full API access.
 
-When exposing HTTP, always set a strong `ABBENAY_API_TOKEN` and restrict
-`server.cors_origins`. Keep `ABBENAY_HTTP_AUTH` enabled (the default).
+Typical production shapes that use auth-off intentionally. Abbenay does **not**
+validate proxy headers or mesh identity when auth is off — the security
+boundary is network isolation (who can open a TCP connection to the pod).
+
+**Cluster-internal Service** — other pods call Abbenay on the private network;
+no public Ingress/NodePort/LoadBalancer to `:8787`:
+
+```yaml
+# Deployment env (CMD already binds --host 0.0.0.0)
+env:
+  - name: ABBENAY_HTTP_AUTH
+    value: "0"
+---
+# Service: ClusterIP only (not NodePort / LoadBalancer)
+apiVersion: v1
+kind: Service
+metadata:
+  name: abbenay
+spec:
+  type: ClusterIP
+  selector:
+    app: abbenay
+  ports:
+    - port: 8787
+      targetPort: 8787
+---
+# Optional: deny ingress except from the caller namespace (name = ai-clients).
+# kubernetes.io/metadata.name is set automatically on the Namespace object.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: abbenay-internal-only
+spec:
+  podSelector:
+    matchLabels:
+      app: abbenay
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-clients
+      ports:
+        - protocol: TCP
+          port: 8787
+```
+
+**Auth at the proxy** — oauth2-proxy (or an API gateway / ingress auth) is the
+only path to Abbenay; the Abbenay Service stays ClusterIP and is not published
+publicly. Abbenay trusts the private hop:
+
+```yaml
+# Abbenay Deployment
+env:
+  - name: ABBENAY_HTTP_AUTH
+    value: "0"
+# oauth2-proxy (sketch): upstream = http://abbenay:8787
+# Ingress routes / → oauth2-proxy only; do not Ingress Abbenay directly.
+```
+
+When Abbenay itself must authenticate callers, keep `ABBENAY_HTTP_AUTH`
+enabled (the default), set a strong `ABBENAY_API_TOKEN`, and restrict
+`server.cors_origins`.
 
 ## Security: gRPC bind, TLS, and `--insecure`
 
