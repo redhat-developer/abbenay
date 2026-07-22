@@ -263,18 +263,19 @@ function migrateProviderConfig(provId: string, cfg: Record<string, unknown>): vo
       cfg.base_url = cfg.api_base;
       delete cfg.api_base;
     }
+    migrateModelsArray(cfg);
     return;
   }
-  
+
   // Old format: provider key = engine ID
   cfg.engine = provId;
-  
+
   // Rename api_base → base_url
   if (cfg.api_base) {
     cfg.base_url = cfg.api_base;
     delete cfg.api_base;
   }
-  
+
   // Convert enabled_models: string[] → models: Record<string, ModelConfig>
   if (cfg.enabled_models && Array.isArray(cfg.enabled_models)) {
     const models: Record<string, ModelConfig> = {};
@@ -283,6 +284,18 @@ function migrateProviderConfig(provId: string, cfg: Record<string, unknown>): vo
     }
     cfg.models = models;
     delete cfg.enabled_models;
+  }
+
+  migrateModelsArray(cfg);
+}
+
+function migrateModelsArray(cfg: Record<string, unknown>): void {
+  if (cfg.models && Array.isArray(cfg.models)) {
+    const models: Record<string, ModelConfig> = {};
+    for (const modelId of cfg.models) {
+      models[String(modelId)] = {};
+    }
+    cfg.models = models;
   }
 }
 
