@@ -142,8 +142,9 @@ Works with Cursor, Continue, aider, and any `openai` SDK script (use the same
 token as the client API key). The HTTP server binds to `127.0.0.1` by default;
 use `--host 0.0.0.0` only when you intentionally expose it.
 
-> **WARNING:** Auth is on by default. `ABBENAY_HTTP_AUTH=0` disables it for
-> local development only — do not use with a non-loopback bind. See
+> **WARNING:** Auth is on by default. `ABBENAY_HTTP_AUTH=0` disables it on any
+> bind (including `--host 0.0.0.0`) — for example a cluster-internal pod, or
+> when a reverse proxy already authenticates callers. See
 > [Configuration](docs/CONFIGURATION.md#http-api-security-server).
 
 ### Using the core library
