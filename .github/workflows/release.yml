@@ -23,6 +23,9 @@ jobs:
           - runner: macos-latest
             platform: darwin
             arch: arm64
+          - runner: windows-latest
+            platform: win32
+            arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -38,6 +41,7 @@ jobs:
           key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'bootstrap.sh') }}
 
       - name: Bootstrap
+        shell: bash
         run: ./bootstrap.sh
 
       - name: Cache npm
@@ -51,6 +55,7 @@ jobs:
         run: npm ci
 
       - name: Inject version from tag
+        shell: bash
         run: node scripts/set-version.js "${GITHUB_REF_NAME#v}"
 
       - name: Build
@@ -59,6 +64,10 @@ jobs:
       - name: Smoke test @abbenay/core
         run: node --input-type=module -e "import { CoreState } from './index.js'" 
         working-directory: packages/daemon/dist/core
+
+      - name: Smoke test Windows daemon IPC
+        if: matrix.platform == 'win32'
+        run: npm run ci:smoke-win32-ipc
 
       - name: Pack @abbenay/core
         if: matrix.platform == 'linux' && matrix.arch == 'x64'
@@ -71,11 +80,19 @@ jobs:
           name: abbenay-daemon-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/${{ matrix.platform }}-${{ matrix.arch }}/
 
-      - name: Upload distribution archive
+      - name: Upload distribution archive (Unix)
+        if: matrix.platform != 'win32'
         uses: actions/upload-artifact@v7
         with:
           name: abbenay-archive-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/*.tar.gz
+
+      - name: Upload distribution archive (Windows)
+        if: matrix.platform == 'win32'
+        uses: actions/upload-artifact@v7
+        with:
+          name: abbenay-archive-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*.zip
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v7
@@ -158,6 +175,7 @@ jobs:
 
           assets=(
             release-assets/abbenay-archive-*/*.tar.gz
+            release-assets/abbenay-archive-*/*.zip
             release-assets/abbenay-vsix-*/*.vsix
             release-assets/abbenay-core/*.tgz
             release-assets/abbenay-client-python/*.whl
@@ -175,9 +193,11 @@ jobs:
           | \`abbenay-*-linux-x64.tar.gz\` | Daemon + sidecars (Linux x64) | Extract and run \`./abbenay-daemon\` |
           | \`abbenay-*-linux-arm64.tar.gz\` | Daemon + sidecars (Linux arm64) | Extract and run \`./abbenay-daemon\` |
           | \`abbenay-*-darwin-arm64.tar.gz\` | Daemon + sidecars (macOS Apple Silicon) | Extract and run \`./abbenay-daemon\` |
+          | \`abbenay-*-win32-x64.zip\` | Daemon + sidecars (Windows x64) | Extract and run \`abbenay-daemon-win32-x64.exe\` |
           | \`abbenay-provider-linux-x64-${vsix_ver}.vsix\` | VS Code extension (Linux x64) | \`code --install-extension <file>\` |
           | \`abbenay-provider-linux-arm64-${vsix_ver}.vsix\` | VS Code extension (Linux arm64) | \`code --install-extension <file>\` |
           | \`abbenay-provider-darwin-arm64-${vsix_ver}.vsix\` | VS Code extension (macOS arm64) | \`code --install-extension <file>\` |
+          | \`abbenay-provider-win32-x64-${vsix_ver}.vsix\` | VS Code extension (Windows x64) | \`code --install-extension <file>\` |
           | \`abbenay-core-${ver}.tgz\` | \`@abbenay/core\` npm package | \`npm install <file>\` |
           | \`abbenay_client-*.whl\` | Python gRPC client | \`pip install <file>\` |
           | \`abbenay_client-*.tar.gz\` | Python client sdist | \`pip install <file>\` |
@@ -185,7 +205,7 @@ jobs:
           ### Which do I need?
 
           - **VS Code user**: Download the \`.vsix\` for your platform. It includes the daemon.
-          - **CLI / standalone daemon**: Download the \`.tar.gz\` archive for your platform.
+          - **CLI / standalone daemon**: Download the archive for your platform (\`.tar.gz\` or Windows \`.zip\`).
           - **Node.js library consumer**: Download \`abbenay-core-*.tgz\`.
           - **Python gRPC client**: Download the \`.whl\` file.
           BODY
