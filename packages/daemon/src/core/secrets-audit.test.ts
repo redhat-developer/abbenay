@@ -25,4 +25,19 @@ describe('auditSecretChange', () => {
     expect(line).toContain('source=http-secrets');
     expect(line).not.toMatch(/sk-|secret-value|password/i);
   });
+
+  it('strips control characters from key and actor', () => {
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    auditSecretChange({
+      key: 'OPENAI_API_KEY\n[Audit] forged',
+      op: 'set',
+      source: 'http-secrets',
+      actor: 'alice\rbob',
+    });
+    expect(spy).toHaveBeenCalledOnce();
+    const line = String(spy.mock.calls[0][0]);
+    expect(line).not.toMatch(/\n|\r/);
+    expect(line).toContain('key=OPENAI_API_KEY[Audit] forged');
+    expect(line).toContain('actor=alicebob');
+  });
 });

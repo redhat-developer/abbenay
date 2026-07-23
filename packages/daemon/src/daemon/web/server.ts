@@ -866,22 +866,54 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * POST /api/config - Save configuration
    * Accepts { location: 'user' | workspacePath, config: ConfigFile }
    * Body is Zod-validated; workspace locations must be allowlisted.
+   *
+   * When `config.server` is omitted, the existing server block is merged in
+   * before validation/persist so `allowed_provider_hosts` stays enforced
+   * (parity with gRPC UpdateConfig).
    */
   app.post('/api/config', (req, res) => {
     try {
-      const parsed = parseRequestBody(PostConfigBodySchema, req.body);
+      const rawBody =
+        req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+          ? (req.body as Record<string, unknown>)
+          : {};
+      const location =
+        typeof rawBody.location === 'string' && rawBody.location.length > 0
+          ? rawBody.location
+          : 'user';
+      const loc = resolveConfigLocation(location, state);
+      if (!loc.ok) {
+        res.status(loc.status).json({ error: loc.error });
+        return;
+      }
+
+      // Merge server policy from existing config so partial updates retain the
+      // endpoint allowlist. Without this, Zod would validate without the
+      // allowlist and persistence would drop server.allowed_provider_hosts.
+      let bodyForParse: unknown = rawBody;
+      const rawConfig = rawBody.config;
+      if (rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)) {
+        const cfg = rawConfig as Record<string, unknown>;
+        if (!cfg.server) {
+          const existingServer = (loc.kind === 'user'
+            ? loadConfig()
+            : loadWorkspaceConfig(loc.resolved))?.server;
+          if (existingServer) {
+            bodyForParse = {
+              ...rawBody,
+              config: { ...cfg, server: existingServer },
+            };
+          }
+        }
+      }
+
+      const parsed = parseRequestBody(PostConfigBodySchema, bodyForParse);
       if (!parsed.success) {
         sendBadRequest(res, parsed.error);
         return;
       }
 
       const { config } = parsed.data;
-      const location = parsed.data.location ?? 'user';
-      const loc = resolveConfigLocation(location, state);
-      if (!loc.ok) {
-        res.status(loc.status).json({ error: loc.error });
-        return;
-      }
 
       const enginesCheck = validateConfigProviderEngines(config);
       if (!enginesCheck.ok) {

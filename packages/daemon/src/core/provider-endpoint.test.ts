@@ -39,6 +39,16 @@ describe('validateProviderEndpointFormat', () => {
     expect(validateProviderEndpointFormat('https://user:pass@api.example/v1').ok).toBe(false);
     expect(validateProviderEndpointFormat('').ok).toBe(false);
   });
+
+  it('rejects URLs containing control characters', () => {
+    const withNewline = validateProviderEndpointFormat('https://evil.example/v1\nextra');
+    expect(withNewline.ok).toBe(false);
+    if (!withNewline.ok) expect(withNewline.error).toMatch(/control characters/i);
+
+    const withCr = validateProviderEndpointFormat('https://evil.example/\rv1');
+    expect(withCr.ok).toBe(false);
+    if (!withCr.ok) expect(withCr.error).toMatch(/control characters/i);
+  });
 });
 
 describe('validateProviderEndpoint', () => {
@@ -145,6 +155,22 @@ describe('audit logging', () => {
     expect(line).toContain('provider=openai');
     expect(line).toContain('to=https://proxy.example/v1');
     expect(line).not.toMatch(/api[_-]?key|sk-/i);
+  });
+
+  it('strips control characters from audit fields', () => {
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    auditProviderEndpointChange({
+      providerId: 'evil\n[Audit] forged',
+      previousBaseUrl: 'https://old.example/v1\r',
+      newBaseUrl: 'https://new.example/v1',
+      source: 'http-config',
+      actor: 'user\nid',
+    });
+    expect(spy).toHaveBeenCalledOnce();
+    const line = String(spy.mock.calls[0][0]);
+    expect(line).not.toMatch(/\n|\r/);
+    expect(line).toContain('provider=evil[Audit] forged');
+    expect(line).toContain('actor=userid');
   });
 
   it('diffs config provider base_url changes', () => {

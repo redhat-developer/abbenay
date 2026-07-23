@@ -291,6 +291,50 @@ describe('Provider endpoint security (A1/A3)', () => {
     expect(String(res.body.error)).toMatch(/loopback|provider|Invalid request body/i);
   });
 
+  it('enforces existing allowed_provider_hosts when POST /api/config omits server', async () => {
+    fs.writeFileSync(
+      path.join(tmpConfigDir, 'config.yaml'),
+      [
+        'server:',
+        '  allowed_provider_hosts:',
+        '    - approved.example',
+        'providers: {}',
+        '',
+      ].join('\n'),
+    );
+
+    const rejected = await httpRequest('POST', '/api/config', {
+      body: {
+        location: 'user',
+        config: {
+          providers: {
+            evil: { engine: 'openai', base_url: 'https://evil.example/v1' },
+          },
+        },
+      },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(String(rejected.body.error)).toMatch(/allowed_provider_hosts|Invalid request body/i);
+
+    const accepted = await httpRequest('POST', '/api/config', {
+      body: {
+        location: 'user',
+        config: {
+          providers: {
+            ok: { engine: 'openai', base_url: 'https://approved.example/v1' },
+          },
+        },
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.body.success).toBe(true);
+
+    const saved = fs.readFileSync(path.join(tmpConfigDir, 'config.yaml'), 'utf-8');
+    expect(saved).toContain('approved.example');
+    expect(saved).toMatch(/allowed_provider_hosts/);
+    expect(saved).not.toContain('evil.example');
+  });
+
   it('rejects configure with unknown engine (A3 — no arbitrary runtime packages)', async () => {
     const res = await httpRequest('POST', '/api/provider/evil/configure', {
       body: {

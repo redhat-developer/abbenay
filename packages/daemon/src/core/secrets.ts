@@ -9,6 +9,8 @@
  * can detect unexpected writes. Never log secret values.
  */
 
+import { sanitizeForLog } from './audit-log.js';
+
 // ── Interface ───────────────────────────────────────────────────────────
 
 export interface SecretStore {
@@ -39,9 +41,11 @@ export interface SecretAuditEvent {
  * Never logs the secret value.
  */
 export function auditSecretChange(event: SecretAuditEvent): void {
-  const actor = event.actor ? ` actor=${event.actor}` : '';
+  const safeKey = sanitizeForLog(event.key);
+  const actor = event.actor ? ` actor=${sanitizeForLog(event.actor)}` : '';
   console.info(
-    `[Audit] secret changed: key=${event.key} op=${event.op} source=${event.source}${actor}`,
+    `[Audit] secret changed: key=${safeKey} op=${event.op} ` +
+      `source=${sanitizeForLog(event.source)}${actor}`,
   );
 }
 

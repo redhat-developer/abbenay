@@ -13,6 +13,8 @@
  * - When `allowed_provider_hosts` is non-empty, non-loopback hosts must match
  */
 
+import { hasControlChars, sanitizeForLog } from './audit-log.js';
+
 export interface ProviderEndpointPolicy {
   /**
    * Optional host allowlist (exact hostname match, case-insensitive).
@@ -62,6 +64,15 @@ export function validateProviderEndpointFormat(raw: string): ProviderEndpointVal
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   if (!trimmed) {
     return { ok: false, error: 'provider endpoint must be a non-empty URL' };
+  }
+
+  // Reject before URL parse: new URL() may strip controls while we return the
+  // caller's trimmed string as normalized (persist + audit).
+  if (hasControlChars(trimmed)) {
+    return {
+      ok: false,
+      error: 'provider endpoint URL must not contain control characters',
+    };
   }
 
   let parsed: URL;
@@ -200,11 +211,12 @@ export interface ProviderEndpointAuditEvent {
  * Never logs API keys or other secrets.
  */
 export function auditProviderEndpointChange(event: ProviderEndpointAuditEvent): void {
-  const prev = event.previousBaseUrl ?? '(none)';
-  const actor = event.actor ? ` actor=${event.actor}` : '';
+  const prev = sanitizeForLog(event.previousBaseUrl ?? '(none)');
+  const actor = event.actor ? ` actor=${sanitizeForLog(event.actor)}` : '';
   console.info(
-    `[Audit] provider endpoint changed: provider=${event.providerId} ` +
-      `from=${prev} to=${event.newBaseUrl} source=${event.source}${actor}`,
+    `[Audit] provider endpoint changed: provider=${sanitizeForLog(event.providerId)} ` +
+      `from=${prev} to=${sanitizeForLog(event.newBaseUrl)} ` +
+      `source=${sanitizeForLog(event.source)}${actor}`,
   );
 }
 
