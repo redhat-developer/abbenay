@@ -86,6 +86,9 @@ export type { ModelConfig } from './config.js';
 /** MCP server connection configuration */
 export type { McpServerConfig } from './config.js';
 
+/** Daemon security policy (stdio MCP allowlist, dynamic limits) */
+export type { SecurityConfig } from './config.js';
+
 // ─── Types: Policies ────────────────────────────────────────────────────
 
 /** Named behavioral policy assigned to a model */

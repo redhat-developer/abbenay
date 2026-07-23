@@ -59,6 +59,7 @@ import {
   PostConfigBodySchema,
   PostMcpApprovalBodySchema,
   PostMcpConnectionDecisionBodySchema,
+  PostMcpStdioSpawnDecisionBodySchema,
   PostPolicyBodySchema,
   PostProviderConfigureBodySchema,
   PostSecretBodySchema,
@@ -327,6 +328,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   // ── MCP connection consent + tool approval (DR-033 / DR-034) ───────────
   // Connection: initialize blocks until POST /api/mcp/connections resolves.
   // Tools: authorizeAndExecute blocks until POST /api/mcp/approvals resolves.
+  // Stdio spawn: RegisterMcpServer blocks until POST /api/mcp/stdio-spawns resolves (DR-043).
   // Abandoned pending entries auto-deny after mcpPendingTtlMs (default 5m).
   const DEFAULT_MCP_PENDING_TTL_MS = 5 * 60 * 1000;
   const mcpPendingTtlMs = options?.mcpPendingTtlMs != null && options.mcpPendingTtlMs > 0
@@ -347,6 +349,59 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     clientVersion: string;
     createdAt: number;
   }>();
+
+  const pendingStdioSpawns = new Map<string, {
+    resolve: (decision: 'allow' | 'deny') => void;
+    serverId: string;
+    command: string;
+    args: string[];
+    consumer?: string;
+    createdAt: number;
+  }>();
+
+  // Keep pool security settings current when the web app starts
+  const pool = state.mcpClientPool;
+  if (typeof pool?.applySecurityConfig === 'function') {
+    try {
+      pool.applySecurityConfig(loadConfig().security);
+    } catch {
+      // ignore — config may be empty in tests
+    }
+  }
+
+  if (typeof pool?.setStdioSpawnApprovalHandler === 'function') {
+    pool.setStdioSpawnApprovalHandler(async (request) => {
+      console.log(
+        `[Web] MCP stdio spawn approval required: server=${request.serverId} ` +
+          `command=${request.command} (requestId=${request.requestId})`,
+      );
+      return new Promise<'allow' | 'deny'>((resolve) => {
+        const timer = setTimeout(() => {
+          if (!pendingStdioSpawns.has(request.requestId)) return;
+          pendingStdioSpawns.delete(request.requestId);
+          console.log(
+            `[Web] MCP stdio spawn expired → deny: server=${request.serverId} ` +
+              `command=${request.command} (requestId=${request.requestId})`,
+          );
+          resolve('deny');
+        }, mcpPendingTtlMs);
+        pendingStdioSpawns.set(request.requestId, {
+          resolve: (decision) => {
+            clearTimeout(timer);
+            resolve(decision);
+          },
+          serverId: request.serverId,
+          command: request.command,
+          args: request.args,
+          consumer: request.consumer,
+          createdAt: request.createdAt,
+        });
+      });
+    });
+    _clearStdioSpawnHandler = () => {
+      pool.setStdioSpawnApprovalHandler(undefined);
+    };
+  }
 
   if (typeof state.mcpServer?.configure === 'function') {
     state.mcpServer.configure({
@@ -548,6 +603,50 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     console.log(`[Web] MCP tool approval: ${pending.namespacedName || pending.toolName} → ${decision} (requestId=${requestId})`);
     pending.resolve(decision);
     pendingMcpApprovals.delete(requestId);
+    res.json({ success: true });
+  });
+
+  /**
+   * GET /api/mcp/stdio-spawns — pending dynamic stdio MCP spawn approvals + recent denials (DR-043)
+   */
+  app.get('/api/mcp/stdio-spawns', (_req, res) => {
+    const pending = [...pendingStdioSpawns.entries()].map(([requestId, p]) => ({
+      requestId,
+      serverId: p.serverId,
+      command: p.command,
+      args: p.args,
+      consumer: p.consumer,
+      createdAt: p.createdAt,
+    }));
+    const denials = typeof state.mcpClientPool.getRecentDenials === 'function'
+      ? state.mcpClientPool.getRecentDenials()
+      : [];
+    res.json({ pending, denials });
+  });
+
+  /**
+   * POST /api/mcp/stdio-spawns/:requestId — allow / deny a pending stdio MCP spawn
+   * Body: { decision: 'allow' | 'deny' }
+   */
+  app.post('/api/mcp/stdio-spawns/:requestId', (req, res) => {
+    const parsed = parseRequestBody(PostMcpStdioSpawnDecisionBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
+      return;
+    }
+    const { requestId } = req.params;
+    const { decision } = parsed.data;
+    const pending = pendingStdioSpawns.get(requestId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending MCP stdio spawn with requestId "${requestId}"` });
+      return;
+    }
+    console.log(
+      `[Web] MCP stdio spawn: server=${pending.serverId} command=${pending.command} → ${decision} ` +
+        `(requestId=${requestId})`,
+    );
+    pending.resolve(decision);
+    pendingStdioSpawns.delete(requestId);
     res.json({ success: true });
   });
 
@@ -1804,6 +1903,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
 let _httpServer: http.Server | null = null;
 let _webPort: number | null = null;
+/** Clears stdio spawn approval handler when the web server stops (DR-043). */
+let _clearStdioSpawnHandler: (() => void) | null = null;
 let _webHost: string | null = null;
 let _lastApp: Express | null = null;
 let _lastSecurity: ResolvedHttpSecurity | null = null;
@@ -1906,6 +2007,9 @@ export async function startEmbeddedWebServer(
  */
 export async function stopEmbeddedWebServer(): Promise<void> {
   if (!_httpServer) return;
+
+  _clearStdioSpawnHandler?.();
+  _clearStdioSpawnHandler = null;
   
   await new Promise<void>((resolve) => {
     _httpServer!.close(() => {

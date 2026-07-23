@@ -155,8 +155,10 @@ describe('E2E: gRPC TCP bind security (C2)', () => {
       '--grpc-tls',
       '--allow-open-auth',
     ]);
+    // Wait for the TLS cert line (logged immediately after "listening") so we
+    // don't race stdout flush between the two console.log calls.
     await child.waitFor(/gRPC listening on 0\.0\.0\.0:\d+ \(TLS\)/);
-    expect(child.output()).toMatch(/auto-generated self-signed cert/);
+    await child.waitFor(/auto-generated self-signed cert/);
     expect(child.output()).toMatch(/open consumer auth/);
     const caPath = path.join(child.runtimeDir, 'abbenay', 'tls', 'ca.crt');
     expect(fs.existsSync(caPath)).toBe(true);

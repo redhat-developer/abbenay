@@ -26,7 +26,13 @@ export type { RegisteredTool, ToolPolicyConfig, ToolSourceType } from '../core/t
 export { ToolRegistry } from '../core/tool-registry.js';
 export { ToolRouter } from './tool-router.js';
 export { McpClientPool, isSelfConnectionUrl, normalizeHost, localHostAddresses } from './mcp-client-pool.js';
-export type { McpServerStatus, DaemonListenEndpoints } from './mcp-client-pool.js';
+export type {
+  McpServerStatus,
+  DaemonListenEndpoints,
+  PendingStdioSpawn,
+  OnStdioSpawnApprovalNeeded,
+  StdioSpawnApprovalDecision,
+} from './mcp-client-pool.js';
 export { AbbenayMcpServer } from './mcp-server.js';
 export { SessionStore } from '../core/session-store.js';
 export type { Session, SessionSummary, SessionListOptions, SessionListResult } from '../core/session-store.js';
@@ -105,6 +111,7 @@ export class DaemonState extends CoreState {
     // loadProviderConfig only returns providers; load full config for mcp_servers
     const { loadConfig } = await import('../core/config.js');
     const fullConfig = loadConfig();
+    this.mcpClientPool.applySecurityConfig(fullConfig.security);
     if (fullConfig.mcp_servers && Object.keys(fullConfig.mcp_servers).length > 0) {
       console.log(`[DaemonState] Connecting to ${Object.keys(fullConfig.mcp_servers).length} MCP server(s)...`);
       await this.mcpClientPool.connectAll(fullConfig.mcp_servers);
@@ -118,6 +125,7 @@ export class DaemonState extends CoreState {
   async refreshMcpConnections(): Promise<void> {
     const { loadConfig } = await import('../core/config.js');
     const fullConfig = loadConfig();
+    this.mcpClientPool.applySecurityConfig(fullConfig.security);
     await this.mcpClientPool.syncWithConfig(fullConfig.mcp_servers || {});
   }
 
