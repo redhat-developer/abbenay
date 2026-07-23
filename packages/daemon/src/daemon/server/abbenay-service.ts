@@ -1022,11 +1022,18 @@ export function createAbbenayService(
           callback({ code: grpc.status.INVALID_ARGUMENT, message: enginesCheck.error });
           return;
         }
-        // Merge server policy from existing user config when the update omits server.
-        const userServer = loadConfig()?.server;
+        // Merge server policy from existing config so partial updates retain the
+        // endpoint allowlist. Without this, validation would pass using the merged
+        // policy but persistence would drop server.allowed_provider_hosts.
+        if (!configFile.server) {
+          const existingServer = (location === 'user'
+            ? loadConfig()
+            : loadWorkspaceConfig(location))?.server;
+          if (existingServer) configFile.server = existingServer;
+        }
         const endpointCheck = validateConfigProviderEndpoints({
           providers: configFile.providers,
-          server: configFile.server ?? userServer,
+          server: configFile.server,
         });
         if (!endpointCheck.ok) {
           callback({ code: grpc.status.INVALID_ARGUMENT, message: endpointCheck.error });
