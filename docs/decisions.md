@@ -695,7 +695,10 @@ WorkflowAgent, HMAC-signed approvals.
 longer supported by the SDK. Total-only timeouts preserve prior budgets and
 avoid aborting human approval waits. Opt-in telemetry avoids surprise prompt
 export. Bridging `toolApproval` keeps DR-019 policy tiers without rewriting
-transport UX around SDK `user-approval` stream pauses.
+transport UX around SDK `user-approval` stream pauses. Transport approval
+notifications are out-of-band SSE/CLI events via `onToolApprovalNeeded`; they
+are not `ChatChunk` variants (unused `approval_request` / `approval_result`
+chunk types were removed after the bridge landed).
 
 ---
 

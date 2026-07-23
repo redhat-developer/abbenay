@@ -2354,10 +2354,6 @@ function dashboard() {
                     args: data.args,
                   };
                   this.chatMessages[idx].content += `\n\n⏸️ **Waiting for approval:** \`${data.toolName}\`\n`;
-                } else if (data.type === 'approval_result') {
-                  const icon = data.decision === 'allow' ? '✅' : '❌';
-                  this.chatMessages[idx].content += `${icon} Tool ${data.decision}ed\n`;
-                  this.pendingApproval = null;
                 } else if (data.type === 'error') {
                   this.chatMessages[idx].content += `\n\n**Error:** ${data.error}\n`;
                 } else if (data.type === 'done') {
@@ -2382,11 +2378,24 @@ function dashboard() {
       if (!this.pendingApproval || !this.activeChatId) return;
       const { chatId, requestId } = this.pendingApproval;
       try {
-        await apiFetch(`/api/chat/${chatId}/approve`, {
+        const res = await apiFetch(`/api/chat/${chatId}/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId, decision }),
         });
+        // fetch() does not throw on HTTP errors — only clear the card on success.
+        if (!res.ok) {
+          console.error('Failed to send approval:', res.status, await res.text().catch(() => ''));
+          return;
+        }
+        // Clear the card here — approvals are no longer echoed as approval_result SSE.
+        const label = decision === 'allow' ? 'allowed' : decision === 'deny' ? 'denied' : 'aborted';
+        const icon = decision === 'allow' ? '✅' : '❌';
+        const idx = this.chatMessages.length - 1;
+        if (idx >= 0 && this.chatMessages[idx]) {
+          this.chatMessages[idx].content += `${icon} Tool ${label}\n`;
+        }
+        this.pendingApproval = null;
       } catch (e) {
         console.error('Failed to send approval:', e);
       }
