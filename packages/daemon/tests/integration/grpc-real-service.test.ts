@@ -59,8 +59,19 @@ const mockStreamChat = vi.fn();
 vi.mock('../../src/core/engines.js', () => ({
   getEngines: (...a: unknown[]) => mockGetEngines(...a),
   getEngine: (...a: unknown[]) => mockGetEngine(...a),
+  isKnownEngineId: (id: string) => Boolean(mockGetEngine(id)),
+  validateConfigProviderEngines: (config: { providers?: Record<string, { engine?: string }> }) => {
+    for (const [pid, cfg] of Object.entries(config.providers || {})) {
+      if (!cfg?.engine) return { ok: false as const, error: `provider "${pid}": engine is required` };
+      if (!mockGetEngine(cfg.engine)) {
+        return { ok: false as const, error: `provider "${pid}": unknown engine "${cfg.engine}"` };
+      }
+    }
+    return { ok: true as const };
+  },
   fetchModels: (...a: unknown[]) => mockFetchModels(...a),
   streamChat: (...a: unknown[]) => mockStreamChat(...a),
+  getProviderTemplates: () => [],
 }));
 
 const mockSecretStoreData = new Map<string, string>();

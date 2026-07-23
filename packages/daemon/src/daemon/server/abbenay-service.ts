@@ -4,7 +4,13 @@
 
 import * as grpc from '@grpc/grpc-js';
 import { DaemonState, ClientType, type ChatToolOptions } from '../state.js';
-import { getEngines, type ToolDefinition } from '../../core/engines.js';
+import {
+  getEngine,
+  getEngines,
+  getProviderTemplates,
+  validateConfigProviderEngines,
+  type ToolDefinition,
+} from '../../core/engines.js';
 import {
   startEmbeddedWebServer,
   stopEmbeddedWebServer,
@@ -18,8 +24,15 @@ import {
   getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName,
   type ConfigFile, type ProviderConfig as DaemonProviderConfig, type McpServerConfig,
 } from '../../core/config.js';
+import { auditSecretChange } from '../../core/secrets.js';
+import {
+  auditProviderEndpointChange,
+  auditProviderEndpointConfigDiff,
+  endpointPolicyFromServer,
+  validateConfigProviderEndpoints,
+  validateProviderEndpoint,
+} from '../../core/provider-endpoint.js';
 import { DEFAULT_WEB_PORT } from '../../core/constants.js';
-import { getProviderTemplates } from '../../core/engines.js';
 import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
 import {
   authorizeConsumer,
@@ -588,6 +601,14 @@ export function createAbbenayService(
           if (resolved.apiKey) apiKey = resolved.apiKey;
           if (resolved.baseUrl && !baseUrl) baseUrl = resolved.baseUrl;
         }
+        if (baseUrl) {
+          const policy = endpointPolicyFromServer(loadConfig()?.server);
+          const endpoint = validateProviderEndpoint(baseUrl, policy);
+          if (!endpoint.ok) {
+            throw Object.assign(new Error(endpoint.error), { code: grpc.status.INVALID_ARGUMENT });
+          }
+          baseUrl = endpoint.normalized;
+        }
         return state.discoverModels(engineId, apiKey, baseUrl);
       };
 
@@ -605,8 +626,12 @@ export function createAbbenayService(
         });
       }).catch((error: unknown) => {
         console.error('[gRPC] DiscoverModels error:', error);
+        const code =
+          error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'number'
+            ? (error as { code: number }).code
+            : grpc.status.INTERNAL;
         callback({
-          code: grpc.status.INTERNAL,
+          code,
           message: error instanceof Error ? error.message : String(error),
         });
       });
@@ -785,6 +810,7 @@ export function createAbbenayService(
       const { key, value } = call.request;
       
       state.secretStore.set(key, value).then(() => {
+        auditSecretChange({ key, op: 'set', source: 'grpc-secrets' });
         callback(null, {});
         // Notify VS Code that models may have changed (new API key)
         state.notifyModelsChanged('secret_updated');
@@ -805,6 +831,7 @@ export function createAbbenayService(
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
       state.secretStore.delete(call.request.key).then(() => {
+        auditSecretChange({ key: call.request.key, op: 'delete', source: 'grpc-secrets' });
         callback(null, {});
       }).catch((error: unknown) => {
         callback({
@@ -995,6 +1022,33 @@ export function createAbbenayService(
         }
 
         const configFile = protoToConfigFile(protoConfig);
+        const enginesCheck = validateConfigProviderEngines(configFile);
+        if (!enginesCheck.ok) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: enginesCheck.error });
+          return;
+        }
+        // Merge server policy from existing config so partial updates retain the
+        // endpoint allowlist. Without this, validation would pass using the merged
+        // policy but persistence would drop server.allowed_provider_hosts.
+        if (!configFile.server) {
+          const existingServer = (location === 'user'
+            ? loadConfig()
+            : loadWorkspaceConfig(location))?.server;
+          if (existingServer) configFile.server = existingServer;
+        }
+        const endpointCheck = validateConfigProviderEndpoints({
+          providers: configFile.providers,
+          server: configFile.server,
+        });
+        if (!endpointCheck.ok) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: endpointCheck.error });
+          return;
+        }
+
+        const previous = location === 'user'
+          ? loadConfig()
+          : loadWorkspaceConfig(location);
+
         let savedPath: string;
 
         if (location === 'user') {
@@ -1004,6 +1058,8 @@ export function createAbbenayService(
           saveWorkspaceConfig(location, configFile);
           savedPath = getWorkspaceConfigPath(location);
         }
+
+        auditProviderEndpointConfigDiff(previous, configFile, 'grpc-config');
 
         state.notifyModelsChanged('config_changed');
         state.refreshMcpConnections().catch((err: unknown) => {
@@ -1640,12 +1696,42 @@ export function createAbbenayService(
           const existing: Partial<DaemonProviderConfig> = config.providers[providerId]
             ? { ...config.providers[providerId] }
             : {};
+          const previousBaseUrl = existing.base_url;
           if (engine) existing.engine = engine;
+
+          const effectiveEngine = existing.engine;
+          if (!effectiveEngine) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: 'engine is required when configuring a new provider',
+            });
+            return;
+          }
+          if (!getEngine(effectiveEngine)) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: `unknown engine "${effectiveEngine}" (not in the built-in engine allowlist)`,
+            });
+            return;
+          }
+
+          let normalizedBaseUrl: string | undefined;
+          if (baseUrl) {
+            const policy = endpointPolicyFromServer(loadConfig()?.server);
+            const endpoint = validateProviderEndpoint(baseUrl, policy);
+            if (!endpoint.ok) {
+              callback({ code: grpc.status.INVALID_ARGUMENT, message: endpoint.error });
+              return;
+            }
+            normalizedBaseUrl = endpoint.normalized;
+          }
+
           config.providers[providerId] = existing as DaemonProviderConfig;
 
           if (apiKey) {
             const keychainName = `${providerId.toUpperCase()}_API_KEY`;
             await state.secretStore.set(keychainName, apiKey);
+            auditSecretChange({ key: keychainName, op: 'set', source: 'grpc-configure' });
             config.providers[providerId].api_key_keychain_name = keychainName;
             delete config.providers[providerId].api_key_env_var_name;
           } else if (envVarName) {
@@ -1653,14 +1739,23 @@ export function createAbbenayService(
             delete config.providers[providerId].api_key_keychain_name;
           }
 
-          if (baseUrl) {
-            config.providers[providerId].base_url = baseUrl;
+          if (normalizedBaseUrl) {
+            config.providers[providerId].base_url = normalizedBaseUrl;
           }
 
           if (target === 'workspace' && workspacePath) {
             saveWorkspaceConfig(workspacePath, config);
           } else {
             saveConfig(config);
+          }
+
+          if (normalizedBaseUrl && normalizedBaseUrl !== previousBaseUrl) {
+            auditProviderEndpointChange({
+              providerId,
+              previousBaseUrl,
+              newBaseUrl: normalizedBaseUrl,
+              source: 'grpc-configure',
+            });
           }
 
           state.notifyModelsChanged('provider_configured');
@@ -1702,7 +1797,10 @@ export function createAbbenayService(
           if (config.providers && config.providers[providerId]) {
             const keychainName = config.providers[providerId].api_key_keychain_name;
             if (keychainName) {
-              try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
+              try {
+                await state.secretStore.delete(keychainName);
+                auditSecretChange({ key: keychainName, op: 'delete', source: 'grpc-configure' });
+              } catch { /* ignore */ }
             }
             delete config.providers[providerId];
 

@@ -494,6 +494,8 @@ internal MCP tool for cross-session retrieval.
 ## Security
 
 - **Secrets**: Stored in system keychain via keytar when available; never in config files
+- **Credential aggregation (A1)**: One daemon holds many provider keys — larger blast radius than per-extension storage; documented for Enterprise / Security-Conscious / air-gapped personas in [CONFIGURATION.md](CONFIGURATION.md#credential-aggregation-risk-operators--finding-a1); secret APIs auth-gated; mutate audits; HTTP lists presence only
+- **Provider supply chain / endpoints (A3)**: `@ai-sdk/*` packages load from a fixed in-code allowlist (config cannot add packages); unknown `engine` IDs rejected on write; `base_url` requires auth + scheme/host policy; audited in logs
 - **Socket**: Unix socket (or named pipe) with user-only permissions (local IPC)
 - **Web dashboard / HTTP API**: Binds to `127.0.0.1` by default; Bearer (or
   cookie + CSRF) auth required; CORS allowlist only (never `*`) — DR-030
@@ -504,6 +506,7 @@ internal MCP tool for cross-session retrieval.
   public internet, but **network isolation alone does not secure the daemon**.
   See [SECURITY.md](./SECURITY.md).
 - **Config files**: Created with mode `0o600` (user read/write only)
+- **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-040)
 
 Intentional exposure (containers, LAN) is opt-in via `--host` / image CMD —
 see [CONTAINER.md](./CONTAINER.md) and [SECURITY.md](./SECURITY.md).

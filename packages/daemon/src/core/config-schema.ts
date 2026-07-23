@@ -10,12 +10,32 @@
  */
 
 import { z } from 'zod';
+import {
+  validateConfigProviderEndpoints,
+  validateProviderEndpointFormat,
+} from './provider-endpoint.js';
 
 /**
  * Regex for virtual provider and model names.
  * Lowercase alphanumeric, dots, hyphens, underscores. No slashes, no spaces.
  */
 export const VIRTUAL_NAME_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
+
+/**
+ * Provider base_url Zod check — format only (scheme / hostname / no userinfo).
+ * Host policy (loopback-http, allowlist) is applied after parse via
+ * validateConfigProviderEndpoints so `server.allowed_provider_hosts` in the
+ * same payload can authorize non-loopback http endpoints.
+ */
+export const ProviderBaseUrlSchema = z
+  .string()
+  .min(1)
+  .superRefine((value, ctx) => {
+    const result = validateProviderEndpointFormat(value);
+    if (!result.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.error });
+    }
+  });
 
 /**
  * Validate a virtual name (provider or model).
@@ -65,7 +85,7 @@ export const ProviderConfigSchema = z
     engine: z.string().min(1),
     api_key_keychain_name: z.string().min(1).optional(),
     api_key_env_var_name: z.string().min(1).optional(),
-    base_url: z.string().min(1).optional(),
+    base_url: ProviderBaseUrlSchema.optional(),
     models: z.record(z.string(), ModelConfigSchema).optional(),
   })
   .strict();
@@ -97,6 +117,11 @@ export const ConsumerCapabilitiesSchema = z
   .object({
     inline_policy: z.boolean().optional(),
     mcp_register: z.boolean().optional(),
+    secrets: z.boolean().optional(),
+    config: z.boolean().optional(),
+    providers: z.boolean().optional(),
+    shutdown: z.boolean().optional(),
+    chat: z.boolean().optional(),
   })
   .strict();
 
@@ -114,6 +139,8 @@ export const ServerConfigSchema = z
     api_token_env: z.string().min(1).optional(),
     host: z.string().min(1).optional(),
     cors_origins: z.array(z.string().min(1)).optional(),
+    allowed_provider_hosts: z.array(z.string().min(1)).optional(),
+    allow_insecure_provider_http: z.boolean().optional(),
   })
   .strict();
 
@@ -128,6 +155,8 @@ export const SecurityConfigSchema = z
 /**
  * Full config.yaml shape. Unknown top-level keys are rejected (`.strict()`)
  * to block field injection into saved config files.
+ * Provider endpoint host policy (DR-040) is enforced via superRefine so
+ * `server.allowed_provider_hosts` / `allow_insecure_provider_http` apply.
  */
 export const ConfigFileSchema = z
   .object({
@@ -139,7 +168,17 @@ export const ConfigFileSchema = z
     security: SecurityConfigSchema.optional(),
     openai_compat: OpenAICompatConfigSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    const endpoints = validateConfigProviderEndpoints(data);
+    if (!endpoints.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: endpoints.error,
+        path: ['providers'],
+      });
+    }
+  });
 
 export type ConfigFileParsed = z.infer<typeof ConfigFileSchema>;
 

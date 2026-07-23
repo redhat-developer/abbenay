@@ -571,6 +571,37 @@ export function getEngine(engineId: string): EngineInfo | undefined {
   return ENGINE_MAP.get(engineId);
 }
 
+/**
+ * True when `engineId` is one of the built-in engines (finding A3).
+ * Config cannot introduce new `@ai-sdk/*` packages — only these IDs map
+ * to the fixed {@link PROVIDER_LOADERS} allowlist.
+ */
+export function isKnownEngineId(engineId: string): boolean {
+  return ENGINE_MAP.has(engineId);
+}
+
+/**
+ * Reject configs that reference unknown engine IDs (A3 — no arbitrary
+ * runtime provider packages via writable config).
+ */
+export function validateConfigProviderEngines(config: {
+  providers?: Record<string, { engine?: string } | undefined>;
+}): { ok: true } | { ok: false; error: string } {
+  for (const [id, cfg] of Object.entries(config.providers || {})) {
+    const engine = cfg?.engine;
+    if (!engine) {
+      return { ok: false, error: `provider "${id}": engine is required` };
+    }
+    if (!isKnownEngineId(engine)) {
+      return {
+        ok: false,
+        error: `provider "${id}": unknown engine "${engine}" (not in the built-in engine allowlist)`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
 /** Get predefined templates for the "Add Provider" wizard. */
 export function getProviderTemplates(): ProviderTemplate[] {
   return Object.values(ENGINES).map(e => ({

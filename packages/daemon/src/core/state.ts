@@ -37,6 +37,12 @@ import {
 } from './engines.js';
 import type { ToolRegistry } from './tool-registry.js';
 import { createToolValidator } from './tool-approval.js';
+import {
+  auditProviderEndpointChange,
+  endpointPolicyFromServer,
+  validateProviderEndpoint,
+} from './provider-endpoint.js';
+import { auditSecretChange } from './secrets.js';
 import { VERSION } from '../version.js';
 
 // ── Virtual provider info (runtime, for API responses) ─────────────────
@@ -207,7 +213,19 @@ export class CoreState {
     };
 
     if (options.baseUrl) {
-      providerCfg.base_url = options.baseUrl;
+      const server = this.configLoader?.()?.server ?? loadConfig()?.server;
+      const policy = endpointPolicyFromServer(server);
+      const endpoint = validateProviderEndpoint(options.baseUrl, policy);
+      if (!endpoint.ok) {
+        throw new Error(endpoint.error);
+      }
+      providerCfg.base_url = endpoint.normalized;
+      auditProviderEndpointChange({
+        providerId,
+        previousBaseUrl: null,
+        newBaseUrl: endpoint.normalized,
+        source: 'core-add',
+      });
     }
 
     // Store API key in SecretStore if provided
@@ -215,6 +233,7 @@ export class CoreState {
       const keychainName = `abbenay.${providerId}`;
       await this.secretStore.set(keychainName, options.apiKey);
       providerCfg.api_key_keychain_name = keychainName;
+      auditSecretChange({ key: keychainName, op: 'set', source: 'core-add' });
     } else if (options.apiKeyEnvVar) {
       providerCfg.api_key_env_var_name = options.apiKeyEnvVar;
     }

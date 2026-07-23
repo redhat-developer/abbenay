@@ -656,6 +656,40 @@ behavior when the listen set is empty closes the race before
 
 ---
 
+## DR-040: Credential aggregation (A1) + provider endpoint policy (A3); defer encryption-at-rest
+
+**Date:** 2026-07-20
+**Decision:** (1) **A1 — document and harden access, do not eliminate aggregation.**
+Abbenay keeps centralized provider credentials (product choice). Operator docs
+(`docs/CONFIGURATION.md`) explicitly describe the larger blast radius vs
+per-extension storage and give guidance for Enterprise / Security-Conscious /
+air-gapped personas. Secret mutate APIs stay auth-gated (DR-030 / DR-037);
+HTTP secret listing returns presence only (never values); secret set/delete
+emits `[Audit] secret changed` (key + op + source, never the value).
+(2) **A3 — supply chain + malicious endpoint.** Provider `@ai-sdk/*` packages
+load on demand from a **fixed in-code allowlist** (`PROVIDER_LOADERS`); config
+cannot introduce new npm packages. Runtime configure / `POST /api/config` /
+gRPC updates reject unknown `engine` IDs. Separately, validate every provider
+`base_url` / discovery endpoint on mutating paths with a shared scheme/host
+policy: absolute `http` / `https` only, hostname required, no URL userinfo;
+`http` limited to loopback unless the host is on `server.allowed_provider_hosts`
+or `server.allow_insecure_provider_http` is true; when the allowlist is
+non-empty, non-loopback hosts must match it. Successful endpoint changes emit
+`[Audit] provider endpoint changed`. Dynamic provider / MCP registration
+cannot be done anonymously when auth/consumers are configured.
+(3) **Defer** per-secret encryption-at-rest beyond OS keychain / env refs and
+process-level secret isolation until there is a concrete enterprise
+requirement.
+**Rationale:** Finding A1 notes that centralizing 20+ provider keys contradicts
+naive expectations of Enterprise / Security-Conscious / air-gapped personas if
+left undocumented and ungated. Finding A3 is both the multi-provider dependency surface and the
+writable-config malicious `base_url` path. Auth gates (Tasks 1/6 / H4) protect
+writes; the fixed loader map + engine allowlist stop arbitrary package load;
+endpoint policy + audits stop prompt/key exfiltration via fake endpoints
+without breaking local Ollama / RHAI loopback HTTP. Full encryption-at-rest /
+enclave isolation is deferred; OS keychain + 0600 config + auth gates + audits
+are the current control set.
+
 ## DR-041: Prefer direct bumps and lockfile resolution over npm overrides
 
 **Date:** 2026-07-21

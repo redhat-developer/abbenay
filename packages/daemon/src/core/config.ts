@@ -166,6 +166,18 @@ export interface ServerConfig {
    * and http://localhost:<port>).
    */
   cors_origins?: string[];
+  /**
+   * Optional host allowlist for provider `base_url` endpoints (DR-040).
+   * When non-empty, non-loopback hosts must appear here. Listing a host also
+   * permits `http:` to that host (air-gapped / explicit trust).
+   */
+  allowed_provider_hosts?: string[];
+  /**
+   * When true, allow `http:` provider endpoints to non-loopback hosts without
+   * requiring them on `allowed_provider_hosts` (still subject to that list
+   * when it is non-empty). Default false.
+   */
+  allow_insecure_provider_http?: boolean;
 }
 
 /**

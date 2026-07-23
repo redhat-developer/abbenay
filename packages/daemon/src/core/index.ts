@@ -29,8 +29,8 @@ export { CoreState } from './state.js';
 export type { CoreStateOptions, AddProviderOptions } from './state.js';
 
 /** Secret store — inject your own or use the built-in MemorySecretStore */
-export { MemorySecretStore } from './secrets.js';
-export type { SecretStore } from './secrets.js';
+export { MemorySecretStore, auditSecretChange } from './secrets.js';
+export type { SecretStore, SecretAuditEvent } from './secrets.js';
 
 // ─── Types: Providers & Models ──────────────────────────────────────────
 
@@ -125,7 +125,13 @@ export type {
 // ─── Engine Listing ─────────────────────────────────────────────────────
 
 /** Get all available engines (the fixed set of LLM API implementations) */
-export { getEngines, getEngine, getProviderTemplates } from './engines.js';
+export {
+  getEngines,
+  getEngine,
+  getProviderTemplates,
+  isKnownEngineId,
+  validateConfigProviderEngines,
+} from './engines.js';
 
 // ─── Config I/O ─────────────────────────────────────────────────────────
 
@@ -163,6 +169,7 @@ export {
   PolicyConfigSchema,
   ModelConfigSchema,
   ProviderConfigSchema,
+  ProviderBaseUrlSchema,
   OpenAICompatConfigSchema,
   OpenAICompatToolsModeSchema,
   VirtualNameSchema,
@@ -187,6 +194,22 @@ export {
 export { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from './constants.js';
 export type { ServerConfig } from './config.js';
 export type { OpenAICompatConfig, OpenAICompatToolsMode } from './config.js';
+
+/** Provider endpoint policy (DR-040) */
+export {
+  validateProviderEndpoint,
+  validateProviderEndpointFormat,
+  validateConfigProviderEndpoints,
+  endpointPolicyFromServer,
+  isLoopbackHostname,
+  auditProviderEndpointChange,
+  auditProviderEndpointConfigDiff,
+} from './provider-endpoint.js';
+export type {
+  ProviderEndpointPolicy,
+  ProviderEndpointValidation,
+  ProviderEndpointAuditEvent,
+} from './provider-endpoint.js';
 
 /** Platform-aware path utilities */
 export {
