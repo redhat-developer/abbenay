@@ -8,11 +8,13 @@ import {
   getSessionsDir,
   getWorkspaceConfigDir,
   getSocketPath,
+  getAddressPath,
   getPidPath,
   getUserConfigPath,
   getWorkspaceConfigPath,
   getUserPoliciesPath,
 } from './paths.js';
+import * as os from 'node:os';
 import { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from './constants.js';
 
 // ── DEFAULT_WEB_PORT / DEFAULT_HTTP_HOST ─────────────────────────────────────
@@ -59,6 +61,13 @@ describe('getRuntimeDir', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
     const result = getRuntimeDir();
     expect(result).toMatch(/\babbenay$/);
+  });
+
+  it('should use os.tmpdir() on win32 when XDG_RUNTIME_DIR is unset', () => {
+    delete process.env.XDG_RUNTIME_DIR;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const result = getRuntimeDir();
+    expect(result).toBe(path.join(os.tmpdir(), 'abbenay'));
   });
 });
 
@@ -132,6 +141,12 @@ describe('getSocketPath', () => {
     if (process.platform !== 'win32') {
       expect(getSocketPath()).toMatch(/daemon\.sock$/);
     }
+  });
+});
+
+describe('getAddressPath', () => {
+  it('should end with daemon.addr under the runtime dir', () => {
+    expect(getAddressPath()).toBe(path.join(getRuntimeDir(), 'daemon.addr'));
   });
 });
 

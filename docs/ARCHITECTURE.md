@@ -20,7 +20,7 @@ Abbenay is a unified AI daemon and library written in TypeScript/Node.js that pr
 │           └────────────────────┼────────────────────────┘               │
 │                                │                                         │
 └────────────────────────────────┼─────────────────────────────────────────┘
-                                 │ gRPC over Unix Socket (or named pipe)
+                                 │ gRPC over Unix Socket (or loopback TCP on Windows)
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                     abbenay daemon (TypeScript)                          │
@@ -96,15 +96,15 @@ The core TypeScript/Node.js process that runs as a background daemon.
 
 **Subcommands:**
 - `abbenay start` - Start all services (daemon, web dashboard, OpenAI API, MCP server)
-- `abbenay daemon` - Start the gRPC server on Unix socket (or named pipe on Windows)
+- `abbenay daemon` - Start the gRPC server (Unix socket on Linux/macOS; loopback TCP on Windows)
 - `abbenay web` - Start the web dashboard (embedded in daemon or started via gRPC if daemon already running)
 - `abbenay serve` - Start the OpenAI-compatible API server (same as `web` but framed for API use)
 - `abbenay status` - Check if daemon is running
 - `abbenay stop` - Stop the running daemon
 
-**Socket location:**
-- Linux/macOS: `$XDG_RUNTIME_DIR/abbenay/daemon.sock` or `/run/user/{uid}/abbenay/daemon.sock`
-- Windows: `\\.\pipe\abbenay-daemon`
+**Local IPC:**
+- Linux/macOS: Unix socket at `$XDG_RUNTIME_DIR/abbenay/daemon.sock` or `/run/user/{uid}/abbenay/daemon.sock`
+- Windows: loopback TCP (`127.0.0.1` + ephemeral port); address in `%TEMP%/abbenay/daemon.addr` (DR-043)
 
 ### Web Dashboard (Embedded)
 
@@ -480,9 +480,9 @@ internal MCP tool for cross-session retrieval.
 
 | File | Path | Purpose |
 |------|------|---------|
-| Socket (Linux/macOS) | `$XDG_RUNTIME_DIR/abbenay/daemon.sock` | gRPC server socket |
-| Socket (Windows) | `\\.\pipe\abbenay-daemon` | gRPC named pipe |
-| PID file | `$XDG_RUNTIME_DIR/abbenay/abbenay.pid` | Daemon process ID |
+| Socket (Linux/macOS) | `$XDG_RUNTIME_DIR/abbenay/daemon.sock` | gRPC Unix socket |
+| Address (Windows) | `%TEMP%/abbenay/daemon.addr` | `host:port` for loopback TCP gRPC |
+| PID file | `<runtimeDir>/abbenay.pid` | Daemon process ID |
 | User Config | `~/.config/abbenay/config.yaml` | User-level provider config |
 | Workspace Config | `<ws>/.config/abbenay/config.yaml` | Workspace-level config |
 | Session Data | `$XDG_DATA_HOME/abbenay/sessions/` | Persisted chat sessions |
@@ -491,7 +491,8 @@ internal MCP tool for cross-session retrieval.
 ## Security
 
 - **Secrets**: Stored in system keychain via keytar when available; never in config files
-- **Socket**: Unix socket (or named pipe) with user-only permissions (local IPC)
+- **Local IPC**: Unix socket with user-only permissions on Linux/macOS; loopback
+  TCP + `daemon.addr` on Windows (DR-043)
 - **Web dashboard / HTTP API**: Binds to `127.0.0.1` by default; Bearer (or
   cookie + CSRF) auth required; CORS allowlist only (never `*`) — DR-030
 - **gRPC TCP**: Loopback plaintext OK for local DX; non-loopback requires

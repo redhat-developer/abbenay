@@ -66,8 +66,11 @@ function bundleDaemon() {
                 copyDirRecursive(src, dest);
             } else {
                 fs.copyFileSync(src, dest);
-                // Preserve executable permission on binaries
-                if (entry.name.startsWith('abbenay-daemon-') || entry.name.endsWith('.node')) {
+                // Preserve executable permission on binaries (Unix)
+                if (
+                    process.platform !== 'win32' &&
+                    (entry.name.startsWith('abbenay-daemon-') || entry.name.endsWith('.node'))
+                ) {
                     fs.chmodSync(dest, 0o755);
                 }
             }

@@ -191,6 +191,7 @@ export {
   getConfigDir,
   getWorkspaceConfigDir,
   getSocketPath,
+  getAddressPath,
   getPidPath,
 } from './paths.js';
 

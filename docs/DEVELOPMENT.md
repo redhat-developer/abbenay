@@ -38,12 +38,17 @@ The bootstrap is idempotent -- re-running it is a no-op if the tools are already
 
 The bootstrap auto-detects your OS and architecture:
 
-| OS | Architecture | Node.js tarball | Tested in CI |
+| OS | Architecture | Node.js archive | Tested in CI |
 |----|-------------|-----------------|-------------|
 | Linux | x86_64 (x64) | `node-v22.x.x-linux-x64.tar.xz` | Yes |
 | Linux | aarch64 (arm64) | `node-v22.x.x-linux-arm64.tar.xz` | Yes |
 | macOS | arm64 (Apple Silicon) | `node-v22.x.x-darwin-arm64.tar.xz` | Yes |
 | macOS | x86_64 (Intel) | `node-v22.x.x-darwin-x64.tar.xz` | No (not in CI matrix) |
+| Windows | x86_64 (x64) | `node-v22.x.x-win-x64.zip` | Yes |
+
+On Windows, run `./bootstrap.sh` from Git Bash (same as GitHub Actions
+`windows-latest`). Local IPC uses loopback TCP and `%TEMP%/abbenay/daemon.addr`
+(see DR-043); Unix platforms keep `daemon.sock`.
 
 ### Pinning the Node.js version
 
@@ -238,9 +243,10 @@ lint-and-test (ubuntu-latest)
   └─ ./bootstrap.sh → npm ci → npm run lint
   └─ apt install xvfb → xvfb-run -a npm test
 
-build (matrix: linux-x64, linux-arm64, macos-arm64)
+build (matrix: linux-x64, linux-arm64, macos-arm64, windows-x64)
   └─ ./bootstrap.sh → npm ci → npm run ci:build
-  └─ uploads: SEA binary, VSIX, distribution zip
+  └─ Windows also runs npm run ci:smoke-win32-ipc
+  └─ uploads: SEA binary, VSIX, distribution archive (.tar.gz or .zip)
 
 package-python (ubuntu-latest)
   └─ ./bootstrap.sh → npm run ci:package-python
@@ -260,6 +266,7 @@ Every CI run produces downloadable artifacts:
 | `abbenay-daemon-linux-x64` | SEA binary + sidecars (Linux x64) |
 | `abbenay-daemon-linux-arm64` | SEA binary + sidecars (Linux arm64) |
 | `abbenay-daemon-darwin-arm64` | SEA binary + sidecars (macOS Apple Silicon) |
+| `abbenay-daemon-win32-x64` | SEA binary (`.exe`) + sidecars (Windows x64) |
 | `abbenay-vsix-{platform}-{arch}` | VS Code extension (per platform) |
 | `abbenay-client-python` | Python wheel (platform-independent) |
 
@@ -285,9 +292,11 @@ Each release produces these artifacts:
 | `abbenay-VERSION-linux-x64.tar.gz` | Standalone daemon binary + sidecars (proto, static, keytar) for Linux x64 | Standalone / CLI users on Linux x64 |
 | `abbenay-VERSION-linux-arm64.tar.gz` | Same, for Linux arm64 | Standalone / CLI users on Linux arm64 |
 | `abbenay-VERSION-darwin-arm64.tar.gz` | Same, for macOS Apple Silicon | Standalone / CLI users on macOS |
+| `abbenay-VERSION-win32-x64.zip` | Same, for Windows x64 (`abbenay-daemon-win32-x64.exe`) | Standalone / CLI users on Windows |
 | `abbenay-provider-linux-x64-VERSION.vsix` | VS Code extension with embedded daemon (Linux x64) | VS Code users on Linux x64 |
 | `abbenay-provider-linux-arm64-VERSION.vsix` | Same, for Linux arm64 | VS Code users on Linux arm64 |
 | `abbenay-provider-darwin-arm64-VERSION.vsix` | Same, for macOS arm64 | VS Code users on macOS |
+| `abbenay-provider-win32-x64-VERSION.vsix` | Same, for Windows x64 | VS Code users on Windows |
 | `abbenay-core-VERSION.tgz` | `@abbenay/core` npm package (platform-independent) | Node.js consumers building on the core library |
 | `abbenay_client-VERSION-py3-none-any.whl` | Python gRPC client wheel (platform-independent) | Python consumers of the gRPC API |
 | `abbenay_client-VERSION.tar.gz` | Python client sdist | Alternative to the wheel |
