@@ -699,3 +699,26 @@ transport UX around SDK `user-approval` stream pauses. Transport approval
 notifications are out-of-band SSE/CLI events via `onToolApprovalNeeded`; they
 are not `ChatChunk` variants (unused `approval_request` / `approval_result`
 chunk types were removed after the bridge landed).
+
+---
+
+## DR-043: Stdio MCP spawn allowlist + operator approval
+
+**Date:** 2026-07-20
+**Decision:** Dynamic `RegisterMcpServer` with `transport: stdio` must not spawn
+arbitrary commands. Before `StdioMCPTransport` is constructed: (1) `command`
+must match configurable `security.stdio_command_allowlist` (empty allowlist
+denies all dynamic stdio); (2) an interactive operator approval is required by
+default (`stdio_require_approval`, dashboard / `GET|POST /api/mcp/stdio-spawns`);
+(3) when `consumers` is configured, stdio `command`/`args` are rejected unless
+the caller authenticates as a consumer with `mcp_register`. Denials are logged
+clearly and surfaced in the API/UI. Config-file `mcp_servers` remain
+admin-trusted and skip these gates. Prefer caller-spawned HTTP/SSE for dynamic
+registration (DR-025).
+**Rationale:** Finding H6 — `mcp-client-pool` previously spawned
+`config.command` / `config.args` for any caller with `mcp_register` (or anyone
+when consumers were unset). Allowlist + approval + auth closes arbitrary
+command execution while keeping trusted MCP binaries usable. Numbered DR-043
+because main already shipped air-gap docs as DR-038 and AAP-82836 claims
+DR-040 for credential aggregation.
+

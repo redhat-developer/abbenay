@@ -173,6 +173,13 @@ export const PostMcpApprovalBodySchema = z
   })
   .strict();
 
+/** Operator decision for pending dynamic stdio MCP spawn (DR-043 / H6). */
+export const PostMcpStdioSpawnDecisionBodySchema = z
+  .object({
+    decision: z.enum(['allow', 'deny']),
+  })
+  .strict();
+
 // ── OpenAI-compatible ───────────────────────────────────────────────────
 
 const OpenAIChatMessageSchema = z

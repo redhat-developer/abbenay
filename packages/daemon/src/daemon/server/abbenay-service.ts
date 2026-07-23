@@ -24,11 +24,16 @@ import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
 import {
   authorizeConsumer,
   matchConsumerByToken,
+  hasConfiguredConsumers,
   DEFAULT_CONSUMER_AUTH_CONTEXT,
   type ConsumerAuthContext,
   type ConsumerCapability,
   type AuthResult,
 } from './consumer-auth.js';
+import {
+  StdioSpawnApprovalDeniedError,
+} from '../mcp-client-pool.js';
+import { StdioCommandDeniedError } from '../stdio-command-policy.js';
 
 export type { ConsumerAuthContext, ConsumerCapability, AuthResult };
 export {
@@ -1464,7 +1469,9 @@ export function createAbbenayService(
     },
     
     /**
-     * Register a dynamic MCP server at runtime (DR-025)
+     * Register a dynamic MCP server at runtime (DR-025 / DR-043).
+     * Stdio command/args are never accepted from unauthenticated callers when
+     * consumers are configured; allowlist + approval gate process spawn (H6).
      */
     RegisterMcpServer(call: grpc.ServerUnaryCall<RegisterMcpServerRequestProto, object>, callback: grpc.sendUnaryData<object>): void {
       const serverId = call.request.server_id || call.request.serverId || '';
@@ -1481,21 +1488,60 @@ export function createAbbenayService(
         return;
       }
 
-      if (!requireCapability(call, 'mcp_register', authContext, callback)) return;
+      const fileConfig = loadConfig() || { providers: {} };
+      const auth = authorizeConsumer(call, fileConfig, 'mcp_register', authContext);
+      if (!auth.allowed) {
+        console.warn(
+          `[Service] RegisterMcpServer denied: ${auth.reason || 'Permission denied'} ` +
+            `(server_id=${serverId}, transport=${transport.type})`,
+        );
+        callback({
+          code: grpc.status.PERMISSION_DENIED,
+          message: auth.reason || 'Permission denied',
+        });
+        return;
+      }
+      if (auth.consumer) {
+        console.log(`[Service] mcp_register authorized for consumer "${auth.consumer}"`);
+      }
+
+      let mcpConfig: McpServerConfig;
+      try {
+        mcpConfig = transportProtoToConfig(transport);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: msg });
+        return;
+      }
+
+      // H6: never accept command/args from unauthenticated callers when consumers enabled
+      if (mcpConfig.transport === 'stdio') {
+        if (hasConfiguredConsumers(fileConfig) && !auth.consumer) {
+          const reason =
+            `stdio MCP registration with command/args requires an authenticated consumer ` +
+            `with mcp_register capability. Unauthenticated registration denied ` +
+            `(server_id=${serverId}, command=${mcpConfig.command || ''}). No process was spawned.`;
+          console.warn(`[Service] ${reason}`);
+          callback({ code: grpc.status.PERMISSION_DENIED, message: reason });
+          return;
+        }
+      }
 
       // Resolve registering client ID from gRPC metadata
       const clientIdMeta = call.metadata.get('x-abbenay-client-id');
       const clientId = clientIdMeta.length > 0 ? String(clientIdMeta[0]) : undefined;
 
-      const config = transportProtoToConfig(transport);
+      // Keep pool security settings in sync with latest config
+      state.mcpClientPool.applySecurityConfig(fileConfig.security);
 
       (async () => {
         try {
           const tools = await state.mcpClientPool.connectDynamic(
             serverId,
-            config,
+            mcpConfig,
             { sessionId, clientId },
             toolFilter.length > 0 ? toolFilter : undefined,
+            { consumer: auth.consumer },
           );
 
           callback(null, {
@@ -1505,7 +1551,13 @@ export function createAbbenayService(
           });
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
-          if (msg.includes('already')) {
+          if (
+            error instanceof StdioCommandDeniedError ||
+            error instanceof StdioSpawnApprovalDeniedError
+          ) {
+            console.warn(`[Service] RegisterMcpServer stdio denied: ${msg}`);
+            callback({ code: grpc.status.PERMISSION_DENIED, message: msg });
+          } else if (msg.includes('already')) {
             callback({ code: grpc.status.ALREADY_EXISTS, message: msg });
           } else if (msg.includes('limit')) {
             callback({ code: grpc.status.RESOURCE_EXHAUSTED, message: msg });

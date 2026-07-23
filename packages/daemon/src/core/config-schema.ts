@@ -117,6 +117,14 @@ export const ServerConfigSchema = z
   })
   .strict();
 
+export const SecurityConfigSchema = z
+  .object({
+    max_dynamic_mcp_servers: z.number().int().positive().optional(),
+    stdio_command_allowlist: z.array(z.string().min(1)).optional(),
+    stdio_require_approval: z.boolean().optional(),
+  })
+  .strict();
+
 /**
  * Full config.yaml shape. Unknown top-level keys are rejected (`.strict()`)
  * to block field injection into saved config files.
@@ -128,6 +136,7 @@ export const ConfigFileSchema = z
     tool_policy: ToolPolicyConfigSchema.optional(),
     consumers: z.record(z.string(), ConsumerConfigSchema).optional(),
     server: ServerConfigSchema.optional(),
+    security: SecurityConfigSchema.optional(),
     openai_compat: OpenAICompatConfigSchema.optional(),
   })
   .strict();

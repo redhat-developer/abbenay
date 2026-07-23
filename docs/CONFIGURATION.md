@@ -208,6 +208,44 @@ via `/api/mcp/connections`. Pending connection consents and tool approvals
 auto-deny after **5 minutes** if the user never responds, so abandoned
 `initialize` / `tools/call` requests cannot leak entries in the pending maps.
 
+### Stdio MCP spawn policy (`security`) — DR-043
+
+Dynamic `RegisterMcpServer` with `transport: stdio` can spawn a local process.
+That path is fail-closed:
+
+1. **Allowlist** — `command` must match `security.stdio_command_allowlist`
+   (basename or absolute path). An empty / omitted allowlist denies all
+   dynamic stdio spawns.
+2. **Operator approval** — even allowlisted commands wait for an explicit
+   Allow on the dashboard (or `POST /api/mcp/stdio-spawns/:requestId`) unless
+   `stdio_require_approval: false`.
+3. **Auth** — when `consumers` is configured, stdio registration requires a
+   matching consumer token with `mcp_register`. Unauthenticated callers cannot
+   supply `command` / `args`.
+
+Config-file `mcp_servers` entries are admin-authored and skip the allowlist /
+approval gates (writing them to YAML is the approval). Prefer HTTP/SSE for
+dynamic registration when the caller can start its own MCP server.
+
+```yaml
+security:
+  max_dynamic_mcp_servers: 10
+  stdio_command_allowlist:
+    - npx
+    - uvx
+    - /usr/local/bin/my-trusted-mcp
+  stdio_require_approval: true     # default; set false only for trusted automation
+```
+
+| API / UI | Purpose |
+|----------|---------|
+| `GET /api/mcp/stdio-spawns` | Pending spawn approvals + recent denials |
+| `POST /api/mcp/stdio-spawns/:requestId` | `{ "decision": "allow" \| "deny" }` |
+| Dashboard → MCP Servers | Pending stdio spawn cards + denial list |
+
+Denied registrations return a clear gRPC/`PERMISSION_DENIED` reason and are
+logged as `[StdioMCP] DENIED: …` (also listed under recent denials in the UI).
+
 ### Consumer authentication (`consumers`) — DR-037
 
 Named consumer applications authenticate to gRPC with a token in the
