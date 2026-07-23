@@ -106,7 +106,7 @@ export interface ChatToolOptions {
   toolMode?: string;
   /** Client-provided tool definitions (overrides registry when present) */
   tools?: ToolDefinition[];
-  /** Max tool execution rounds (0 = unlimited, default 10) */
+  /** Max tool execution rounds (default 10; must be a positive integer when set) */
   maxToolIterations?: number;
   /** Only expose these tools to the LLM (empty = all). Matches namespaced names. */
   toolFilter?: string[];

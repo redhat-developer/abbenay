@@ -681,8 +681,6 @@ export type ToolValidationCallback = (
 export type ChatChunk =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string; state: string; status?: string; call?: { params: unknown; result: unknown }; done: boolean }
-  | { type: 'approval_request'; requestId: string; toolName: string; args: unknown }
-  | { type: 'approval_result'; requestId: string; decision: 'allow' | 'deny' | 'abort' }
   | { type: 'error'; error: string }
   | { type: 'done'; finishReason: string };
 

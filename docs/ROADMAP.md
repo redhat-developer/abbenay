@@ -23,25 +23,21 @@ All three tiers are enforced. The default for tools matching no tier is
 
 ### What needs to happen
 
-1. **New chat chunk type: `approval_request`**
-   Add a `{ type: 'approval_request', toolName, args, requestId }` chunk to the
-   `ChatChunk` union. When the executor encounters a tool matching `require_approval`,
-   it yields this chunk instead of executing and waits for a response.
+1. **Approval via `onToolApprovalNeeded` (not a ChatChunk)** — done
+   Chat tool approval is gated by AI SDK `toolApproval` (DR-042), which awaits
+   Abbenay's `createToolValidator` / `onToolApprovalNeeded`. Transports emit an
+   out-of-band SSE/CLI prompt; they do not yield `approval_*` on `ChatChunk`.
 
-2. **Approval callback in `ToolExecutor`**
-   Extend `buildExecutor()` (or wrap it) with an `approvalCallback`:
-   ```
-   (tool: RegisteredTool, args: Record<string, any>) => Promise<'allow' | 'deny'>
-   ```
-   For web: the callback resolves when the client sends a POST to a new
-   `/api/chat/:requestId/approve` endpoint.
-   For CLI: the callback resolves from an interactive `readline` prompt.
-   For VS Code: the callback delegates through the gRPC backchannel.
+2. **Approval callback wired per transport** — done (web + CLI); VS Code pending
+   For web: `onToolApprovalNeeded` writes an `approval_request` SSE event and
+   resolves when the client POSTs `/api/chat/:chatId/approve`.
+   For CLI: interactive `readline` prompt.
+   For VS Code: gRPC `PromptChunk` backchannel (M3).
 
-3. **Web chat UI: approval prompt**
-   When the SSE stream emits an `approval_request` chunk, render an inline card
-   with the tool name, arguments, and Allow / Deny buttons. On click, POST to
-   `/api/chat/:requestId/approve` which unblocks the callback.
+3. **Web chat UI: approval prompt** — done
+   When the SSE stream emits an `approval_request` **event** (from the callback),
+   render an inline card with Allow / Deny. On click, POST to
+   `/api/chat/:chatId/approve` which unblocks the callback.
 
 4. **CLI chat command** (see section 2 below)
    The CLI `aby chat` command needs an interactive `readline` prompt for approvals.
@@ -57,7 +53,7 @@ All three tiers are enforced. The default for tools matching no tier is
 
 ### Milestones
 
-- **M1**: Enforce `require_approval` in web chat (approval_request chunk + REST callback) — **done**
+- **M1**: Enforce `require_approval` in web chat (approval_request SSE event + REST callback) — **done**
 - **M2**: CLI `aby chat` with interactive approval — **done**
 - **M3**: VS Code backchannel approval flow
 - **M4**: `max_tool_iterations` enforcement — **done**
