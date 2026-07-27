@@ -91,12 +91,35 @@ Right (logic in npm script):
   run: npm run ci:docs
 ```
 
+## Release drafter workflow
+
+`.github/workflows/push.yml` triggers on every push to `main` (i.e. each PR
+merge) and on `workflow_dispatch`. It calls the shared reusable workflow from
+`ansible/team-devtools/.github/workflows/push.yml@main`, which runs
+`release-drafter/release-drafter@v7`. This:
+
+1. Auto-labels the merged PR based on its conventional commit title prefix
+   (`feat:` -> `feat`, `fix:` -> `fix`, `chore:` / `build:` / `ci:` -> `chore`, etc.).
+2. Updates a **draft** GitHub Release with categorized changelog entries
+   (Features, Fixes, Maintenance).
+3. The draft accumulates across merges until a maintainer publishes a release.
+
+Configuration lives in `.github/release-drafter.yml` (not in the workflows
+directory). It uses `_extends` to inherit the shared config from
+`ansible/team-devtools`, matching the pattern used by other Ansible DevTools projects.
+
+The release workflow (below) merges the draft changelog into the final release
+body when a tag is pushed, then deletes the consumed draft.
+
 ## Release workflow
 
 `.github/workflows/release.yml` triggers on `v*` tags. It injects the version
 from the tag into all `package.json` files via `scripts/set-version.js`, builds
 all platforms, then creates a GitHub Release with the artifacts attached. Tags
 containing `alpha`, `beta`, or `rc` are automatically marked as prereleases.
+
+If a release-drafter draft exists, its changelog body is prepended above the
+artifacts table in the final release notes, and the draft is deleted.
 
 Release assets: platform-specific `.vsix` files, `.tar.gz` daemon archives
 (with version in filename), `@abbenay/core` npm tarball, and Python wheel.
