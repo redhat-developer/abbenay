@@ -20,7 +20,7 @@ Abbenay produces two packages from a single source tree:
 ## Features
 
 - **20 LLM engines** via [Vercel AI SDK 7](https://sdk.vercel.ai/) with dynamic provider loading (Node.js 22.12+ required for npm/`tsx` development; SEA binaries bundle their own runtime)
-- **Red Hat AI** — Inference Server or OpenShift AI MaaS via dedicated `redhat` engine
+- **Red Hat AI** — Red Hat AI Inference or OpenShift AI MaaS via dedicated `redhat` engine
 - **OpenAI-compatible API**: Drop-in `/v1/chat/completions` for Cursor, Continue, aider, etc.
 - **CLI chat**: Interactive terminal chat with tool approval and session persistence
 - **Session management**: Persistent conversations with periodic LLM-generated summaries

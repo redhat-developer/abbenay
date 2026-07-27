@@ -574,10 +574,10 @@ providers:
       claude-sonnet-4-20250514: {}
 ```
 
-### Red Hat AI (Inference Server / MaaS)
+### Red Hat AI (Inference / MaaS)
 
 ```yaml
-# Profile A — Inference Server (local or OpenShift-hosted vLLM)
+# Profile A — Red Hat AI Inference (local or OpenShift-hosted vLLM)
 providers:
   redhat-inference:
     engine: redhat
@@ -593,7 +593,7 @@ providers:
       llama-3.1-8b-instruct: {}
 ```
 
-Inference Server auth is optional (depends on `--api-key` flag); MaaS
+Red Hat AI Inference auth is optional (depends on `--api-key` flag); MaaS
 typically requires an API key. Default endpoint: `http://127.0.0.1:8000/v1`.
 See [REDHAT_AI.md](REDHAT_AI.md) for full setup including both profiles.
 

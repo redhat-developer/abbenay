@@ -12,17 +12,13 @@ Download the latest release for your platform. The binary is a
 [Node.js Single Executable Application (SEA)](https://nodejs.org/api/single-executables.html) —
 no Node.js installation required.
 
-Release artifacts are named `abbenay-daemon-<platform>-<arch>`. Rename
-or symlink to `aby` for convenience:
+Release artifacts are named `abbenay-daemon-<platform>-<arch>`:
 
 ```bash
 # Linux / macOS — rename and move to PATH
 chmod +x abbenay-daemon-linux-x64
 sudo mv abbenay-daemon-linux-x64 /usr/local/bin/aby
 ```
-
-If you install via npm (`npm install -g @abbenay/daemon`), both `aby`
-and `abbenay` are available on PATH automatically.
 
 All examples in this guide use `aby`.
 
@@ -127,7 +123,7 @@ providers:
 
 Ollama must be running at `http://localhost:11434` (the default).
 
-### Red Hat AI (Inference Server or MaaS)
+### Red Hat AI (Inference or MaaS)
 
 ```yaml
 providers:
@@ -137,7 +133,7 @@ providers:
       RedHatAI/Llama-3.2-1B-Instruct-FP8: {}
 ```
 
-The Inference Server must be running at `http://127.0.0.1:8000/v1`. For
+Red Hat AI Inference must be running at `http://127.0.0.1:8000/v1`. For
 OpenShift AI MaaS, set `base_url` and `api_key_env_var_name`. See
 [REDHAT_AI.md](REDHAT_AI.md) for both profiles.
 

@@ -19,8 +19,12 @@ It has **zero transport dependencies** — no gRPC, no Express, no CLI. Just the
 
 ## Install
 
+Download the `abbenay-core-*.tgz` tarball from the
+[latest GitHub release](https://github.com/redhat-developer/abbenay/releases)
+and install it locally:
+
 ```bash
-npm install @abbenay/core
+npm install abbenay-core-<version>.tgz
 ```
 
 Then install only the AI SDK provider packages you need:
@@ -312,7 +316,7 @@ bridged to Abbenay's secure-by-default policy (DR-019 / DR-042).
 | LM Studio | `lmstudio` | No | `@ai-sdk/openai-compatible` | Local models |
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` | Fast inference |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` | Llama API |
-| Red Hat AI | `redhat` | No | `@ai-sdk/openai-compatible` | Inference Server or OpenShift AI MaaS |
+| Red Hat AI | `redhat` | No | `@ai-sdk/openai-compatible` | Red Hat AI Inference or OpenShift AI MaaS |
 | Mock | `mock` | No | *(built-in)* | Testing only |
 
 ## Policies
