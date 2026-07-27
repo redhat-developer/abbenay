@@ -12,7 +12,8 @@ Download the latest release for your platform. The binary is a
 [Node.js Single Executable Application (SEA)](https://nodejs.org/api/single-executables.html) —
 no Node.js installation required.
 
-Release artifacts are named `abbenay-daemon-<platform>-<arch>`:
+Release artifacts are named `abbenay-daemon-<platform>-<arch>`. Rename
+or symlink to `aby` for convenience:
 
 ```bash
 # Linux / macOS — rename and move to PATH
