@@ -577,7 +577,7 @@ providers:
 ### Red Hat AI (Inference / MaaS)
 
 ```yaml
-# Profile A — Red Hat AI Inference (local or OpenShift-hosted vLLM)
+# Profile A — Inference Server (local or OpenShift-hosted vLLM)
 providers:
   redhat-inference:
     engine: redhat
