@@ -35,7 +35,7 @@ vi.mock('ai', async (importOriginal) => {
   };
 });
 
-import { streamChat, toSdkTimeout, getEngine } from './engines.js';
+import { streamChat, toSdkTimeout, getEngine, splitSystemMessages } from './engines.js';
 
 describe('toSdkTimeout', () => {
   it('maps flat ms to totalMs only (no step/tool halves)', () => {
@@ -64,6 +64,28 @@ describe('streamChat mock engine (stream contract)', () => {
   });
 });
 
+describe('splitSystemMessages', () => {
+  it('moves system roles into instructions and leaves other roles', () => {
+    const result = splitSystemMessages([
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'hi' },
+      { role: 'system', content: 'Be brief.' },
+      { role: 'assistant', content: 'hello' },
+    ]);
+    expect(result.instructions).toBe('You are helpful.\n\nBe brief.');
+    expect(result.messages).toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+    ]);
+  });
+
+  it('omits instructions when there are no system messages', () => {
+    const result = splitSystemMessages([{ role: 'user', content: 'hi' }]);
+    expect(result.instructions).toBeUndefined();
+    expect(result.messages).toHaveLength(1);
+  });
+});
+
 describe('streamText AI SDK 7 wiring', () => {
   beforeEach(() => {
     streamTextMock.mockClear();
@@ -71,6 +93,50 @@ describe('streamText AI SDK 7 wiring', () => {
     toolMock.mockClear();
     jsonSchemaMock.mockClear();
     outputJsonMock.mockClear();
+  });
+
+  it('passes system messages via instructions, not messages', async () => {
+    const openai = getEngine('openai');
+    expect(openai).toBeDefined();
+    const originalCreate = openai!.createModel;
+    openai!.createModel = vi.fn(async () => ({
+      modelId: 'gpt-test',
+      provider: 'openai',
+      specificationVersion: 'v3',
+      supportedUrls: {},
+      doGenerate: async () => ({
+        content: [],
+        finishReason: 'stop',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        warnings: [],
+      }),
+      doStream: async () => ({
+        stream: new ReadableStream(),
+      }),
+    })) as typeof originalCreate;
+
+    try {
+      for await (const _chunk of streamChat(
+        'openai',
+        'gpt-test',
+        [
+          { role: 'system', content: 'System prompt from Open WebUI' },
+          { role: 'user', content: 'hi' },
+        ],
+        'sk-test',
+      )) {
+        // drain
+      }
+    } finally {
+      openai!.createModel = originalCreate;
+    }
+
+    expect(streamTextMock).toHaveBeenCalled();
+    const callArg = streamTextMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArg.instructions).toBe('System prompt from Open WebUI');
+    const msgs = callArg.messages as Array<{ role: string; content: unknown }>;
+    expect(msgs.every((m) => m.role !== 'system')).toBe(true);
+    expect(msgs.some((m) => m.role === 'user')).toBe(true);
   });
 
   it('passes isStepCount, stream, maxOutputTokens, nested timeout, reasoning, and toolApproval', async () => {

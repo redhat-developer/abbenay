@@ -583,9 +583,43 @@
             <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
               MCP servers provide tools to the LLM. Configure them in <code>~/.config/abbenay/config.yaml</code> under <code>mcp_servers</code>.
               Tools invoked via Abbenay's <code>/mcp</code> endpoint use the same approval policy as chat.
+              Dynamic stdio registration requires an allowlisted binary and your approval before any process is spawned.
             </p>
-            <button class="btn btn-secondary btn-sm" @click="loadMcpServers(); loadMcpApprovals(); loadMcpConnections()">Refresh</button>
+            <button class="btn btn-secondary btn-sm" @click="loadMcpServers(); loadMcpApprovals(); loadMcpConnections(); loadMcpStdioSpawns()">Refresh</button>
           </div>
+
+          <template x-if="pendingStdioSpawns.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg); padding: 1rem; background: #fef3e7; border: 2px solid #f0ab00; border-radius: 3px;">
+              <h3 style="margin: 0 0 0.75rem; font-size: 1rem;">Pending stdio MCP process spawns</h3>
+              <p style="margin: 0 0 0.75rem; font-size: 0.85rem; color: #6a6e73;">
+                A caller wants Abbenay to start an MCP server process. Approve only if you trust this command.
+              </p>
+              <template x-for="req in pendingStdioSpawns" :key="req.requestId">
+                <div style="margin-bottom: 0.75rem; padding: 0.75rem; background: #fff; border-radius: 3px;">
+                  <div style="font-weight: 600;" x-text="'Server: ' + req.serverId"></div>
+                  <div style="font-size: 0.85rem; margin-top: 0.25rem;">
+                    <code x-text="req.command + (req.args && req.args.length ? ' ' + req.args.join(' ') : '')"></code>
+                  </div>
+                  <div style="font-size: 0.8rem; color: #6a6e73; margin-top: 0.25rem;"
+                       x-text="req.consumer ? 'Consumer: ' + req.consumer : 'Consumer: local'"></div>
+                  <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-sm" @click="resolveStdioSpawn(req.requestId, 'allow')">Allow spawn</button>
+                    <button class="btn btn-secondary btn-sm" style="color: #c00;" @click="resolveStdioSpawn(req.requestId, 'deny')">Deny</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="stdioSpawnDenials.length > 0">
+            <div style="margin-bottom: var(--rh-space-lg);">
+              <h3 style="margin: 0 0 0.5rem; font-size: 0.95rem;">Recent stdio spawn denials</h3>
+              <template x-for="(d, idx) in stdioSpawnDenials.slice().reverse().slice(0, 8)" :key="idx">
+                <div style="padding: 0.4rem 0; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; color: #c9190b;"
+                     x-text="d.reason"></div>
+              </template>
+            </div>
+          </template>
 
           <template x-if="pendingMcpConnections.length > 0">
             <div style="margin-bottom: var(--rh-space-lg); padding: 1rem; background: #fce7e7; border: 2px solid #c9190b; border-radius: 3px;">
@@ -1426,6 +1460,8 @@ function dashboard() {
     mcpServers: [],
     pendingMcpApprovals: [],
     pendingMcpConnections: [],
+    pendingStdioSpawns: [],
+    stdioSpawnDenials: [],
     mcpSessions: [],
     mcpRemembered: [],
     
@@ -1492,12 +1528,14 @@ function dashboard() {
       this.loadMcpServers();
       this.loadMcpApprovals();
       this.loadMcpConnections();
+      this.loadMcpStdioSpawns();
       this.loadTools();
       this.loadPolicies();
-      // Poll pending MCP connection consent + tool approvals
+      // Poll pending MCP connection consent + tool / stdio-spawn approvals
       setInterval(() => {
         this.loadMcpApprovals();
         this.loadMcpConnections();
+        this.loadMcpStdioSpawns();
       }, 2000);
     },
     
@@ -1956,6 +1994,30 @@ function dashboard() {
         this.mcpSessions = data.sessions || [];
         this.mcpRemembered = data.remembered || [];
       } catch (e) { /* ignore */ }
+    },
+
+    async loadMcpStdioSpawns() {
+      try {
+        const resp = await apiFetch('/api/mcp/stdio-spawns');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        this.pendingStdioSpawns = data.pending || [];
+        this.stdioSpawnDenials = data.denials || [];
+      } catch (e) { /* ignore */ }
+    },
+
+    async resolveStdioSpawn(requestId, decision) {
+      try {
+        await apiFetch(`/api/mcp/stdio-spawns/${encodeURIComponent(requestId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision }),
+        });
+        await this.loadMcpStdioSpawns();
+        await this.loadMcpServers();
+      } catch (e) {
+        console.error('Failed to resolve MCP stdio spawn:', e);
+      }
     },
 
     async resolveMcpConnection(requestId, decision, remember = false) {

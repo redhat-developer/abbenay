@@ -48,7 +48,7 @@ The bootstrap auto-detects your OS and architecture:
 
 On Windows, run `./bootstrap.sh` from Git Bash (same as GitHub Actions
 `windows-latest`). Local IPC uses loopback TCP and `%TEMP%/abbenay/daemon.addr`
-(see DR-043); Unix platforms keep `daemon.sock`.
+(see DR-044); Unix platforms keep `daemon.sock`.
 
 ### Pinning the Node.js version
 

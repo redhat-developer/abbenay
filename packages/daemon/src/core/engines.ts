@@ -571,6 +571,37 @@ export function getEngine(engineId: string): EngineInfo | undefined {
   return ENGINE_MAP.get(engineId);
 }
 
+/**
+ * True when `engineId` is one of the built-in engines (finding A3).
+ * Config cannot introduce new `@ai-sdk/*` packages — only these IDs map
+ * to the fixed {@link PROVIDER_LOADERS} allowlist.
+ */
+export function isKnownEngineId(engineId: string): boolean {
+  return ENGINE_MAP.has(engineId);
+}
+
+/**
+ * Reject configs that reference unknown engine IDs (A3 — no arbitrary
+ * runtime provider packages via writable config).
+ */
+export function validateConfigProviderEngines(config: {
+  providers?: Record<string, { engine?: string } | undefined>;
+}): { ok: true } | { ok: false; error: string } {
+  for (const [id, cfg] of Object.entries(config.providers || {})) {
+    const engine = cfg?.engine;
+    if (!engine) {
+      return { ok: false, error: `provider "${id}": engine is required` };
+    }
+    if (!isKnownEngineId(engine)) {
+      return {
+        ok: false,
+        error: `provider "${id}": unknown engine "${engine}" (not in the built-in engine allowlist)`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
 /** Get predefined templates for the "Add Provider" wizard. */
 export function getProviderTemplates(): ProviderTemplate[] {
   return Object.values(ENGINES).map(e => ({
@@ -932,8 +963,10 @@ export async function* streamChat(
       baseURL: baseUrl,
     });
 
-    // Convert messages to Vercel AI SDK format
-    const aiMessages = convertMessages(messages);
+    // AI SDK 7 rejects role=system in messages/prompt — peel them into instructions.
+    // Open WebUI (and others) still send system prompts as chat messages.
+    const { instructions, messages: nonSystemMessages } = splitSystemMessages(messages);
+    const aiMessages = convertMessages(nonSystemMessages);
 
     // Convert ToolDefinition[] to Vercel AI SDK tool() objects.
     // With an executor: Abbenay runs tools (auto mode).
@@ -988,6 +1021,7 @@ export async function* streamChat(
     const result = streamText({
       model,
       messages: aiMessages,
+      ...(instructions ? { instructions } : {}),
       ...(aiTools ? { tools: aiTools } : {}),
       // Always bound tool loops when tools are registered — including passthrough
       // (effectiveMaxSteps === 1) so we do not rely on AI SDK defaults alone.
@@ -1147,13 +1181,40 @@ export function coerceToolCallInput(args: unknown): Record<string, unknown> {
 }
 
 /**
+ * Peel system-role messages into a single instructions string for AI SDK 7+.
+ * Remaining messages are returned without system entries.
+ */
+export function splitSystemMessages(messages: ChatMessage[]): {
+  instructions?: string;
+  messages: ChatMessage[];
+} {
+  const systemParts: string[] = [];
+  const rest: ChatMessage[] = [];
+  for (const m of messages) {
+    if (m.role === 'system') {
+      if (m.content?.trim()) {
+        systemParts.push(m.content);
+      }
+      continue;
+    }
+    rest.push(m);
+  }
+  return {
+    ...(systemParts.length > 0 ? { instructions: systemParts.join('\n\n') } : {}),
+    messages: rest,
+  };
+}
+
+/**
  * Convert our internal message format to Vercel AI SDK ModelMessage format.
+ * System messages must already be removed (see splitSystemMessages).
  */
 function convertMessages(messages: ChatMessage[]): ModelMessage[] {
   return messages.map(m => {
     switch (m.role) {
       case 'system':
-        return { role: 'system' as const, content: m.content };
+        // Should not appear after splitSystemMessages; keep as user text if present.
+        return { role: 'user' as const, content: m.content };
 
       case 'user':
         return { role: 'user' as const, content: m.content };

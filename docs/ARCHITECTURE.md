@@ -78,7 +78,8 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/daemon.ts` | Process lifecycle, gRPC server startup, signal handling |
 | `daemon/transport.ts` | Unix socket and PID file management |
 | `daemon/tool-router.ts` | Tool execution routing (VS Code, MCP, local) |
-| `daemon/mcp-client-pool.ts` | MCP server connection pool |
+| `daemon/mcp-client-pool.ts` | MCP server connection pool (stdio allowlist + spawn approval) |
+| `daemon/stdio-command-policy.ts` | Dynamic stdio MCP command allowlist (H6 / DR-043) |
 | `daemon/mcp-server.ts` | Embedded MCP server (connection consent + tool_policy) |
 | `core/tool-approval.ts` | Shared tool validator (chat + MCP HTTP) |
 | `daemon/index.ts` | CLI entry point (Commander) |
@@ -104,7 +105,7 @@ The core TypeScript/Node.js process that runs as a background daemon.
 
 **Local IPC:**
 - Linux/macOS: Unix socket at `$XDG_RUNTIME_DIR/abbenay/daemon.sock` or `/run/user/{uid}/abbenay/daemon.sock`
-- Windows: loopback TCP (`127.0.0.1` + ephemeral port); address in `%TEMP%/abbenay/daemon.addr` (DR-043)
+- Windows: loopback TCP (`127.0.0.1` + ephemeral port); address in `%TEMP%/abbenay/daemon.addr` (DR-044)
 
 ### Web Dashboard (Embedded)
 
@@ -328,6 +329,8 @@ Manages connections to external MCP servers defined in config. Uses `@ai-sdk/mcp
 
 - Supports stdio and HTTP/SSE transports
 - Auto-discovers tools on connect and registers them in `ToolRegistry`
+- Dynamic stdio registration requires `security.stdio_command_allowlist` +
+  operator approval (`/api/mcp/stdio-spawns`) before any process is spawned
 - Hot-reloads when config changes (connects new, disconnects removed)
 - Refuses self-connections: HTTP/SSE URLs that target this daemon's own
   listening HTTP or gRPC ports on a local address (`localhost`, `127.0.0.1`,
@@ -491,8 +494,10 @@ internal MCP tool for cross-session retrieval.
 ## Security
 
 - **Secrets**: Stored in system keychain via keytar when available; never in config files
+- **Credential aggregation (A1)**: One daemon holds many provider keys — larger blast radius than per-extension storage; documented for Enterprise / Security-Conscious / air-gapped personas in [CONFIGURATION.md](CONFIGURATION.md#credential-aggregation-risk-operators--finding-a1); secret APIs auth-gated; mutate audits; HTTP lists presence only
+- **Provider supply chain / endpoints (A3)**: `@ai-sdk/*` packages load from a fixed in-code allowlist (config cannot add packages); unknown `engine` IDs rejected on write; `base_url` requires auth + scheme/host policy; audited in logs
 - **Local IPC**: Unix socket with user-only permissions on Linux/macOS; loopback
-  TCP + `daemon.addr` on Windows (DR-043)
+  TCP + `daemon.addr` on Windows (DR-044)
 - **Web dashboard / HTTP API**: Binds to `127.0.0.1` by default; Bearer (or
   cookie + CSRF) auth required; CORS allowlist only (never `*`) — DR-030
 - **gRPC TCP**: Loopback plaintext OK for local DX; non-loopback requires
@@ -502,6 +507,7 @@ internal MCP tool for cross-session retrieval.
   public internet, but **network isolation alone does not secure the daemon**.
   See [SECURITY.md](./SECURITY.md).
 - **Config files**: Created with mode `0o600` (user read/write only)
+- **Deferred**: Per-secret encryption-at-rest beyond OS keychain (DR-040)
 
 Intentional exposure (containers, LAN) is opt-in via `--host` / image CMD —
 see [CONTAINER.md](./CONTAINER.md) and [SECURITY.md](./SECURITY.md).

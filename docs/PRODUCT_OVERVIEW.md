@@ -240,7 +240,7 @@ providers:
 |-----------|--------|-------|
 | Discover/connect to Ollama | ✅ Complete | Auto-connects to localhost:11434 |
 | OpenAI-compatible endpoints | ✅ Complete | vLLM, Red Hat AI, TGI all work |
-| Secure API key storage | ✅ Complete | System keychain + env var support |
+| Secure API key storage | ✅ Complete | System keychain + env var support; aggregation risk (A1) documented with auth gates + audits — see [CONFIGURATION.md](CONFIGURATION.md#credential-aggregation-risk-operators--finding-a1) |
 | Dynamic model discovery | ✅ Complete | Models fetched from provider APIs |
 
 ### Extension Integration

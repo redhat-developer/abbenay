@@ -4,7 +4,13 @@
 
 import * as grpc from '@grpc/grpc-js';
 import { DaemonState, ClientType, type ChatToolOptions } from '../state.js';
-import { getEngines, type ToolDefinition } from '../../core/engines.js';
+import {
+  getEngine,
+  getEngines,
+  getProviderTemplates,
+  validateConfigProviderEngines,
+  type ToolDefinition,
+} from '../../core/engines.js';
 import {
   startEmbeddedWebServer,
   stopEmbeddedWebServer,
@@ -18,17 +24,29 @@ import {
   getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName,
   type ConfigFile, type ProviderConfig as DaemonProviderConfig, type McpServerConfig,
 } from '../../core/config.js';
+import { auditSecretChange } from '../../core/secrets.js';
+import {
+  auditProviderEndpointChange,
+  auditProviderEndpointConfigDiff,
+  endpointPolicyFromServer,
+  validateConfigProviderEndpoints,
+  validateProviderEndpoint,
+} from '../../core/provider-endpoint.js';
 import { DEFAULT_WEB_PORT } from '../../core/constants.js';
-import { getProviderTemplates } from '../../core/engines.js';
 import { LOCAL_SESSION_OWNER } from '../../core/session-store.js';
 import {
   authorizeConsumer,
   matchConsumerByToken,
+  hasConfiguredConsumers,
   DEFAULT_CONSUMER_AUTH_CONTEXT,
   type ConsumerAuthContext,
   type ConsumerCapability,
   type AuthResult,
 } from './consumer-auth.js';
+import {
+  StdioSpawnApprovalDeniedError,
+} from '../mcp-client-pool.js';
+import { StdioCommandDeniedError } from '../stdio-command-policy.js';
 
 export type { ConsumerAuthContext, ConsumerCapability, AuthResult };
 export {
@@ -583,6 +601,14 @@ export function createAbbenayService(
           if (resolved.apiKey) apiKey = resolved.apiKey;
           if (resolved.baseUrl && !baseUrl) baseUrl = resolved.baseUrl;
         }
+        if (baseUrl) {
+          const policy = endpointPolicyFromServer(loadConfig()?.server);
+          const endpoint = validateProviderEndpoint(baseUrl, policy);
+          if (!endpoint.ok) {
+            throw Object.assign(new Error(endpoint.error), { code: grpc.status.INVALID_ARGUMENT });
+          }
+          baseUrl = endpoint.normalized;
+        }
         return state.discoverModels(engineId, apiKey, baseUrl);
       };
 
@@ -600,8 +626,12 @@ export function createAbbenayService(
         });
       }).catch((error: unknown) => {
         console.error('[gRPC] DiscoverModels error:', error);
+        const code =
+          error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'number'
+            ? (error as { code: number }).code
+            : grpc.status.INTERNAL;
         callback({
-          code: grpc.status.INTERNAL,
+          code,
           message: error instanceof Error ? error.message : String(error),
         });
       });
@@ -780,6 +810,7 @@ export function createAbbenayService(
       const { key, value } = call.request;
       
       state.secretStore.set(key, value).then(() => {
+        auditSecretChange({ key, op: 'set', source: 'grpc-secrets' });
         callback(null, {});
         // Notify VS Code that models may have changed (new API key)
         state.notifyModelsChanged('secret_updated');
@@ -800,6 +831,7 @@ export function createAbbenayService(
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
       state.secretStore.delete(call.request.key).then(() => {
+        auditSecretChange({ key: call.request.key, op: 'delete', source: 'grpc-secrets' });
         callback(null, {});
       }).catch((error: unknown) => {
         callback({
@@ -990,6 +1022,33 @@ export function createAbbenayService(
         }
 
         const configFile = protoToConfigFile(protoConfig);
+        const enginesCheck = validateConfigProviderEngines(configFile);
+        if (!enginesCheck.ok) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: enginesCheck.error });
+          return;
+        }
+        // Merge server policy from existing config so partial updates retain the
+        // endpoint allowlist. Without this, validation would pass using the merged
+        // policy but persistence would drop server.allowed_provider_hosts.
+        if (!configFile.server) {
+          const existingServer = (location === 'user'
+            ? loadConfig()
+            : loadWorkspaceConfig(location))?.server;
+          if (existingServer) configFile.server = existingServer;
+        }
+        const endpointCheck = validateConfigProviderEndpoints({
+          providers: configFile.providers,
+          server: configFile.server,
+        });
+        if (!endpointCheck.ok) {
+          callback({ code: grpc.status.INVALID_ARGUMENT, message: endpointCheck.error });
+          return;
+        }
+
+        const previous = location === 'user'
+          ? loadConfig()
+          : loadWorkspaceConfig(location);
+
         let savedPath: string;
 
         if (location === 'user') {
@@ -999,6 +1058,8 @@ export function createAbbenayService(
           saveWorkspaceConfig(location, configFile);
           savedPath = getWorkspaceConfigPath(location);
         }
+
+        auditProviderEndpointConfigDiff(previous, configFile, 'grpc-config');
 
         state.notifyModelsChanged('config_changed');
         state.refreshMcpConnections().catch((err: unknown) => {
@@ -1464,7 +1525,9 @@ export function createAbbenayService(
     },
     
     /**
-     * Register a dynamic MCP server at runtime (DR-025)
+     * Register a dynamic MCP server at runtime (DR-025 / DR-043).
+     * Stdio command/args are never accepted from unauthenticated callers when
+     * consumers are configured; allowlist + approval gate process spawn (H6).
      */
     RegisterMcpServer(call: grpc.ServerUnaryCall<RegisterMcpServerRequestProto, object>, callback: grpc.sendUnaryData<object>): void {
       const serverId = call.request.server_id || call.request.serverId || '';
@@ -1481,21 +1544,60 @@ export function createAbbenayService(
         return;
       }
 
-      if (!requireCapability(call, 'mcp_register', authContext, callback)) return;
+      const fileConfig = loadConfig() || { providers: {} };
+      const auth = authorizeConsumer(call, fileConfig, 'mcp_register', authContext);
+      if (!auth.allowed) {
+        console.warn(
+          `[Service] RegisterMcpServer denied: ${auth.reason || 'Permission denied'} ` +
+            `(server_id=${serverId}, transport=${transport.type})`,
+        );
+        callback({
+          code: grpc.status.PERMISSION_DENIED,
+          message: auth.reason || 'Permission denied',
+        });
+        return;
+      }
+      if (auth.consumer) {
+        console.log(`[Service] mcp_register authorized for consumer "${auth.consumer}"`);
+      }
+
+      let mcpConfig: McpServerConfig;
+      try {
+        mcpConfig = transportProtoToConfig(transport);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        callback({ code: grpc.status.INVALID_ARGUMENT, message: msg });
+        return;
+      }
+
+      // H6: never accept command/args from unauthenticated callers when consumers enabled
+      if (mcpConfig.transport === 'stdio') {
+        if (hasConfiguredConsumers(fileConfig) && !auth.consumer) {
+          const reason =
+            `stdio MCP registration with command/args requires an authenticated consumer ` +
+            `with mcp_register capability. Unauthenticated registration denied ` +
+            `(server_id=${serverId}, command=${mcpConfig.command || ''}). No process was spawned.`;
+          console.warn(`[Service] ${reason}`);
+          callback({ code: grpc.status.PERMISSION_DENIED, message: reason });
+          return;
+        }
+      }
 
       // Resolve registering client ID from gRPC metadata
       const clientIdMeta = call.metadata.get('x-abbenay-client-id');
       const clientId = clientIdMeta.length > 0 ? String(clientIdMeta[0]) : undefined;
 
-      const config = transportProtoToConfig(transport);
+      // Keep pool security settings in sync with latest config
+      state.mcpClientPool.applySecurityConfig(fileConfig.security);
 
       (async () => {
         try {
           const tools = await state.mcpClientPool.connectDynamic(
             serverId,
-            config,
+            mcpConfig,
             { sessionId, clientId },
             toolFilter.length > 0 ? toolFilter : undefined,
+            { consumer: auth.consumer },
           );
 
           callback(null, {
@@ -1505,7 +1607,13 @@ export function createAbbenayService(
           });
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
-          if (msg.includes('already')) {
+          if (
+            error instanceof StdioCommandDeniedError ||
+            error instanceof StdioSpawnApprovalDeniedError
+          ) {
+            console.warn(`[Service] RegisterMcpServer stdio denied: ${msg}`);
+            callback({ code: grpc.status.PERMISSION_DENIED, message: msg });
+          } else if (msg.includes('already')) {
             callback({ code: grpc.status.ALREADY_EXISTS, message: msg });
           } else if (msg.includes('limit')) {
             callback({ code: grpc.status.RESOURCE_EXHAUSTED, message: msg });
@@ -1588,12 +1696,42 @@ export function createAbbenayService(
           const existing: Partial<DaemonProviderConfig> = config.providers[providerId]
             ? { ...config.providers[providerId] }
             : {};
+          const previousBaseUrl = existing.base_url;
           if (engine) existing.engine = engine;
+
+          const effectiveEngine = existing.engine;
+          if (!effectiveEngine) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: 'engine is required when configuring a new provider',
+            });
+            return;
+          }
+          if (!getEngine(effectiveEngine)) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: `unknown engine "${effectiveEngine}" (not in the built-in engine allowlist)`,
+            });
+            return;
+          }
+
+          let normalizedBaseUrl: string | undefined;
+          if (baseUrl) {
+            const policy = endpointPolicyFromServer(loadConfig()?.server);
+            const endpoint = validateProviderEndpoint(baseUrl, policy);
+            if (!endpoint.ok) {
+              callback({ code: grpc.status.INVALID_ARGUMENT, message: endpoint.error });
+              return;
+            }
+            normalizedBaseUrl = endpoint.normalized;
+          }
+
           config.providers[providerId] = existing as DaemonProviderConfig;
 
           if (apiKey) {
             const keychainName = `${providerId.toUpperCase()}_API_KEY`;
             await state.secretStore.set(keychainName, apiKey);
+            auditSecretChange({ key: keychainName, op: 'set', source: 'grpc-configure' });
             config.providers[providerId].api_key_keychain_name = keychainName;
             delete config.providers[providerId].api_key_env_var_name;
           } else if (envVarName) {
@@ -1601,14 +1739,23 @@ export function createAbbenayService(
             delete config.providers[providerId].api_key_keychain_name;
           }
 
-          if (baseUrl) {
-            config.providers[providerId].base_url = baseUrl;
+          if (normalizedBaseUrl) {
+            config.providers[providerId].base_url = normalizedBaseUrl;
           }
 
           if (target === 'workspace' && workspacePath) {
             saveWorkspaceConfig(workspacePath, config);
           } else {
             saveConfig(config);
+          }
+
+          if (normalizedBaseUrl && normalizedBaseUrl !== previousBaseUrl) {
+            auditProviderEndpointChange({
+              providerId,
+              previousBaseUrl,
+              newBaseUrl: normalizedBaseUrl,
+              source: 'grpc-configure',
+            });
           }
 
           state.notifyModelsChanged('provider_configured');
@@ -1650,7 +1797,10 @@ export function createAbbenayService(
           if (config.providers && config.providers[providerId]) {
             const keychainName = config.providers[providerId].api_key_keychain_name;
             if (keychainName) {
-              try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
+              try {
+                await state.secretStore.delete(keychainName);
+                auditSecretChange({ key: keychainName, op: 'delete', source: 'grpc-configure' });
+              } catch { /* ignore */ }
             }
             delete config.providers[providerId];
 

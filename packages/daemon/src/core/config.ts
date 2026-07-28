@@ -166,6 +166,38 @@ export interface ServerConfig {
    * and http://localhost:<port>).
    */
   cors_origins?: string[];
+  /**
+   * Optional host allowlist for provider `base_url` endpoints (DR-040).
+   * When non-empty, non-loopback hosts must appear here. Listing a host also
+   * permits `http:` to that host (air-gapped / explicit trust).
+   */
+  allowed_provider_hosts?: string[];
+  /**
+   * When true, allow `http:` provider endpoints to non-loopback hosts without
+   * requiring them on `allowed_provider_hosts` (still subject to that list
+   * when it is non-empty). Default false.
+   */
+  allow_insecure_provider_http?: boolean;
+}
+
+/**
+ * Daemon-wide security policy (DR-043 / finding H6).
+ * Gates dynamic stdio MCP process spawning.
+ */
+export interface SecurityConfig {
+  /** Max dynamic MCP servers (default 10) */
+  max_dynamic_mcp_servers?: number;
+  /**
+   * Allowed binaries for dynamic stdio MCP registration (basename or absolute path).
+   * Empty / omitted = deny all dynamic stdio spawns (fail-closed).
+   * Config-file `mcp_servers` entries are admin-trusted and skip this list.
+   */
+  stdio_command_allowlist?: string[];
+  /**
+   * When true (default), allowlisted dynamic stdio spawns still require
+   * interactive operator approval via the web dashboard / API.
+   */
+  stdio_require_approval?: boolean;
 }
 
 /**
@@ -191,6 +223,8 @@ export interface ConfigFile {
   consumers?: Record<string, ConsumerConfig>;
   /** HTTP / web dashboard server security */
   server?: ServerConfig;
+  /** Daemon security policy (stdio MCP allowlist, dynamic limits) */
+  security?: SecurityConfig;
   /** OpenAI-compatible `/v1` API defaults */
   openai_compat?: OpenAICompatConfig;
 }
@@ -392,6 +426,17 @@ export function mergeConfigs(userConfig: ConfigFile, workspaceConfig: ConfigFile
     merged.openai_compat = {
       ...userConfig.openai_compat,
       ...workspaceConfig.openai_compat,
+    };
+  }
+
+  // security: workspace overrides user at field level; allowlist arrays replace
+  if (userConfig.security || workspaceConfig.security) {
+    const us = userConfig.security || {};
+    const ws = workspaceConfig.security || {};
+    merged.security = {
+      max_dynamic_mcp_servers: ws.max_dynamic_mcp_servers ?? us.max_dynamic_mcp_servers,
+      stdio_command_allowlist: ws.stdio_command_allowlist ?? us.stdio_command_allowlist,
+      stdio_require_approval: ws.stdio_require_approval ?? us.stdio_require_approval,
     };
   }
   

@@ -129,7 +129,7 @@ can run on a different OS or architecture. A "universal" VSIX would need to
 bundle all platform variants (tripling size) or would silently fail on
 non-matching platforms. Platform-specific VSIXes ensure the marketplace and
 manual installs deliver the correct binaries for each user's system.  
-**Superseded by:** DR-043
+**Superseded by:** DR-044
 
 ---
 
@@ -163,7 +163,7 @@ without producing redundant artifacts. All 3 must pass to gate the release.
 **Decision:** Use `.tar.gz` instead of `.zip` for daemon distribution archives.  
 **Rationale:** Smaller file size. tar.gz is the standard for Linux/macOS binary
 distribution and is natively supported on both platforms.  
-**Note:** DR-043 adds `.zip` archives for Windows (`win32-x64`) only; Unix
+**Note:** DR-044 adds `.zip` archives for Windows (`win32-x64`) only; Unix
 platforms keep `.tar.gz`.
 
 ---
@@ -659,6 +659,40 @@ behavior when the listen set is empty closes the race before
 
 ---
 
+## DR-040: Credential aggregation (A1) + provider endpoint policy (A3); defer encryption-at-rest
+
+**Date:** 2026-07-20
+**Decision:** (1) **A1 — document and harden access, do not eliminate aggregation.**
+Abbenay keeps centralized provider credentials (product choice). Operator docs
+(`docs/CONFIGURATION.md`) explicitly describe the larger blast radius vs
+per-extension storage and give guidance for Enterprise / Security-Conscious /
+air-gapped personas. Secret mutate APIs stay auth-gated (DR-030 / DR-037);
+HTTP secret listing returns presence only (never values); secret set/delete
+emits `[Audit] secret changed` (key + op + source, never the value).
+(2) **A3 — supply chain + malicious endpoint.** Provider `@ai-sdk/*` packages
+load on demand from a **fixed in-code allowlist** (`PROVIDER_LOADERS`); config
+cannot introduce new npm packages. Runtime configure / `POST /api/config` /
+gRPC updates reject unknown `engine` IDs. Separately, validate every provider
+`base_url` / discovery endpoint on mutating paths with a shared scheme/host
+policy: absolute `http` / `https` only, hostname required, no URL userinfo;
+`http` limited to loopback unless the host is on `server.allowed_provider_hosts`
+or `server.allow_insecure_provider_http` is true; when the allowlist is
+non-empty, non-loopback hosts must match it. Successful endpoint changes emit
+`[Audit] provider endpoint changed`. Dynamic provider / MCP registration
+cannot be done anonymously when auth/consumers are configured.
+(3) **Defer** per-secret encryption-at-rest beyond OS keychain / env refs and
+process-level secret isolation until there is a concrete enterprise
+requirement.
+**Rationale:** Finding A1 notes that centralizing 20+ provider keys contradicts
+naive expectations of Enterprise / Security-Conscious / air-gapped personas if
+left undocumented and ungated. Finding A3 is both the multi-provider dependency surface and the
+writable-config malicious `base_url` path. Auth gates (Tasks 1/6 / H4) protect
+writes; the fixed loader map + engine allowlist stop arbitrary package load;
+endpoint policy + audits stop prompt/key exfiltration via fake endpoints
+without breaking local Ollama / RHAI loopback HTTP. Full encryption-at-rest /
+enclave isolation is deferred; OS keychain + 0600 config + auth gates + audits
+are the current control set.
+
 ## DR-041: Prefer direct bumps and lockfile resolution over npm overrides
 
 **Date:** 2026-07-21
@@ -703,7 +737,31 @@ notifications are out-of-band SSE/CLI events via `onToolApprovalNeeded`; they
 are not `ChatChunk` variants (unused `approval_request` / `approval_result`
 chunk types were removed after the bridge landed).
 
-## DR-043: win32-x64 platform + loopback TCP local IPC
+---
+
+## DR-043: Stdio MCP spawn allowlist + operator approval
+
+**Date:** 2026-07-20
+**Decision:** Dynamic `RegisterMcpServer` with `transport: stdio` must not spawn
+arbitrary commands. Before `StdioMCPTransport` is constructed: (1) `command`
+must match configurable `security.stdio_command_allowlist` (empty allowlist
+denies all dynamic stdio); (2) an interactive operator approval is required by
+default (`stdio_require_approval`, dashboard / `GET|POST /api/mcp/stdio-spawns`);
+(3) when `consumers` is configured, stdio `command`/`args` are rejected unless
+the caller authenticates as a consumer with `mcp_register`. Denials are logged
+clearly and surfaced in the API/UI. Config-file `mcp_servers` remain
+admin-trusted and skip these gates. Prefer caller-spawned HTTP/SSE for dynamic
+registration (DR-025).
+**Rationale:** Finding H6 — `mcp-client-pool` previously spawned
+`config.command` / `config.args` for any caller with `mcp_register` (or anyone
+when consumers were unset). Allowlist + approval + auth closes arbitrary
+command execution while keeping trusted MCP binaries usable. Numbered DR-043
+because main already shipped air-gap docs as DR-038 and AAP-82836 claims
+DR-040 for credential aggregation.
+
+---
+
+## DR-044: win32-x64 platform + loopback TCP local IPC
 
 **Date:** 2026-07-23  
 **Decision:** Add `win32-x64` as a fourth supported platform (CI, release,
