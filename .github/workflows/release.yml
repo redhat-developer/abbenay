@@ -217,7 +217,7 @@ jobs:
           fi
 
           # Clean up the draft release now that its changelog is merged
-          if [ -n "$draft_tag" ]; then
+          if [ -n "$draft_tag" ] && [ "$draft_tag" != "$tag" ]; then
             gh release delete "$draft_tag" --yes 2>/dev/null || true
           fi
 
