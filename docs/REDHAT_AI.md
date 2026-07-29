@@ -21,8 +21,8 @@ secures the daemon — see [SECURITY.md](./SECURITY.md).
 
 ## Profile A — Inference Server
 
-Red Hat AI Inference Server is a standalone vLLM instance running locally,
-on a RHEL AI host, or in an OpenShift container.
+Red Hat AI Inference is a standalone vLLM-based inference stack running
+locally, on a RHEL AI host, or in an OpenShift container.
 
 ### Quick start
 
@@ -131,6 +131,11 @@ providers:
 ```bash
 export REDHAT_AI_API_KEY="your-maas-api-key"
 ```
+
+> **Note:** The `base_url` must point to the OpenAI-compatible inference
+> endpoint (`/v1`), not the native MaaS management API (`/maas-api/v1`).
+> The `/maas-api/v1` prefix is used for token generation and
+> subscription-level model listing — Abbenay does not use it.
 
 ### Key differences from Inference Server
 
