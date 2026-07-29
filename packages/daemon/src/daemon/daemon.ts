@@ -182,8 +182,10 @@ export async function startDaemon(opts?: DaemonOptions): Promise<DaemonState> {
 
   try {
     if (isWin32) {
-      // Windows local IPC: bind loopback TCP (ephemeral port by default) and write daemon.addr.
-      // Named-pipe gRPC is out of scope; reuse the existing TCP bind path.
+      // Windows local IPC: loopback TCP with ephemeral port (DR-044).
+      // Unlike Unix sockets, TCP does not enforce kernel-level access control;
+      // consumer auth (DR-037) gates sensitive RPCs, and daemon.addr lives
+      // under per-user %TEMP%. Nonce-based hardening tracked as a follow-up.
       const boundPort = await bindTcpGrpc(
         server,
         localTcpHost,

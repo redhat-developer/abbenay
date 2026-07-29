@@ -118,6 +118,9 @@ export function parseAddressFileContent(content: string): DaemonAddress | null {
 export function writeAddressFile(host: string, port: number): void {
   ensureRuntimeDir();
   const addrPath = getAddressPath();
+  // mode 0o600 is effective on Unix only; on Windows, NTFS ACLs inherited
+  // from per-user %TEMP% provide user-level isolation (icacls hardening
+  // tracked separately).
   fs.writeFileSync(addrPath, `${host}:${port}\n`, { mode: 0o600 });
 }
 
@@ -249,12 +252,11 @@ export function isDaemonRunning(): boolean {
   }
 
   if (process.platform === 'win32') {
+    // Sync check: PID failed above, fall back to address file existence.
+    // Actual TCP liveness requires async probeTcpAddress(); callers that
+    // need a connection guarantee should use an async variant instead.
     const addr = readAddressFile();
-    if (!addr) {
-      return false;
-    }
-    // Best-effort async probe cast (matches historical Unix helper shape)
-    return probeTcpAddress(addr.host, addr.port) as unknown as boolean;
+    return addr !== null;
   }
 
   const socketPath = getSocketPath();
