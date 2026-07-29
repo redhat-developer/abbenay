@@ -1,0 +1,2 @@
+---
+_extends: ansible/team-devtools:/.github/release-drafter.yml

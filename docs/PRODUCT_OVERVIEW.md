@@ -334,9 +334,9 @@ session sidebar, context window compression.
 - Model IDs prefixed with provider
 
 ### Red Hat AI
-- Dedicated `redhat` engine — Inference Server or OpenShift AI MaaS
-- Default endpoint `http://127.0.0.1:8000/v1` (Inference Server); MaaS users override `base_url`
-- API key optional for Inference Server; typically required for MaaS
+- Dedicated `redhat` engine — Red Hat AI Inference or OpenShift AI MaaS
+- Default endpoint `http://127.0.0.1:8000/v1` (Inference profile); MaaS users override `base_url`
+- API key optional for Inference profile; typically required for MaaS
 - See [REDHAT_AI.md](REDHAT_AI.md) for full setup
 
 ### vLLM / TGI

@@ -185,8 +185,20 @@ jobs:
           # Strip pre-release suffix for the VSIX version (vsce requires pure semver)
           vsix_ver="${ver%%-*}"
 
+          # Retrieve changelog from the release-drafter draft (if one exists)
+          changelog=""
+          draft_tag="$(gh release list --json tagName,isDraft \
+            --jq '.[] | select(.isDraft) | .tagName' 2>/dev/null | head -1)" || true
+          draft_body=""
+          if [ -n "$draft_tag" ]; then
+            draft_body="$(gh release view "$draft_tag" --json body --jq '.body' 2>/dev/null)" || true
+          fi
+          if [ -n "$draft_body" ]; then
+            changelog="${draft_body}"$'\n\n'
+          fi
+
           body="$(cat <<BODY
-          ## Artifacts
+          ${changelog}## Artifacts
 
           | File | What it is | Install |
           |------|-----------|---------|
@@ -222,6 +234,11 @@ jobs:
               --notes "${body}" \
               $prerelease_flag \
               "${assets[@]}"
+          fi
+
+          # Clean up the draft release now that its changelog is merged
+          if [ -n "$draft_tag" ] && [ "$draft_tag" != "$tag" ]; then
+            gh release delete "$draft_tag" --yes 2>/dev/null || true
           fi
 
   publish-vscode:
