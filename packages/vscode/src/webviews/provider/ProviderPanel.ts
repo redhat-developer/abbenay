@@ -63,6 +63,10 @@ export class ProviderPanel {
     // Handle messages from the webview
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
+        if (message.type === 'focusChat') {
+          vscode.commands.executeCommand('abbenay.chatView.focus');
+          return;
+        }
         try {
           await handleProviderMessage(message, this._panel.webview, this._client);
         } catch (error) {
