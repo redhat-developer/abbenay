@@ -77,6 +77,19 @@ providers:
         openai_compat_tools: passthrough   # Open WebUI Native FC for this model only
 ```
 
+When passthrough is enabled, OpenAI `tool_choice` is honored (DR-046):
+
+| `tool_choice` | Behavior |
+|---------------|----------|
+| omitted / `auto` | Model may call tools (AI SDK default) |
+| `none` | Tools are offered but the model must not call them |
+| `required` | Model must call at least one tool |
+| `{ "type": "function", "function": { "name": "…" } }` | Model must call that function (must appear in `tools`) |
+
+Invalid `tool_choice`, `required`/specific-function without usable `tools`, or a
+function name not in `tools` returns `400 invalid_request_error`. When tools
+mode is `off`, `tool_choice` is ignored like `tools`.
+
 **Security tradeoff:** Passthrough trusts the client’s tool list and does not
 use Abbenay’s approval UI. Prefer enabling it only on models you use with
 trusted clients. For Abbenay-executed / approval-gated tools, use the dashboard,

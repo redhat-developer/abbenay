@@ -34,6 +34,7 @@ import {
   type ToolDefinition,
   type ToolExecutor,
   type ToolValidationCallback,
+  type ChatToolChoice,
 } from './engines.js';
 import type { ToolRegistry } from './tool-registry.js';
 import { createToolValidator } from './tool-approval.js';
@@ -112,6 +113,11 @@ export interface ChatToolOptions {
   toolFilter?: string[];
   /** Session ID for session-scoped tool visibility */
   sessionId?: string;
+  /**
+   * AI SDK toolChoice (DR-046). Used by `/v1` passthrough when OpenAI
+   * `tool_choice` is present; ignored when no tools are registered.
+   */
+  toolChoice?: ChatToolChoice;
   /**
    * Called when a tool matches `require_approval` patterns and needs user confirmation.
    * The implementation is transport-specific: the web server writes an SSE event and
@@ -688,24 +694,30 @@ export class CoreState {
     const isJsonStrict = flatPolicy?.outputFormat === 'json_only';
     const shouldRetryJson = isJsonStrict && flatPolicy?.retryOnInvalidJson;
 
+    const toolChoice = toolOptions?.toolChoice;
+
     if (isJsonStrict && !shouldRetryJson) {
       yield* streamChat(
         providerCfg.engine, engineModelId, processedMessages,
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
         true,
+        toolChoice,
       );
     } else if (shouldRetryJson) {
       yield* streamChatWithJsonRetry(
         providerCfg.engine, engineModelId, processedMessages,
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
+        toolChoice,
       );
     } else {
       yield* streamChat(
         providerCfg.engine, engineModelId, processedMessages,
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
+        false,
+        toolChoice,
       );
     }
   }
@@ -890,12 +902,13 @@ async function* streamChatWithJsonRetry(
   toolExecutor: ToolExecutor | undefined,
   toolValidator: ToolValidationCallback | undefined,
   maxSteps: number,
+  toolChoice?: ChatToolChoice,
 ): AsyncGenerator<ChatChunk> {
   let fullText = '';
   let finishReason = 'stop';
   const buffered: ChatChunk[] = [];
 
-  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true)) {
+  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice)) {
     buffered.push(chunk);
     if (chunk.type === 'text') {
       fullText += chunk.text;
@@ -947,5 +960,5 @@ async function* streamChatWithJsonRetry(
     { role: 'user', content: retryPrompt },
   ];
 
-  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true);
+  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice);
 }

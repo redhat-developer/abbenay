@@ -811,3 +811,20 @@ the right without programmatic workarounds. Deferring chat provider routing
 to the consumer avoids duplication with vscode-ansible's existing
 `chatProvider.ts` pattern. `<dialog>` was chosen over a custom overlay for
 built-in accessibility, focus trapping, and `::backdrop` support.
+
+---
+
+## DR-046: Honor OpenAI `tool_choice` on `/v1` passthrough
+
+**Date:** 2026-08-03
+**Decision:** When `openai_compat` tools mode is `passthrough` (DR-032), map
+OpenAI `tool_choice` (`auto` / `none` / `required` / specific function) to the
+AI SDK `toolChoice` and forward it through `ChatToolOptions` → `streamChat` →
+`streamText`. Reject invalid shapes and `required`/specific-function without a
+matching request tool with `400`. When tools mode is `off`, ignore
+`tool_choice` the same way `tools` are ignored. Passthrough keeps
+`maxToolIterations: 1` so forced tool choice cannot open an executor loop.
+**Rationale:** Clients such as Open WebUI Native function calling send
+`tool_choice` to force or suppress tool use; dropping it silently made
+passthrough incomplete versus a real OpenAI-compatible endpoint (issue #77).
+Numbered DR-046 because main already shipped VS Code webview UX as DR-045.
