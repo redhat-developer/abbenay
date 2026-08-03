@@ -1188,6 +1188,7 @@
                 :disabled="wizardStep === 1 && !wizardEngine">Next</button>
         <!-- Save — show in wizard flow (step 3, not editing model) OR from Models tab when editing a model -->
         <button class="btn btn-primary" x-show="(wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab) || (wizardFromModelsTab && wizardEditingModel)" @click="wizardSave()">Save</button>
+      </div>
     </div>
   </div>
 
@@ -1691,11 +1692,21 @@ function dashboard() {
     
     // ── Config location modal ──
     async openConfigModal() {
+      // Show first so existing radios bind to the current selection. Updating
+      // connectedWorkspaces can recreate name="cfg" radios; the browser may
+      // auto-check the first option ("all") and Alpine would sync that into
+      // configLocation. Capture selection immediately before that assignment
+      // (not before the await) so an intentional click during fetch is kept.
+      this.showConfigModal = true;
       try {
         const resp = await apiFetch('/api/workspaces');
-        this.connectedWorkspaces = (await resp.json()).workspaces || [];
-      } catch { this.connectedWorkspaces = []; }
-      this.showConfigModal = true;
+        const workspaces = (await resp.json()).workspaces || [];
+        const selected = this.configLocation;
+        this.connectedWorkspaces = workspaces;
+        this.configLocation = selected;
+      } catch {
+        this.connectedWorkspaces = [];
+      }
     },
     async applyConfigLocation() {
       await this.loadConfig();
