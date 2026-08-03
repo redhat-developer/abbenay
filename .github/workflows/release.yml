@@ -245,7 +245,6 @@ jobs:
     needs: [build, release]
     runs-on: ubuntu-latest
     environment: release
-    if: ${{ !contains(github.ref_name, 'alpha') }}
     steps:
       - uses: actions/checkout@v6
 
