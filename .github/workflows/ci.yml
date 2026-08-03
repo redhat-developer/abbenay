@@ -66,6 +66,9 @@ jobs:
           - runner: macos-latest
             platform: darwin
             arch: arm64
+          - runner: windows-latest
+            platform: win32
+            arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -81,6 +84,7 @@ jobs:
           key: build-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'bootstrap.sh') }}
 
       - name: Bootstrap
+        shell: bash
         run: ./bootstrap.sh
 
       - name: Cache npm
@@ -99,6 +103,10 @@ jobs:
       - name: Smoke test @abbenay/core
         run: node --input-type=module -e "import { CoreState } from './index.js'"
         working-directory: packages/daemon/dist/core
+
+      - name: Smoke test Windows daemon IPC
+        if: matrix.platform == 'win32'
+        run: npm run ci:smoke-win32-ipc
 
       - name: Upload SEA artifact
         uses: actions/upload-artifact@v7

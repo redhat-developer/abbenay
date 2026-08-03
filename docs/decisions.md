@@ -128,7 +128,8 @@ keychain libraries -- libsecret on Linux, Keychain.framework on macOS). Neither
 can run on a different OS or architecture. A "universal" VSIX would need to
 bundle all platform variants (tripling size) or would silently fail on
 non-matching platforms. Platform-specific VSIXes ensure the marketplace and
-manual installs deliver the correct binaries for each user's system.
+manual installs deliver the correct binaries for each user's system.  
+**Superseded by:** DR-044
 
 ---
 
@@ -161,7 +162,9 @@ without producing redundant artifacts. All 3 must pass to gate the release.
 **Date:** 2026-03-11  
 **Decision:** Use `.tar.gz` instead of `.zip` for daemon distribution archives.  
 **Rationale:** Smaller file size. tar.gz is the standard for Linux/macOS binary
-distribution and is natively supported on both platforms.
+distribution and is natively supported on both platforms.  
+**Note:** DR-044 adds `.zip` archives for Windows (`win32-x64`) only; Unix
+platforms keep `.tar.gz`.
 
 ---
 
@@ -398,15 +401,15 @@ architecture clean and benefits all gRPC clients (CLI, Python, future editors).
 as part of the release workflow. VS Code Marketplace uses
 `VSCODE_MARKETPLACE_TOKEN` and OpenVSX uses `OVSX_MARKETPLACE_TOKEN`, both
 passed to `scripts/publish-vscode.js` which handles multi-platform VSIX
-publishing. The publish job uses the `release` GitHub environment. Alpha releases
-are excluded from publishing; beta/rc go as pre-release. The extension publisher
-is changed from `abbenay` to `redhat`. This follows the Red Hat convention
-established by `redhat-developer/vscode-yaml`.
+publishing. The publish job uses the `release` GitHub environment. Alpha/beta/rc
+tags are published with `--pre-release`. The extension publisher is changed from
+`abbenay` to `redhat`. This follows the Red Hat convention established by
+`redhat-developer/vscode-yaml`.
 **Rationale:** GitHub Release assets require manual download and sideloading —
 fine for early adopters but a barrier to organic adoption. Publishing to both
 VS Code Marketplace and OpenVSX ensures coverage for VS Code and compatible
-editors (Eclipse Theia, VSCodium, Gitpod). Gating alpha releases prevents
-incomplete builds from reaching end users.
+editors (Eclipse Theia, VSCodium, Gitpod). Pre-release flags keep alpha/beta/rc
+builds out of the stable channel while still allowing Marketplace installs.
 
 ---
 
@@ -756,3 +759,22 @@ command execution while keeping trusted MCP binaries usable. Numbered DR-043
 because main already shipped air-gap docs as DR-038 and AAP-82836 claims
 DR-040 for credential aggregation.
 
+---
+
+## DR-044: win32-x64 platform + loopback TCP local IPC
+
+**Date:** 2026-07-23  
+**Decision:** Add `win32-x64` as a fourth supported platform (CI, release,
+Marketplace VSIX). On Windows, local daemon IPC uses loopback TCP
+(`127.0.0.1` + ephemeral port) with `host:port` written to
+`<runtimeDir>/daemon.addr` (runtime dir = `%TEMP%/abbenay`). Do **not** use
+named-pipe gRPC for local IPC in this release. Linux/macOS keep Unix sockets.
+Windows distribution archives are `.zip`; Unix remains `.tar.gz` (DR-013).
+`bootstrap.sh` downloads the official `node-v*-win-x64.zip` layout on Windows.
+**Supersedes:** DR-010 (platform list expands from 3 to 4).  
+**Rationale:** `@grpc/grpc-js` already supports TCP (used for containers via
+`--grpc-port`); named-pipe gRPC was stubbed but unproven. Loopback plaintext is
+already allowed by DR-029. Shipping `win32-x64` unblocks making Abbenay a hard
+`extensionDependency` of vscode-ansible on Windows (AAP-82840 / AAP-82970).
+Authenticode signing, `darwin-x64`, Python Windows paths, and named-pipe gRPC
+remain out of scope.
