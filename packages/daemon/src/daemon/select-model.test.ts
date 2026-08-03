@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { DaemonState } from './state.js';
 
 vi.mock('./transport.js', () => ({
   isDaemonRunningSync: vi.fn(() => true),
@@ -15,6 +16,13 @@ vi.mock('./daemon.js', () => ({
 vi.mock('./chat.js', () => ({
   promptModelPicker: vi.fn(),
 }));
+
+/** Minimal DaemonState stand-in for selectModel unit tests. */
+function mockDaemonState(models: unknown[] = []): DaemonState {
+  return {
+    listModels: vi.fn().mockResolvedValue(models),
+  } as unknown as DaemonState;
+}
 
 // ── selectModel ──────────────────────────────────────────────────────
 
@@ -33,7 +41,7 @@ describe('selectModel', () => {
   it('returns null and prints guidance when no models are configured', async () => {
     const { DaemonState } = await import('./state.js');
     vi.mocked(DaemonState).mockImplementation(function () {
-      return { listModels: vi.fn().mockResolvedValue([]) } as any;
+      return mockDaemonState([]);
     });
 
     const { selectModel } = await import('./model-picker.js');
@@ -53,7 +61,7 @@ describe('selectModel', () => {
     ];
     const { DaemonState } = await import('./state.js');
     vi.mocked(DaemonState).mockImplementation(function () {
-      return { listModels: vi.fn().mockResolvedValue(models) } as any;
+      return mockDaemonState(models);
     });
 
     const { promptModelPicker } = await import('./chat.js');
@@ -75,7 +83,7 @@ describe('selectModel', () => {
     ];
     const { DaemonState } = await import('./state.js');
     vi.mocked(DaemonState).mockImplementation(function () {
-      return { listModels: vi.fn().mockResolvedValue(models) } as any;
+      return mockDaemonState(models);
     });
 
     const { promptModelPicker } = await import('./chat.js');
@@ -92,8 +100,7 @@ describe('selectModel', () => {
     vi.mocked(isDaemonRunningSync).mockReturnValue(false);
 
     const { startDaemon } = await import('./daemon.js');
-    const fakeState = { listModels: vi.fn().mockResolvedValue([]) };
-    vi.mocked(startDaemon).mockResolvedValue(fakeState as any);
+    vi.mocked(startDaemon).mockResolvedValue(mockDaemonState([]));
 
     const { selectModel } = await import('./model-picker.js');
     await selectModel();
@@ -107,7 +114,7 @@ describe('selectModel', () => {
 
     const { DaemonState } = await import('./state.js');
     vi.mocked(DaemonState).mockImplementation(function () {
-      return { listModels: vi.fn().mockResolvedValue([]) } as any;
+      return mockDaemonState([]);
     });
 
     const { startDaemon } = await import('./daemon.js');

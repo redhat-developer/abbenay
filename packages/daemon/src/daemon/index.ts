@@ -107,7 +107,11 @@ program
       if (status.pid) {
         console.log(`  PID: ${status.pid}`);
       }
-      console.log(`  Socket: ${status.socketPath}`);
+      console.log(
+        process.platform === 'win32'
+          ? `  Address: ${status.socketPath}`
+          : `  Socket: ${status.socketPath}`,
+      );
     } else {
       console.log('Abbenay daemon is not running');
       process.exit(1);

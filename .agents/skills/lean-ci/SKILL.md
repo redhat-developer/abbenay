@@ -38,7 +38,8 @@ locally-runnable scripts; CI just calls them.
 | `npm run lint` | Lint all workspace packages | Quality gate |
 | `npm run check:no-query-secrets` | Ban query-secret URL patterns in sources (DR-035) | Quality gate |
 | `npm test` | Test all workspace packages | Quality gate |
-| `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + tar.gz) | Build artifacts |
+| `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + archive) | Build artifacts |
+| `npm run ci:smoke-win32-ipc` | Start Windows SEA, HealthCheck over loopback TCP | Windows build smoke |
 | `npm run ci:package-python` | Build Python wheel via `uvx hatch build` | Python artifact |
 | `npm run ci:publish-vscode` | Publish VSIXes to Marketplace + OpenVSX | Release only |
 
@@ -48,9 +49,10 @@ The CI workflow (`.github/workflows/ci.yml`) has three jobs:
 
 - **lint-and-test**: runs on ubuntu-latest with xvfb (for VS Code extension
   tests), gates all other jobs
-- **build**: matrix across linux-x64, linux-arm64, macos-arm64; produces SEA
-  binaries, platform-specific VSIXes, and distribution tar.gz archives; runs
-  `@abbenay/core` smoke test on all runners
+- **build**: matrix across linux-x64, linux-arm64, macos-arm64, win32-x64;
+  produces SEA binaries, platform-specific VSIXes, and distribution archives
+  (`.tar.gz` on Unix, `.zip` on Windows); runs `@abbenay/core` smoke test on
+  all runners and `npm run ci:smoke-win32-ipc` on Windows
 - **package-python**: produces the Python client wheel
 
 ## Rules for modifications
