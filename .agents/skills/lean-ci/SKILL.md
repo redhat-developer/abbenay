@@ -133,13 +133,13 @@ public registries (uses the `release` GitHub environment):
 
 | Job | Target | Trigger condition | Auth mechanism |
 |-----|--------|-------------------|----------------|
-| `publish-vscode` | VS Code Marketplace + OpenVSX | All tags except `*alpha*` | `VSCODE_MARKETPLACE_TOKEN`, `OVSX_MARKETPLACE_TOKEN` |
+| `publish-vscode` | VS Code Marketplace + OpenVSX | All release tags | `VSCODE_MARKETPLACE_TOKEN`, `OVSX_MARKETPLACE_TOKEN` |
 
 - **VS Code Marketplace + OpenVSX**: `scripts/publish-vscode.js` finds all
   `.vsix` files in the downloaded artifacts and publishes each with
-  `vsce publish -p <token>` and `ovsx publish -p <token>`. Beta/RC tags are
-  published with `--pre-release`. Alpha tags are excluded entirely.
-  Follows the Red Hat convention from `redhat-developer/vscode-yaml`.
+  `vsce publish -p <token>` and `ovsx publish -p <token>`. Alpha/beta/RC
+  tags are published with `--pre-release`. Follows the Red Hat convention
+  from `redhat-developer/vscode-yaml`.
 
 ### One-time setup for publishing
 
