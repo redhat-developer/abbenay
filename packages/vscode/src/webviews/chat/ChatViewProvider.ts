@@ -37,9 +37,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       'Abbenay Chat',
     );
 
-    webviewView.webview.onDidReceiveMessage(async (message: ChatToHostMessage) => {
+    webviewView.webview.onDidReceiveMessage(async (message: { type: string }) => {
+      if (message.type === 'configureProvider') {
+        vscode.commands.executeCommand('abbenay.configureProvider');
+        return;
+      }
+      if (message.type === 'openDashboard') {
+        vscode.commands.executeCommand('abbenay.openDashboard');
+        return;
+      }
       try {
-        await handleChatMessage(message, webviewView.webview, this._client);
+        await handleChatMessage(message as ChatToHostMessage, webviewView.webview, this._client);
       } catch (error) {
         this._logger.error('[ChatView] Error handling message:', error);
         webviewView.webview.postMessage({

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { DaemonClient } from '../../daemon/client';
 import { getWebviewContent } from '../shared/getWebviewContent';
 import { getLogger } from '../../utils/logger';
+import { openChat } from '../../utils/chatProvider';
 import { handleProviderMessage } from './providerHandler';
 
 /**
@@ -63,6 +64,10 @@ export class ProviderPanel {
     // Handle messages from the webview
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
+        if (message.type === 'focusChat') {
+          openChat();
+          return;
+        }
         try {
           await handleProviderMessage(message, this._panel.webview, this._client);
         } catch (error) {

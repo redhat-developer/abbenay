@@ -86,6 +86,46 @@ function showNotification(message: string, isError = false): void {
   }, 4000);
 }
 
+// ─── Modal Helpers ───────────────────────────────────────────────────
+
+function resetFormState(): void {
+  editingProviderId = null;
+  selectedEngineId = '';
+  providerName = '';
+  apiKeyMethod = 'keychain';
+  section1Open = true;
+  section2Open = false;
+  selectedModels.clear();
+  leftSelected.clear();
+  rightSelected.clear();
+  discoveredModels = [];
+  discoverError = null;
+  isDiscovering = false;
+  modelFilter = '';
+  pendingEditModels = null;
+}
+
+function openModal(title: string): void {
+  const dialog = document.getElementById('provider-modal') as HTMLDialogElement | null;
+  const titleEl = document.getElementById('modal-title');
+  if (!dialog) {return;}
+
+  if (titleEl) {
+    titleEl.textContent = title;
+  }
+
+  renderAccordion();
+  dialog.showModal();
+}
+
+function closeModal(): void {
+  const dialog = document.getElementById('provider-modal') as HTMLDialogElement | null;
+  if (!dialog) {return;}
+
+  dialog.close();
+  resetFormState();
+}
+
 // ─── Initial DOM ─────────────────────────────────────────────────────
 
 function buildInitialDOM(): void {
@@ -99,49 +139,73 @@ function buildInitialDOM(): void {
   subtitle.className = 'subtitle';
   subtitle.textContent = 'Manage LLM providers and model selections';
 
+  const buttonContainer = document.createElement('div');
+  buttonContainer.className = 'header-actions';
+
+  const addBtn = document.createElement('vscode-button') as HTMLElement;
+  addBtn.id = 'add-provider-btn';
+  addBtn.textContent = '+ Add Provider';
+  addBtn.addEventListener('click', () => {
+    resetFormState();
+    openModal('Add New Provider');
+  });
+
+  buttonContainer.appendChild(addBtn);
+
   const sectionTitle = document.createElement('h2');
   sectionTitle.textContent = 'Providers';
 
   const providerList = document.createElement('div');
   providerList.id = 'provider-list';
 
-  const buttonContainer = document.createElement('div');
-  buttonContainer.style.margin = '12px 0';
+  const dialog = document.createElement('dialog');
+  dialog.id = 'provider-modal';
+  dialog.addEventListener('close', () => resetFormState());
 
-  const addBtn = document.createElement('vscode-button') as HTMLElement;
-  addBtn.id = 'add-provider-btn';
-  addBtn.textContent = '+ Add Provider';
-  addBtn.addEventListener('click', () => {
-    editingProviderId = null;
-    selectedEngineId = '';
-    providerName = '';
-    section1Open = true;
-    section2Open = false;
-    selectedModels.clear();
-    leftSelected.clear();
-    rightSelected.clear();
-    discoveredModels = [];
-    discoverError = null;
-    isDiscovering = false;
-    modelFilter = '';
-    renderAccordion();
-  });
+  const modalHeader = document.createElement('div');
+  modalHeader.className = 'modal-header';
 
-  buttonContainer.appendChild(addBtn);
+  const modalTitle = document.createElement('h2');
+  modalTitle.id = 'modal-title';
+  modalTitle.textContent = 'Add New Provider';
 
-  const accordionContainer = document.createElement('div');
-  accordionContainer.id = 'accordion-container';
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'modal-close';
+  closeBtn.textContent = '\u00d7';
+  closeBtn.title = 'Close';
+  closeBtn.addEventListener('click', () => closeModal());
+
+  modalHeader.appendChild(modalTitle);
+  modalHeader.appendChild(closeBtn);
+
+  const modalBody = document.createElement('div');
+  modalBody.id = 'modal-body';
+
+  dialog.appendChild(modalHeader);
+  dialog.appendChild(modalBody);
 
   root.innerHTML = '';
+  const chatLink = document.createElement('div');
+  chatLink.className = 'chat-link';
+
+  const chatBtn = document.createElement('vscode-button') as HTMLElement;
+  chatBtn.setAttribute('secondary', '');
+  chatBtn.textContent = 'Start Chatting \u2192';
+  chatBtn.addEventListener('click', () => {
+    vsCodeApi.postMessage({ type: 'focusChat' });
+  });
+
+  chatLink.appendChild(chatBtn);
+
   root.appendChild(title);
   root.appendChild(subtitle);
+  root.appendChild(buttonContainer);
   root.appendChild(sectionTitle);
   root.appendChild(providerList);
-  root.appendChild(buttonContainer);
-  root.appendChild(accordionContainer);
+  root.appendChild(chatLink);
+  root.appendChild(dialog);
 
   renderProviders();
-  renderAccordion();
 }
 
 // ─── Render Providers ────────────────────────────────────────────────
@@ -219,22 +283,13 @@ function renderProviders(): void {
 // ─── Start Edit ──────────────────────────────────────────────────────
 
 function startEdit(p: ProviderInfo): void {
+  resetFormState();
   editingProviderId = p.id;
   selectedEngineId = p.engine;
-  section1Open = true;
-  section2Open = false;
-  selectedModels.clear();
-  leftSelected.clear();
-  rightSelected.clear();
-  discoveredModels = [];
-  discoverError = null;
-  isDiscovering = false;
-  modelFilter = '';
-  pendingEditModels = null;
 
   vsCodeApi.postMessage({ type: 'getConfig' });
 
-  renderAccordion();
+  openModal(`Edit Provider: ${p.id}`);
 
   setTimeout(() => {
     triggerModelDiscovery();
@@ -244,14 +299,10 @@ function startEdit(p: ProviderInfo): void {
 // ─── Render Accordion ────────────────────────────────────────────────
 
 function renderAccordion(): void {
-  const container = document.getElementById('accordion-container');
+  const container = document.getElementById('modal-body');
   if (!container) {return;}
 
   container.innerHTML = '';
-
-  if (editingProviderId === null && section1Open === false) {
-    return;
-  }
 
   const editing = providers.find((p) => p.id === editingProviderId);
   const selectedEngine = selectedEngineId || editing?.engine || '';
@@ -529,21 +580,7 @@ function renderAccordion(): void {
   cancelBtn.id = 'cancel-btn';
   cancelBtn.setAttribute('secondary', '');
   cancelBtn.textContent = 'Cancel';
-  cancelBtn.addEventListener('click', () => {
-    editingProviderId = null;
-    selectedEngineId = '';
-    providerName = '';
-    section1Open = false;
-    section2Open = false;
-    selectedModels.clear();
-    leftSelected.clear();
-    rightSelected.clear();
-    discoveredModels = [];
-    discoverError = null;
-    isDiscovering = false;
-    modelFilter = '';
-    renderAccordion();
-  });
+  cancelBtn.addEventListener('click', () => closeModal());
 
   formActions.appendChild(saveBtn);
   formActions.appendChild(cancelBtn);
@@ -863,7 +900,7 @@ window.addEventListener('message', (event) => {
 
     case 'engines':
       engines = msg.engines || [];
-      if (section1Open) {
+      if ((document.getElementById('provider-modal') as HTMLDialogElement)?.open) {
         renderAccordion();
       }
       break;
@@ -891,19 +928,7 @@ window.addEventListener('message', (event) => {
     case 'configureResult':
       if (msg.success) {
         showNotification(`Provider ${msg.providerId} ${editingProviderId ? 'updated' : 'added'} successfully`);
-        editingProviderId = null;
-        selectedEngineId = '';
-        providerName = '';
-        section1Open = false;
-        section2Open = false;
-        selectedModels.clear();
-        leftSelected.clear();
-        rightSelected.clear();
-        discoveredModels = [];
-        discoverError = null;
-        isDiscovering = false;
-        modelFilter = '';
-        renderAccordion();
+        closeModal();
       } else {
         showNotification(`Failed: ${msg.error}`, true);
       }
