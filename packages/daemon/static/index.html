@@ -128,7 +128,8 @@
       font-family: 'Red Hat Text', sans-serif;
       border: 1px solid #d2d2d2; border-radius: 3px; background: #fff;
     }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: #ee0000; box-shadow: 0 0 0 1px #ee0000; }
+    /* Focus uses blue, not the brand/error red, so a focused field is never mistaken for a validation error. */
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #06c; box-shadow: 0 0 0 1px #06c; }
     
     /* Modal */
     .modal-backdrop {
@@ -153,6 +154,8 @@
       border-top: 1px solid #d2d2d2;
       display: flex; justify-content: flex-end; gap: var(--rh-space-sm); align-items: center;
     }
+    /* Keeps Cancel/dismiss clearly separated from the primary action so a mis-click can't fire it. */
+    .footer-dismiss { margin-right: auto; }
     
     /* Step indicators */
     .step-indicators { display: flex; gap: 8px; align-items: center; }
@@ -177,8 +180,9 @@
     .engine-tile .tile-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
     .engine-tile .tile-hint { font-size: 0.75rem; color: #6a6e73; }
     
-    /* Dual list model selector */
-    .dual-list { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--rh-space-sm); min-height: 350px; }
+    /* Dual list model selector — each row carries its own Add/Remove/Configure action
+       (no shared middle column) so the action is right where the user is looking. */
+    .dual-list { display: grid; grid-template-columns: 1fr 1fr; gap: var(--rh-space-sm); min-height: 350px; }
     .dual-list-panel {
       border: 1px solid #d2d2d2; border-radius: 3px; overflow-y: auto; max-height: 400px;
     }
@@ -187,16 +191,12 @@
       color: #6a6e73; position: sticky; top: 0; z-index: 1;
       border-bottom: 1px solid #d2d2d2;
     }
-    .dual-list-actions {
-      display: flex; flex-direction: column; justify-content: center; gap: var(--rh-space-sm);
-    }
     .model-item {
       display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer;
+      padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
       font-size: 0.85rem;
     }
     .model-item:hover { background: #f8f8f8; }
-    .model-item.selected { background: #e7f1fa; }
     .model-item .model-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     
     /* Inline param editor */
@@ -896,14 +896,17 @@
   </main>
 
   <!-- ═══════════ ADD PROVIDER WIZARD MODAL ═══════════ -->
-  <div class="modal-backdrop" x-show="wizardOpen" x-cloak @click.self="wizardOpen = false">
+  <div class="modal-backdrop" x-show="wizardOpen" x-cloak @click.self="closeWizard()">
     <div class="modal" @click.stop>
       <div class="modal-header">
         <h2 x-text="wizardFromModelsTab ? 'Configure Model' : (wizardStep === 3 && wizardEditingModel ? 'Configure Model' : wizardEditMode ? (wizardStep === 2 ? 'Edit Provider' : 'Select Models') : (wizardStep === 1 ? 'Choose Engine' : wizardStep === 2 ? 'Configure Provider' : 'Select Models'))"></h2>
-        <div class="step-indicators" x-show="!wizardFromModelsTab">
-          <div class="step-dot" x-show="!wizardEditMode" :class="{ active: wizardStep === 1, completed: wizardStep > 1 }"></div>
-          <div class="step-dot" :class="{ active: wizardStep === 2, completed: wizardStep > 2 }"></div>
-          <div class="step-dot" :class="{ active: wizardStep === 3 }"></div>
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <div class="step-indicators" x-show="!wizardFromModelsTab">
+            <div class="step-dot" x-show="!wizardEditMode" :class="{ active: wizardStep === 1, completed: wizardStep > 1 }"></div>
+            <div class="step-dot" :class="{ active: wizardStep === 2, completed: wizardStep > 2 }"></div>
+            <div class="step-dot" :class="{ active: wizardStep === 3 }"></div>
+          </div>
+          <button class="rh-close-btn" @click="closeWizard()" aria-label="Close" title="Close">&times;</button>
         </div>
       </div>
       
@@ -911,10 +914,10 @@
         <!-- Step 1: Engine Picker -->
         <template x-if="wizardStep === 1">
           <div>
-            <p style="color: #6a6e73; margin: 0 0 16px;">Choose an engine (API implementation) for your new provider instance.</p>
+            <p style="color: #6a6e73; margin: 0 0 16px;">Choose an engine (API implementation) for your new provider instance. Selecting one advances automatically — this is a single choice, not a multi-select.</p>
             <div class="engine-grid">
               <template x-for="engine in [...engines].sort((a, b) => a.id.localeCompare(b.id))" :key="engine.id">
-                <div class="engine-tile" :class="{ selected: wizardEngine === engine.id }" @click="wizardEngine = engine.id">
+                <div class="engine-tile" :class="{ selected: wizardEngine === engine.id }" @click="selectEngine(engine.id)">
                   <div class="tile-name" x-text="engine.id"></div>
                   <div class="tile-hint" x-text="engine.requiresKey ? 'API key required' : 'No key needed'"></div>
                 </div>
@@ -927,17 +930,19 @@
         <template x-if="wizardStep === 2">
           <div>
             <div class="form-group">
-              <label>Provider Name (unique ID)</label>
+              <label>Provider Name (unique ID) <span style="color: #c9190b;" aria-hidden="true">*</span></label>
               <input type="text" x-model="wizardName" :placeholder="wizardEngine" 
                      pattern="[a-z0-9][a-z0-9._-]*" style="font-family: 'Red Hat Mono', monospace;"
-                     :disabled="wizardEditMode" :style="wizardEditMode ? 'background: #f0f0f0;' : ''">
+                     :disabled="wizardEditMode" :style="wizardEditMode ? 'background: #f0f0f0;' : ''"
+                     required aria-required="true">
               <small x-show="!wizardEditMode" style="color: #6a6e73; display: block; margin-top: 4px;">Lowercase, alphanumeric, dots, hyphens, underscores. No spaces or slashes.</small>
             </div>
             <div class="form-group">
-              <label>Base URL</label>
+              <label>Base URL <span style="color: #6a6e73; font-weight: 400;">(optional)</span></label>
               <input type="text" x-model="wizardBaseUrl" :placeholder="getEngineDefaultUrl(wizardEngine) || 'https://...'"
                      style="font-family: 'Red Hat Mono', monospace; font-size: 0.85rem;">
             </div>
+            <p class="rh-helper-text" style="margin: -4px 0 0;"><span style="color: #c9190b;">*</span> Required</p>
             
             <!-- API Key (only for key-required engines) -->
             <template x-if="engineRequiresKey(wizardEngine)">
@@ -979,37 +984,34 @@
                   <input type="text" placeholder="Search models..." x-model="wizardModelSearch" style="max-width: 300px;">
                 </div>
                 <div class="dual-list">
-                  <!-- Left: Available -->
+                  <!-- Left: Available — each row adds itself, no shared middle button -->
                   <div class="dual-list-panel">
                     <div class="dual-list-panel-header" x-text="'Available (' + filteredAvailableModels.length + ')'"></div>
                     <template x-for="m in filteredAvailableModels" :key="m.id">
-                      <div class="model-item" :class="{ selected: wizardLeftSelected.has(m.id) }" @click="toggleLeftSelect(m.id)">
+                      <div class="model-item">
                         <div class="model-name" x-text="m.id"></div>
-                        <div style="display: flex; gap: 2px;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
                           <span x-show="m.capabilities?.tools" class="cap-tag tools">T</span>
                           <span x-show="m.capabilities?.vision" class="cap-tag vision">V</span>
+                          <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem;" @click="addModel(m.id)">Add &rarr;</button>
                         </div>
                       </div>
                     </template>
                   </div>
                   
-                  <!-- Center: Actions -->
-                  <div class="dual-list-actions">
-                    <button class="btn btn-secondary btn-sm" @click="addSelectedModels()">Add &rarr;</button>
-                    <button class="btn btn-secondary btn-sm" @click="removeSelectedModels()">&larr; Remove</button>
-                  </div>
-                  
-                  <!-- Right: Enabled -->
+                  <!-- Right: Enabled — Configure/Remove live on the row itself -->
                   <div class="dual-list-panel">
                     <div class="dual-list-panel-header" x-text="'Enabled (' + Object.keys(wizardEnabledModels).length + ')'"></div>
                     <template x-for="[name, cfg] in Object.entries(wizardEnabledModels)" :key="name">
-                      <div class="model-item" :class="{ selected: wizardRightSelected.has(name) }" @click="toggleRightSelect(name)">
+                      <div class="model-item">
                         <div class="model-name" x-text="name"></div>
                         <div style="display: flex; align-items: center; gap: 4px;">
                           <span x-show="cfg.temperature != null || cfg.top_p != null || cfg.system_prompt" 
                                 style="font-size: 0.65rem; color: #6a6e73;" title="Has custom parameters">&#9881;</span>
                           <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem;" 
-                                  @click.stop="wizardEditingModel = name">Configure</button>
+                                  @click="wizardEditingModel = name">Configure</button>
+                          <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem; color: #c9190b;" 
+                                  @click="removeModel(name)">Remove</button>
                         </div>
                       </div>
                     </template>
@@ -1021,12 +1023,8 @@
             <!-- ── View B: Full-width model configuration (view flip) ── -->
             <template x-if="wizardEditingModel">
               <div>
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #d2d2d2;">
-                  <button class="btn btn-secondary btn-sm" 
-                          @click="wizardFromModelsTab ? (wizardOpen = false, wizardFromModelsTab = false, wizardEditingModel = null) : (wizardEditingModel = null)" 
-                          style="display: flex; align-items: center; gap: 4px;">
-                    &larr; <span x-text="wizardFromModelsTab ? 'Back to Models tab' : 'Back to models'"></span>
-                  </button>
+                <!-- Back navigation lives only in the footer (below) — no duplicate button here. -->
+                <div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #d2d2d2;">
                   <h3 style="margin: 0; font-size: 1rem; font-weight: 600;" x-text="'Configure: ' + wizardEditingModel"></h3>
                 </div>
 
@@ -1175,17 +1173,17 @@
       </div>
       
       <div class="modal-footer">
-        <span style="flex: 1; font-size: 0.85rem; color: #6a6e73;" x-show="wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab"
+        <span style="font-size: 0.85rem; color: #6a6e73;" x-show="wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab"
               x-text="Object.keys(wizardEnabledModels).length + ' model(s) enabled'"></span>
-        <!-- Cancel / Back to models button -->
-        <button class="btn btn-secondary" 
-                @click="wizardFromModelsTab ? (wizardOpen = false, wizardFromModelsTab = false, wizardEditingModel = null) : (wizardEditingModel ? (wizardEditingModel = null) : (wizardOpen = false))" 
-                x-text="wizardFromModelsTab ? (wizardEditingModel ? '← Back to Models tab' : 'Close') : (wizardEditingModel ? '← Back to models' : 'Cancel')"></button>
+        <!-- Cancel / Back — kept apart from the primary action (margin-right:auto) so it can't be mis-clicked -->
+        <button class="btn btn-secondary footer-dismiss" 
+                @click="wizardFromModelsTab ? closeWizard() : (wizardEditingModel ? (wizardEditingModel = null) : closeWizard())" 
+                x-text="wizardFromModelsTab ? 'Cancel' : (wizardEditingModel ? '← Back to models' : 'Cancel')"></button>
         <!-- Back (step navigation) — hidden when from Models tab -->
         <button class="btn btn-secondary" x-show="!wizardFromModelsTab && wizardStep > 1 && !(wizardEditMode && wizardStep === 2) && !wizardEditingModel" @click="wizardStep--">Back</button>
-        <!-- Next — hidden when from Models tab -->
-        <button class="btn btn-primary" x-show="!wizardFromModelsTab && wizardStep < 3 && !wizardEditingModel" @click="wizardNext()" 
-                :disabled="wizardStep === 1 && !wizardEngine">Next</button>
+        <!-- Next — only step 2 needs it now; step 1 (single-select engine tiles) advances on click -->
+        <button class="btn btn-primary" x-show="!wizardFromModelsTab && wizardStep === 2 && !wizardEditingModel" @click="wizardNext()" 
+                :disabled="!wizardName">Next</button>
         <!-- Save — show in wizard flow (step 3, not editing model) OR from Models tab when editing a model -->
         <button class="btn btn-primary" x-show="(wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab) || (wizardFromModelsTab && wizardEditingModel)" @click="wizardSave()">Save</button>
       </div>
@@ -1348,7 +1346,7 @@
         </fieldset>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" @click="cancelEditPolicy()">Cancel</button>
+        <button class="btn btn-secondary footer-dismiss" @click="cancelEditPolicy()">Cancel</button>
         <button class="btn" style="background: #ee0000; color: #fff; border-color: #a30000;" @click="saveEditingPolicy()">Save Policy</button>
       </div>
     </div>
@@ -1417,7 +1415,7 @@
         </div>
       </div>
       <div class="rh-modal-footer">
-        <button class="rh-btn rh-btn--secondary" @click="showConfigModal = false">Cancel</button>
+        <button class="rh-btn rh-btn--secondary footer-dismiss" @click="showConfigModal = false">Cancel</button>
         <button class="rh-btn rh-btn--primary" @click="applyConfigLocation()"
                 :disabled="(configLocation === 'workspace' && !workspacePath)">Apply</button>
       </div>
@@ -1493,8 +1491,6 @@ function dashboard() {
     wizardModelSearch: '',
     wizardDiscoveredModels: [],
     wizardEnabledModels: {},   // { modelName: { model_id?, temperature?, ... } }
-    wizardLeftSelected: new Set(),
-    wizardRightSelected: new Set(),
     wizardEditingModel: null,
     
     // ── Edit mode (reuses wizard) ──
@@ -1733,8 +1729,6 @@ function dashboard() {
       this.wizardModelSearch = '';
       this.wizardDiscoveredModels = [];
       this.wizardEnabledModels = {};
-      this.wizardLeftSelected = new Set();
-      this.wizardRightSelected = new Set();
       this.wizardEditingModel = null;
     },
     
@@ -1757,9 +1751,20 @@ function dashboard() {
       this.wizardModelSearch = '';
       this.wizardDiscoveredModels = [];
       this.wizardEnabledModels = JSON.parse(JSON.stringify(cfg.models || {}));
-      this.wizardLeftSelected = new Set();
-      this.wizardRightSelected = new Set();
       this.wizardEditingModel = null;
+    },
+    
+    /** Fully dismiss the wizard from any state (X button, backdrop click, or Cancel). */
+    closeWizard() {
+      this.wizardOpen = false;
+      this.wizardFromModelsTab = false;
+      this.wizardEditingModel = null;
+    },
+    
+    /** Step 1 is a single-select — choosing an engine advances immediately, no separate Next click. */
+    selectEngine(id) {
+      this.wizardEngine = id;
+      this.wizardNext();
     },
     
     async openModelConfig(model) {
@@ -1888,41 +1893,26 @@ function dashboard() {
       });
     },
     
-    toggleLeftSelect(id) {
-      if (this.wizardLeftSelected.has(id)) this.wizardLeftSelected.delete(id);
-      else this.wizardLeftSelected.add(id);
-      this.wizardLeftSelected = new Set(this.wizardLeftSelected);
-    },
-    toggleRightSelect(name) {
-      if (this.wizardRightSelected.has(name)) this.wizardRightSelected.delete(name);
-      else this.wizardRightSelected.add(name);
-      this.wizardRightSelected = new Set(this.wizardRightSelected);
-    },
-    
-    addSelectedModels() {
-      for (const id of this.wizardLeftSelected) {
-        // Key = engine model ID (default name), value = {} (default params)
-        // If already exists, auto-name with suffix
-        let name = id;
-        if (this.wizardEnabledModels[name]) {
-          let i = 1;
-          while (this.wizardEnabledModels[`${id}-${i}`]) i++;
-          name = `${id}-${i}`;
-          this.wizardEnabledModels[name] = { model_id: id };
-        } else {
-          this.wizardEnabledModels[name] = {};
-        }
+    /** Adds a single model — each row in the "Available" list acts on itself directly. */
+    addModel(id) {
+      // Key = engine model ID (default name), value = {} (default params)
+      // If already exists, auto-name with suffix
+      let name = id;
+      if (this.wizardEnabledModels[name]) {
+        let i = 1;
+        while (this.wizardEnabledModels[`${id}-${i}`]) i++;
+        name = `${id}-${i}`;
+        this.wizardEnabledModels[name] = { model_id: id };
+      } else {
+        this.wizardEnabledModels[name] = {};
       }
       this.wizardEnabledModels = { ...this.wizardEnabledModels };
-      this.wizardLeftSelected = new Set();
     },
     
-    removeSelectedModels() {
-      for (const name of this.wizardRightSelected) {
-        delete this.wizardEnabledModels[name];
-      }
+    /** Removes a single model — each row in the "Enabled" list acts on itself directly. */
+    removeModel(name) {
+      delete this.wizardEnabledModels[name];
       this.wizardEnabledModels = { ...this.wizardEnabledModels };
-      this.wizardRightSelected = new Set();
     },
     
     // toggleParamEditor removed — model config now uses the "view flip" pattern
