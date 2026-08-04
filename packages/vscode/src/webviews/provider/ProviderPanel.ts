@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { DaemonClient } from '../../daemon/client';
 import { getWebviewContent } from '../shared/getWebviewContent';
 import { getLogger } from '../../utils/logger';
+import { openChat } from '../../utils/chatProvider';
 import { handleProviderMessage } from './providerHandler';
 
 /**
@@ -64,7 +65,7 @@ export class ProviderPanel {
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
         if (message.type === 'focusChat') {
-          vscode.commands.executeCommand('abbenay.chatView.focus');
+          openChat();
           return;
         }
         try {

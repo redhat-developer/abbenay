@@ -778,3 +778,36 @@ already allowed by DR-029. Shipping `win32-x64` unblocks making Abbenay a hard
 `extensionDependency` of vscode-ansible on Windows (AAP-82840 / AAP-82970).
 Authenticode signing, `darwin-x64`, Python Windows paths, and named-pipe gRPC
 remain out of scope.
+
+---
+
+## DR-045: VSCode webview UX — modal provider form, secondary sidebar chat, native chat routing
+
+**Date:** 2026-08-04  
+**Decision:** Refactor the provider configuration webview and chat sidebar
+placement based on the UX review (AAP-77888 / ANSTRAT-1891):
+
+1. Replace the inline accordion add/edit provider form with a native `<dialog>`
+   modal. The "+ Add Provider" button moves above the list; the modal title
+   distinguishes "Add New Provider" from "Edit Provider: {name}".
+2. Move the chat view container from `activitybar` to `secondarySidebar` so
+   it appears on the right side by default, following the convention for chat
+   interfaces in IDEs (Copilot, Cursor, etc.).
+3. The "Start Chatting" button in the provider panel opens the native IDE chat
+   (`workbench.action.chat.open`) and falls back to Abbenay's sidebar only
+   when no native chat is available. Chat provider routing configuration is
+   the consumer's responsibility (e.g. vscode-ansible's
+   `ansibleEnvironments.llm.chatProvider`), not Abbenay's — avoiding duplicate
+   settings and detection logic.
+4. Add cross-navigation: gear menu in the chat toolbar with "Configure
+   Providers" / "Open Dashboard"; `view/title` menu contributions in the chat
+   title bar; "Start Chatting" link in the provider panel.
+
+**Rationale:** The UX review identified that the add/edit form was invisible
+below the fold (UX-001/002), the chat was not discoverable (UX-003), and a
+dedicated activity bar icon was questionable for a fallback chat (UX-003).
+The `secondarySidebar` contribution point (VS Code 1.93+) places the chat on
+the right without programmatic workarounds. Deferring chat provider routing
+to the consumer avoids duplication with vscode-ansible's existing
+`chatProvider.ts` pattern. `<dialog>` was chosen over a custom overlay for
+built-in accessibility, focus trapping, and `::backdrop` support.
