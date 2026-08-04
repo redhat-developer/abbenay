@@ -83,19 +83,6 @@
         }
       ]
     },
-    "menus": {
-      "view/title": [
-        {
-          "command": "abbenay.configureProvider",
-          "when": "view == abbenay.chatView",
-          "group": "navigation"
-        },
-        {
-          "command": "abbenay.openDashboard",
-          "when": "view == abbenay.chatView"
-        }
-      ]
-    },
     "configuration": {
       "title": "Abbenay Provider",
       "properties": {
