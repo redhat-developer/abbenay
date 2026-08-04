@@ -586,11 +586,15 @@
         <div style="padding: var(--rh-space-lg);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-md);">
             <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
-              MCP servers provide tools to the LLM. Configure them in <code>~/.config/abbenay/config.yaml</code> under <code>mcp_servers</code>.
+              MCP servers provide tools to the LLM. They are unrelated to Providers/Models (which are LLM inference backends) —
+              MCP servers register <em>tools</em> the LLM can call, independent of which model answers.
               Tools invoked via Abbenay's <code>/mcp</code> endpoint use the same approval policy as chat.
               Dynamic stdio registration requires an allowlisted binary and your approval before any process is spawned.
             </p>
-            <button class="btn btn-secondary btn-sm" @click="loadMcpServers(); loadMcpApprovals(); loadMcpConnections(); loadMcpStdioSpawns()">Refresh</button>
+            <div style="display: flex; gap: 8px; flex-shrink: 0;">
+              <button class="btn btn-primary btn-sm" @click="openNewMcpServer()">+ Add MCP Server</button>
+              <button class="btn btn-secondary btn-sm" @click="loadMcpServers(); loadMcpApprovals(); loadMcpConnections(); loadMcpStdioSpawns()">Refresh</button>
+            </div>
           </div>
 
           <template x-if="pendingStdioSpawns.length > 0">
@@ -698,7 +702,7 @@
           <template x-if="mcpServers.length === 0">
             <div class="empty-state">
               <p>No MCP servers configured.</p>
-              <p style="font-size: 0.85rem; color: #6a6e73;">Add servers to your config under <code>mcp_servers:</code></p>
+              <p style="font-size: 0.85rem; color: #6a6e73;">Click "Add MCP Server" above, or add an entry directly under <code>mcp_servers:</code> in <code>~/.config/abbenay/config.yaml</code>.</p>
             </div>
           </template>
 
@@ -733,9 +737,11 @@
                                style="width: auto; accent-color: #3e8635;">
                       </label>
                     </td>
-                    <td style="padding: 0.5rem 0.5rem; text-align: center;">
+                    <td style="padding: 0.5rem 0.5rem; text-align: center; white-space: nowrap;">
                       <button class="btn btn-secondary btn-sm" @click="reconnectMcpServer(srv.id)"
                               :disabled="srv.status === 'connected'" title="Reconnect">Reconnect</button>
+                      <button class="btn btn-secondary btn-sm" @click="openEditMcpServer(srv.id)" title="Edit">Edit</button>
+                      <button class="btn btn-danger btn-sm" @click="deleteMcpServer(srv.id)" title="Delete">Delete</button>
                     </td>
                   </tr>
                 </template>
@@ -1375,6 +1381,76 @@
   </div>
   </template>
 
+  <!-- ═══════════ MCP SERVER MODAL ═══════════ -->
+  <template x-if="editingMcpServer">
+  <div class="modal-backdrop" x-show="editingMcpServer" x-cloak @click.self="cancelEditMcpServer()">
+    <div class="modal" @click.stop style="max-width: 640px;">
+      <div class="modal-header">
+        <h2 x-text="editingMcpServer.isNew ? 'Add MCP Server' : ('Edit MCP Server: ' + editingMcpServer.id)"></h2>
+        <button style="background: none; border: none; font-size: 1.25rem; cursor: pointer; color: #6a6e73;" @click="cancelEditMcpServer()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 24px;">
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">Server ID</label>
+          <input type="text" x-model="editingMcpServer.id" :disabled="!editingMcpServer.isNew"
+                 placeholder="github" style="width: 100%;"
+                 :style="!editingMcpServer.isNew ? 'background: #f0f0f0; cursor: not-allowed;' : ''">
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">Transport</label>
+          <select x-model="editingMcpServer.transport" style="width: 100%;">
+            <option value="stdio">stdio (local process)</option>
+            <option value="http">http (Streamable HTTP)</option>
+            <option value="sse">sse (legacy SSE)</option>
+          </select>
+        </div>
+
+        <template x-if="editingMcpServer.transport === 'stdio'">
+          <div>
+            <div style="margin-bottom: 16px;">
+              <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">Command</label>
+              <input type="text" x-model="editingMcpServer.command" placeholder="npx" style="width: 100%;">
+            </div>
+            <div style="margin-bottom: 16px;">
+              <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">Arguments (one per line)</label>
+              <textarea x-model="editingMcpServer.argsText" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-github" style="width: 100%;"></textarea>
+            </div>
+            <div style="margin-bottom: 16px;">
+              <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">Environment variables (KEY=value, one per line)</label>
+              <textarea x-model="editingMcpServer.envText" rows="2" placeholder="GITHUB_TOKEN=xxx" style="width: 100%;"></textarea>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="editingMcpServer.transport !== 'stdio'">
+          <div>
+            <div style="margin-bottom: 16px;">
+              <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">URL</label>
+              <input type="text" x-model="editingMcpServer.url" placeholder="https://mcp.example.com" style="width: 100%;">
+            </div>
+            <div style="margin-bottom: 16px;">
+              <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;">Headers (Key: value, one per line)</label>
+              <textarea x-model="editingMcpServer.headersText" rows="2" placeholder="Authorization: Bearer tok" style="width: 100%;"></textarea>
+            </div>
+          </div>
+        </template>
+
+        <div style="margin-bottom: 4px;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" x-model="editingMcpServer.enabled" style="width: auto;">
+            <span style="font-size: 0.85rem; font-weight: 600;">Enabled</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary footer-dismiss" @click="cancelEditMcpServer()">Cancel</button>
+        <button class="btn btn-primary" @click="saveEditingMcpServer()">Save</button>
+      </div>
+    </div>
+  </div>
+  </template>
+
   <!-- ═══════════ CONFIG LOCATION MODAL ═══════════ -->
   <div class="modal-backdrop" x-show="showConfigModal" x-cloak @click.self="showConfigModal = false"
        style="z-index: 1100;">
@@ -1479,6 +1555,7 @@ function dashboard() {
     
     // MCP Servers
     mcpServers: [],
+    editingMcpServer: null,  // { id, isNew, transport, command, argsText, url, headersText, envText, enabled }
     pendingMcpApprovals: [],
     pendingMcpConnections: [],
     pendingStdioSpawns: [],
@@ -2176,7 +2253,102 @@ function dashboard() {
         }
       } catch (e) { console.error('Toggle MCP server failed:', e); }
     },
-    
+
+    // ── Add/Edit/Delete MCP Server ──
+    openNewMcpServer() {
+      this.editingMcpServer = {
+        id: '', isNew: true, transport: 'stdio',
+        command: '', argsText: '', envText: '',
+        url: '', headersText: '', enabled: true,
+      };
+    },
+
+    async openEditMcpServer(serverId) {
+      try {
+        const resp = await apiFetch('/api/config?location=user');
+        const data = await resp.json();
+        const cfg = (data.config?.mcp_servers || {})[serverId] || {};
+        this.editingMcpServer = {
+          id: serverId, isNew: false,
+          transport: cfg.transport || 'stdio',
+          command: cfg.command || '',
+          argsText: (cfg.args || []).join('\n'),
+          envText: Object.entries(cfg.env || {}).map(([k, v]) => `${k}=${v}`).join('\n'),
+          url: cfg.url || '',
+          headersText: Object.entries(cfg.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n'),
+          enabled: cfg.enabled !== false,
+        };
+      } catch (e) { console.error('Failed to load MCP server config:', e); }
+    },
+
+    cancelEditMcpServer() {
+      this.editingMcpServer = null;
+    },
+
+    async saveEditingMcpServer() {
+      const m = this.editingMcpServer;
+      if (!m) return;
+      const id = (m.id || '').trim();
+      if (!id) { alert('Server ID is required.'); return; }
+
+      const entry = { transport: m.transport, enabled: !!m.enabled };
+      if (m.transport === 'stdio') {
+        if (!m.command.trim()) { alert('Command is required for stdio transport.'); return; }
+        entry.command = m.command.trim();
+        const args = m.argsText.split('\n').map(s => s.trim()).filter(Boolean);
+        if (args.length) entry.args = args;
+        const env = {};
+        for (const line of m.envText.split('\n')) {
+          const idx = line.indexOf('=');
+          if (idx > 0) env[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+        if (Object.keys(env).length) entry.env = env;
+      } else {
+        if (!m.url.trim()) { alert('URL is required for http/sse transport.'); return; }
+        entry.url = m.url.trim();
+        const headers = {};
+        for (const line of m.headersText.split('\n')) {
+          const idx = line.indexOf(':');
+          if (idx > 0) headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+        if (Object.keys(headers).length) entry.headers = headers;
+      }
+
+      try {
+        const resp = await apiFetch('/api/config?location=user');
+        const data = await resp.json();
+        const config = data.config || {};
+        config.mcp_servers = config.mcp_servers || {};
+        if (!m.isNew && m.id !== id) delete config.mcp_servers[m.id];
+        config.mcp_servers[id] = entry;
+        await apiFetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ location: 'user', config }),
+        });
+        this.editingMcpServer = null;
+        await this.loadMcpServers();
+        await this.loadTools();
+      } catch (e) { console.error('Failed to save MCP server:', e); alert('Failed to save MCP server.'); }
+    },
+
+    async deleteMcpServer(serverId) {
+      if (!confirm(`Delete MCP server "${serverId}"?`)) return;
+      try {
+        const resp = await apiFetch('/api/config?location=user');
+        const data = await resp.json();
+        const config = data.config || {};
+        if (config.mcp_servers) delete config.mcp_servers[serverId];
+        await apiFetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ location: 'user', config }),
+        });
+        await this.loadMcpServers();
+        await this.loadTools();
+      } catch (e) { console.error('Failed to delete MCP server:', e); }
+    },
+
     // ── Tools ──
     async loadTools() {
       try {
