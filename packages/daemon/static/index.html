@@ -62,6 +62,11 @@
       height: 24px; display: inline-flex; align-items: center;
     }
     main { padding: var(--rh-space-lg); max-width: 1400px; margin: 0 auto; }
+    /* Tabs sit on a white card, not directly on the grey page background. */
+    rh-tabs {
+      display: block; background: #fff; border-radius: 3px;
+      border: 1px solid #d2d2d2; padding: 0 var(--rh-space-lg) var(--rh-space-lg);
+    }
     .stats-grid {
       display: grid; grid-template-columns: repeat(4, 1fr);
       gap: var(--rh-space-md); margin-bottom: var(--rh-space-lg);
@@ -98,7 +103,7 @@
       display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
       padding: 0.5rem 0.875rem; font-size: 0.875rem;
       font-family: 'Red Hat Text', sans-serif; font-weight: 500;
-      border: none; border-radius: 3px; cursor: pointer; white-space: nowrap;
+      border: none; border-radius: 999px; cursor: pointer; white-space: nowrap;
       transition: background-color 0.2s;
     }
     .btn-primary { background: #ee0000; color: white; }
@@ -425,7 +430,7 @@
       <rh-tab-panel>
         <div style="padding: var(--rh-space-lg);">
           <!-- Add Provider button -->
-          <div style="margin-bottom: var(--rh-space-md);">
+          <div style="margin-bottom: var(--rh-space-md); display: flex; justify-content: flex-end;">
             <span style="display: inline-block;"
                   :data-tip="configLocation === 'all' ? 'Switch to User or Workspace to add a new provider' : ''"
                   @mouseenter="configLocation === 'all' && showTip($el)"
@@ -899,7 +904,7 @@
   <div class="modal-backdrop" x-show="wizardOpen" x-cloak @click.self="closeWizard()">
     <div class="modal" @click.stop>
       <div class="modal-header">
-        <h2 x-text="wizardFromModelsTab ? 'Configure Model' : (wizardStep === 3 && wizardEditingModel ? 'Configure Model' : wizardEditMode ? (wizardStep === 2 ? 'Edit Provider' : 'Select Models') : (wizardStep === 1 ? 'Choose Engine' : wizardStep === 2 ? 'Configure Provider' : 'Select Models'))"></h2>
+        <h2 x-text="wizardFromModelsTab ? 'Configure Model' : (wizardStep === 3 && wizardEditingModel ? 'Configure Model' : wizardEditMode ? (wizardStep === 2 ? 'Provider' : 'Select Models') : (wizardStep === 1 ? 'Choose Engine' : wizardStep === 2 ? 'Configure Provider' : 'Select Models'))"></h2>
         <div style="display: flex; align-items: center; gap: 16px;">
           <div class="step-indicators" x-show="!wizardFromModelsTab">
             <div class="step-dot" x-show="!wizardEditMode" :class="{ active: wizardStep === 1, completed: wizardStep > 1 }"></div>
@@ -980,6 +985,10 @@
             <!-- ── View A: Dual-list model selector ── -->
             <template x-if="!wizardEditingModel">
               <div>
+                <div x-show="wizardModelSavedFlash" x-transition
+                     style="background: #e3f5e6; color: #1e7d32; border: 1px solid #a8dab5; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; margin-bottom: 12px;">
+                  &#10003; Model configuration saved.
+                </div>
                 <div style="margin-bottom: 12px;">
                   <input type="text" placeholder="Search models..." x-model="wizardModelSearch" style="max-width: 300px;">
                 </div>
@@ -1009,7 +1018,7 @@
                           <span x-show="cfg.temperature != null || cfg.top_p != null || cfg.system_prompt" 
                                 style="font-size: 0.65rem; color: #6a6e73;" title="Has custom parameters">&#9881;</span>
                           <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem;" 
-                                  @click="wizardEditingModel = name">Configure</button>
+                                  @click="startEditModel(name)">Configure</button>
                           <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem; color: #c9190b;" 
                                   @click="removeModel(name)">Remove</button>
                         </div>
@@ -1024,20 +1033,24 @@
             <template x-if="wizardEditingModel">
               <div>
                 <!-- Back navigation lives only in the footer (below) — no duplicate button here. -->
-                <div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #d2d2d2;">
-                  <h3 style="margin: 0; font-size: 1rem; font-weight: 600;" x-text="'Configure: ' + wizardEditingModel"></h3>
+                <div style="margin-bottom: 4px; padding-bottom: 12px; border-bottom: 1px solid #d2d2d2;">
+                  <h3 style="margin: 0 0 4px; font-size: 1rem; font-weight: 600;" x-text="'Configure: ' + wizardEditingModel"></h3>
+                  <p style="margin: 0; font-size: 0.78rem; color: #6a6e73;">
+                    Everything below is optional — leave a field blank to fall back to the policy or engine default.
+                    Nothing here is written to disk until you click <strong>Save</strong>.
+                  </p>
                 </div>
 
-                <div x-data="{ get modelName() { return $data.wizardEditingModel }, get cfg() { return $data.wizardEnabledModels[$data.wizardEditingModel] || {} } }">
+                <div x-data="{ get modelName() { return $data.wizardEditingDraftName }, get cfg() { return $data.wizardEditingDraft || {} } }">
                   <!-- Identity -->
-                  <div class="param-row" style="margin-bottom: 16px;">
+                  <div class="param-row" style="margin: 16px 0;">
                     <div class="param-field" style="flex: 2;">
                       <div class="label-row">
-                        <label>Virtual Name</label>
+                        <label>Virtual Name <span style="color: #6a6e73; font-weight: 400;">(optional)</span></label>
                         <span class="info-tip" data-tip="A unique alias for this model within the provider. Customize it to reflect your configuration." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                       </div>
                       <input type="text" :value="modelName" 
-                             @change="renameModel(modelName, $event.target.value)"
+                             @input="wizardEditingDraftName = $event.target.value"
                              placeholder="Auto from model ID" style="font-family: 'Red Hat Mono', monospace;">
                     </div>
                     <div class="param-field" style="flex: 2;">
@@ -1045,15 +1058,15 @@
                         <label>Engine Model ID</label>
                         <span class="info-tip" data-tip="The actual model identifier sent to the engine API. This cannot be changed." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                       </div>
-                      <input type="text" :value="cfg.model_id || modelName" disabled 
+                      <input type="text" :value="cfg.model_id || $data.wizardEditingModel" disabled 
                              style="font-family: 'Red Hat Mono', monospace; background: #f0f0f0;">
                     </div>
                   </div>
 
                   <!-- Policy -->
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                    <span style="font-size: 0.8rem; font-weight: 600; color: #6a6e73;">Policy:</span>
-                    <select :value="cfg.policy || ''" @change="setModelPolicy(modelName, $event.target.value)"
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 20px;">
+                    <span style="font-size: 0.8rem; font-weight: 600; color: #6a6e73;">Policy <span style="font-weight: 400;">(optional):</span></span>
+                    <select :value="cfg.policy || ''" @change="setDraftParam('policy', $event.target.value || undefined)"
                             style="width: auto; padding: 4px 8px; font-size: 0.85rem; border-radius: 3px; border: 1px solid #d2d2d2;">
                       <option value="">None (use defaults)</option>
                       <template x-for="pol in allPolicies" :key="pol.name">
@@ -1066,8 +1079,10 @@
                   </div>
 
                   <!-- Sampling Parameters -->
-                  <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
-                    <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">Sampling Parameters</legend>
+                  <div style="margin-bottom: 20px;">
+                    <div style="font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #6a6e73; padding-bottom: 6px; margin-bottom: 12px; border-bottom: 1px solid #e0e0e0;">
+                      Sampling Parameters <span style="text-transform: none; font-weight: 400;">— all optional</span>
+                    </div>
                     <div class="param-row">
                       <div class="param-field">
                         <div class="label-row">
@@ -1075,7 +1090,7 @@
                           <span class="info-tip" data-tip="Controls randomness: Lower (0.1) is focused and factual; Higher (0.8+) is creative and diverse." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                         </div>
                         <input type="number" min="0" max="2" step="0.1" :value="cfg.temperature" 
-                               @input="updateModelParam(modelName, 'temperature', $event.target.value ? parseFloat($event.target.value) : undefined)" 
+                               @input="setDraftParam('temperature', $event.target.value ? parseFloat($event.target.value) : undefined)" 
                                placeholder="engine default">
                       </div>
                       <div class="param-field">
@@ -1084,7 +1099,7 @@
                           <span class="info-tip" data-tip="Limits selection to the most likely tokens whose cumulative probability is P. Lower values are more precise." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                         </div>
                         <input type="number" min="0" max="1" step="0.05" :value="cfg.top_p" 
-                               @input="updateModelParam(modelName, 'top_p', $event.target.value ? parseFloat($event.target.value) : undefined)" 
+                               @input="setDraftParam('top_p', $event.target.value ? parseFloat($event.target.value) : undefined)" 
                                placeholder="engine default">
                       </div>
                       <div class="param-field">
@@ -1093,7 +1108,7 @@
                           <span class="info-tip" data-tip="Limits the model to considering only the top K most likely next tokens to prevent atypical word choices." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                         </div>
                         <input type="number" min="0" step="1" :value="cfg.top_k"
-                               @input="updateModelParam(modelName, 'top_k', $event.target.value ? parseInt($event.target.value) : undefined)" 
+                               @input="setDraftParam('top_k', $event.target.value ? parseInt($event.target.value) : undefined)" 
                                placeholder="engine default">
                       </div>
                     </div>
@@ -1104,7 +1119,7 @@
                           <span class="info-tip" data-tip="Sets the absolute maximum length of the generated response." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                         </div>
                         <input type="number" min="1" step="1" :value="cfg.max_tokens"
-                               @input="updateModelParam(modelName, 'max_tokens', $event.target.value ? parseInt($event.target.value) : undefined)" 
+                               @input="setDraftParam('max_tokens', $event.target.value ? parseInt($event.target.value) : undefined)" 
                                placeholder="engine default">
                       </div>
                       <div class="param-field">
@@ -1113,22 +1128,24 @@
                           <span class="info-tip" data-tip="The maximum time in milliseconds to wait for a response before the request is canceled." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                         </div>
                         <input type="number" min="0" step="1000" :value="cfg.timeout"
-                               @input="updateModelParam(modelName, 'timeout', $event.target.value ? parseInt($event.target.value) : undefined)" 
+                               @input="setDraftParam('timeout', $event.target.value ? parseInt($event.target.value) : undefined)" 
                                placeholder="engine default">
                       </div>
                     </div>
-                  </fieldset>
+                  </div>
 
                   <!-- System Prompt -->
-                  <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
-                    <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">System Prompt</legend>
+                  <div style="margin-bottom: 20px;">
+                    <div style="font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #6a6e73; padding-bottom: 6px; margin-bottom: 12px; border-bottom: 1px solid #e0e0e0;">
+                      System Prompt <span style="text-transform: none; font-weight: 400;">— optional</span>
+                    </div>
                     <div style="margin-bottom: 8px;">
                       <div class="label-row" style="margin-bottom: 4px;">
                         <label style="font-size: 0.8rem; font-weight: 500;">Prompt</label>
                         <span class="info-tip" data-tip="Sets the core persona and fundamental rules for the model to follow throughout the conversation." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                       </div>
                       <textarea :value="cfg.system_prompt || ''" rows="4"
-                                @input="updateModelParam(modelName, 'system_prompt', $event.target.value || undefined)"
+                                @input="setDraftParam('system_prompt', $event.target.value || undefined)"
                                 placeholder="Optional system prompt applied to every request using this model..."
                                 style="width: 100%; resize: vertical;"></textarea>
                     </div>
@@ -1138,22 +1155,24 @@
                         <span class="info-tip" data-tip="Prepend: inserted before the request's system message. Replace: overrides it entirely." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
                       </div>
                       <select :value="cfg.system_prompt_mode || 'prepend'" 
-                              @change="updateModelParam(modelName, 'system_prompt_mode', $event.target.value)"
+                              @change="setDraftParam('system_prompt_mode', $event.target.value)"
                               style="width: auto;">
                         <option value="prepend">Prepend</option>
                         <option value="replace">Replace</option>
                       </select>
                     </div>
-                  </fieldset>
+                  </div>
 
                   <!-- OpenAI-compatible /v1 tools (DR-032) -->
-                  <fieldset style="border: 1px solid #d2d2d2; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
-                    <legend style="font-size: 0.85rem; font-weight: 600; padding: 0 8px;">OpenAI-compatible API</legend>
+                  <div style="margin-bottom: 8px;">
+                    <div style="font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #6a6e73; padding-bottom: 6px; margin-bottom: 12px; border-bottom: 1px solid #e0e0e0;">
+                      OpenAI-compatible API <span style="text-transform: none; font-weight: 400;">— optional</span>
+                    </div>
                     <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; cursor: pointer;">
                       <input type="checkbox"
                              style="margin-top: 2px;"
                              :checked="cfg.openai_compat_tools === 'passthrough'"
-                             @change="updateModelParam(modelName, 'openai_compat_tools', $event.target.checked ? 'passthrough' : undefined)">
+                             @change="setDraftParam('openai_compat_tools', $event.target.checked ? 'passthrough' : undefined)">
                       <span>
                         <span style="font-weight: 500;">Allow OpenAI tools on /v1</span>
                         <span class="info-tip" data-tip="Checked: force tools passthrough for this model on /v1 (client executes tools; no Abbenay approval UI). Unchecked: clear the per-model override and inherit global openai_compat.tools — which defaults to off, but if global is passthrough this model stays enabled." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
@@ -1162,7 +1181,7 @@
                         </div>
                       </span>
                     </label>
-                  </fieldset>
+                  </div>
 
                   <!-- Add Variant removed — user can add same model again from Available list -->
                 </div>
@@ -1175,22 +1194,25 @@
       <div class="modal-footer">
         <span style="font-size: 0.85rem; color: #6a6e73;" x-show="wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab"
               x-text="Object.keys(wizardEnabledModels).length + ' model(s) enabled'"></span>
-        <!-- Cancel / Back — kept apart from the primary action (margin-right:auto) so it can't be mis-clicked -->
+        <!-- Cancel / Discard — kept apart from the primary action (margin-right:auto) so it can't be mis-clicked -->
         <button class="btn btn-secondary footer-dismiss" 
-                @click="wizardFromModelsTab ? closeWizard() : (wizardEditingModel ? (wizardEditingModel = null) : closeWizard())" 
-                x-text="wizardFromModelsTab ? 'Cancel' : (wizardEditingModel ? '← Back to models' : 'Cancel')"></button>
+                @click="wizardFromModelsTab ? closeWizard() : (wizardEditingModel ? cancelEditModel() : closeWizard())" 
+                x-text="wizardEditingModel ? 'Discard changes' : 'Cancel'"></button>
         <!-- Back (step navigation) — hidden when from Models tab -->
         <button class="btn btn-secondary" x-show="!wizardFromModelsTab && wizardStep > 1 && !(wizardEditMode && wizardStep === 2) && !wizardEditingModel" @click="wizardStep--">Back</button>
         <!-- Next — only step 2 needs it now; step 1 (single-select engine tiles) advances on click -->
         <button class="btn btn-primary" x-show="!wizardFromModelsTab && wizardStep === 2 && !wizardEditingModel" @click="wizardNext()" 
                 :disabled="!wizardName">Next</button>
-        <!-- Save — show in wizard flow (step 3, not editing model) OR from Models tab when editing a model -->
-        <button class="btn btn-primary" x-show="(wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab) || (wizardFromModelsTab && wizardEditingModel)" @click="wizardSave()">Save</button>
+        <!-- Save model config & return to the dual-list, from within the Add/Provider wizard -->
+        <button class="btn btn-primary" x-show="wizardEditingModel && !wizardFromModelsTab" @click="saveEditModel()">Save &amp; back to models</button>
+        <!-- Save — persists to disk: wizard flow (step 3, not editing model) OR from Models tab when editing a model -->
+        <button class="btn btn-primary" x-show="(wizardStep === 3 && !wizardEditingModel && !wizardFromModelsTab) || (wizardFromModelsTab && wizardEditingModel)" 
+                @click="wizardFromModelsTab ? saveModelAndPersist() : wizardSave()">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- Edit Provider and Model Selector modals removed — "Edit" button reuses the wizard at step 2 -->
+  <!-- Provider and Model Selector modals removed — "Edit" button reuses the wizard at step 2 -->
 
   <!-- ═══════════ POLICY EDITOR MODAL ═══════════ -->
   <template x-if="editingPolicy">
@@ -1491,7 +1513,10 @@ function dashboard() {
     wizardModelSearch: '',
     wizardDiscoveredModels: [],
     wizardEnabledModels: {},   // { modelName: { model_id?, temperature?, ... } }
-    wizardEditingModel: null,
+    wizardEditingModel: null,      // original (immutable) key of the model currently being configured
+    wizardEditingDraft: null,      // scratch copy of that model's config — edits land here until explicitly saved
+    wizardEditingDraftName: '',    // scratch copy of the virtual name — renamed only on save
+    wizardModelSavedFlash: false,  // brief "saved" confirmation shown after returning to the model list
     
     // ── Edit mode (reuses wizard) ──
     wizardEditMode: false,    // true when editing existing provider (vs creating new)
@@ -1759,6 +1784,8 @@ function dashboard() {
       this.wizardOpen = false;
       this.wizardFromModelsTab = false;
       this.wizardEditingModel = null;
+      this.wizardEditingDraft = null;
+      this.wizardEditingDraftName = '';
     },
     
     /** Step 1 is a single-select — choosing an engine advances immediately, no separate Next click. */
@@ -1773,7 +1800,7 @@ function dashboard() {
       // Jump directly to step 3 model config view
       this.wizardStep = 3;
       // The model's virtual name is model.name; find it in the enabled models
-      this.wizardEditingModel = model.name;
+      this.startEditModel(model.name);
       this.wizardFromModelsTab = true;
       // Discover models so the dual-list has data if user clicks "Back to models"
       try {
@@ -1929,6 +1956,61 @@ function dashboard() {
     
     // (presets replaced by policy system)
     
+    // ── Model config draft (edit-then-commit so "back"/"cancel" can discard cleanly) ──
+    
+    /** Opens the full-width config view for a model, working on a scratch copy so nothing is applied until Save. */
+    startEditModel(name) {
+      this.wizardEditingModel = name;
+      this.wizardEditingDraftName = name;
+      this.wizardEditingDraft = JSON.parse(JSON.stringify(this.wizardEnabledModels[name] || {}));
+    },
+    
+    /** Sets/clears one field on the in-progress draft only — wizardEnabledModels is untouched until saveEditModel(). */
+    setDraftParam(param, value) {
+      if (!this.wizardEditingDraft) return;
+      if (value === undefined || value === '') {
+        delete this.wizardEditingDraft[param];
+      } else {
+        this.wizardEditingDraft[param] = value;
+      }
+      this.wizardEditingDraft = { ...this.wizardEditingDraft };
+    },
+    
+    /** Leaves the config view without applying any edits made since startEditModel(). */
+    cancelEditModel() {
+      this.wizardEditingModel = null;
+      this.wizardEditingDraft = null;
+      this.wizardEditingDraftName = '';
+    },
+    
+    /** Commits the draft into wizardEnabledModels and returns to the model list with a brief confirmation. */
+    saveEditModel() {
+      const oldName = this.wizardEditingModel;
+      if (!oldName) return;
+      const draft = this.wizardEditingDraft || {};
+      let newName = (this.wizardEditingDraftName || '').trim() || oldName;
+      if (newName !== oldName && this.wizardEnabledModels[newName]) {
+        newName = oldName; // avoid clobbering an existing entry — keep original name
+      }
+      if (newName !== oldName && !draft.model_id) {
+        draft.model_id = oldName;
+      }
+      if (newName !== oldName) delete this.wizardEnabledModels[oldName];
+      this.wizardEnabledModels[newName] = draft;
+      this.wizardEnabledModels = { ...this.wizardEnabledModels };
+      this.wizardEditingModel = null;
+      this.wizardEditingDraft = null;
+      this.wizardEditingDraftName = '';
+      this.wizardModelSavedFlash = true;
+      setTimeout(() => { this.wizardModelSavedFlash = false; }, 2500);
+    },
+    
+    /** Used when the config view was opened directly from the Models tab: commit the draft, then persist to disk and close. */
+    async saveModelAndPersist() {
+      this.saveEditModel();
+      await this.wizardSave();
+    },
+    
     renameModel(oldName, newName) {
       if (!newName || newName === oldName || this.wizardEnabledModels[newName]) return;
       const cfg = this.wizardEnabledModels[oldName];
@@ -1953,7 +2035,7 @@ function dashboard() {
       this.wizardEditingModel = newName;
     },
     
-    // Edit Provider and Model Selector functions removed — "Edit" reuses the wizard
+    // Provider and Model Selector functions removed — "Edit" reuses the wizard
     
     // ── Delete provider ──
     async deleteProvider(provId) {
