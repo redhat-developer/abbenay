@@ -834,6 +834,11 @@
       <rh-tab slot="tab">Tools</rh-tab>
       <rh-tab-panel>
         <div style="padding: var(--rh-space-lg);">
+          <p style="margin: 0 0 var(--rh-space-md); color: #6a6e73; font-size: 0.85rem;">
+            Tools are functions the LLM can call during a chat — e.g. reading a file, running a search, or querying an API.
+            They are registered by MCP servers (see the <strong>MCP Servers</strong> tab) or by editors like VS Code that connect
+            to Abbenay. Each tool's approval policy below controls whether it runs automatically, asks you first, or is disabled.
+          </p>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--rh-space-md);">
             <div style="display: flex; align-items: center; gap: 12px;">
               <p style="margin: 0; color: #6a6e73; font-size: 0.85rem;">
@@ -857,7 +862,19 @@
           </div>
 
           <template x-if="allTools.length === 0">
-            <div class="empty-state"><p>No tools registered. Connect VS Code or configure MCP servers to see tools.</p></div>
+            <div class="empty-state">
+              <p style="margin: 0 0 0.5rem; font-weight: 600;">No tools registered yet</p>
+              <p style="margin: 0 0 0.75rem; color: #6a6e73;">
+                Tools show up here once something registers them with Abbenay. You have two options:
+              </p>
+              <ul style="display: inline-block; text-align: left; margin: 0 0 1rem; color: #6a6e73; font-size: 0.85rem;">
+                <li>Add an MCP server in the <strong>MCP Servers</strong> tab (each server exposes its own tools), or</li>
+                <li>Connect an editor like VS Code to Abbenay, which registers its built-in tools automatically.</li>
+              </ul>
+              <div>
+                <button class="btn btn-primary btn-sm" @click="document.querySelectorAll('rh-tab')[3]?.click()">Go to MCP Servers</button>
+              </div>
+            </div>
           </template>
 
           <template x-if="allTools.length > 0">
