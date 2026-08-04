@@ -607,6 +607,76 @@ describe('POST /v1/chat/completions — tool calls', () => {
     expect(body.choices[0].message.tool_calls[0].function.name).toBe('web_search');
     expect(body.choices[0].message.tool_calls[0].function.arguments).toBe('{"q":"x"}');
   });
+
+  it('forwards tool_choice none/required/specific in passthrough mode', async () => {
+    mockLoadConfigResult = { openai_compat: { tools: 'passthrough' } };
+
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'none',
+    });
+    expect(lastChatToolOptions?.toolMode).toBe('passthrough');
+    expect(lastChatToolOptions?.toolChoice).toBe('none');
+
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'required',
+    });
+    expect(lastChatToolOptions?.toolChoice).toBe('required');
+
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: { type: 'function', function: { name: 'web_search' } },
+    });
+    expect(lastChatToolOptions?.toolChoice).toEqual({ type: 'tool', toolName: 'web_search' });
+  });
+
+  it('ignores tool_choice when openai_compat tools mode is off', async () => {
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'required',
+    });
+
+    expect(lastChatToolOptions?.toolMode).toBe('none');
+    expect(lastChatToolOptions?.toolChoice).toBeUndefined();
+  });
+
+  it('rejects invalid tool_choice and required without tools', async () => {
+    mockLoadConfigResult = { openai_compat: { tools: 'passthrough' } };
+
+    const bad = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'forced',
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.body.error.type).toBe('invalid_request_error');
+
+    const missingTools = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tool_choice: 'required',
+    });
+    expect(missingTools.statusCode).toBe(400);
+
+    const unknownFn = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: { type: 'function', function: { name: 'not_listed' } },
+    });
+    expect(unknownFn.statusCode).toBe(400);
+    expect(unknownFn.body.error.message).toMatch(/not_listed/);
+  });
 });
 
 describe('POST /v1/chat/completions — request params', () => {

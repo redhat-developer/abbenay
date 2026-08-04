@@ -15,6 +15,8 @@ import {
   generateChatId,
   resolveOpenAICompatToolsMode,
   mapOpenAIToolsToDefinitions,
+  mapOpenAIToolChoice,
+  validateToolChoiceAgainstTools,
   normalizeOpenAIToolCalls,
   normalizeOpenAIChatMessage,
   type StreamChunkOptions,
@@ -480,5 +482,76 @@ describe('normalizeOpenAIChatMessage', () => {
       tool_call_id: undefined,
       tool_calls: undefined,
     });
+  });
+});
+
+// ── mapOpenAIToolChoice / validateToolChoiceAgainstTools (DR-046) ──────
+
+describe('mapOpenAIToolChoice', () => {
+  it('maps omitted and null to undefined', () => {
+    expect(mapOpenAIToolChoice(undefined)).toEqual({ ok: true, toolChoice: undefined });
+    expect(mapOpenAIToolChoice(null)).toEqual({ ok: true, toolChoice: undefined });
+  });
+
+  it('maps auto / none / required strings', () => {
+    expect(mapOpenAIToolChoice('auto')).toEqual({ ok: true, toolChoice: 'auto' });
+    expect(mapOpenAIToolChoice('none')).toEqual({ ok: true, toolChoice: 'none' });
+    expect(mapOpenAIToolChoice('required')).toEqual({ ok: true, toolChoice: 'required' });
+  });
+
+  it('maps specific function object to AI SDK tool form', () => {
+    expect(mapOpenAIToolChoice({
+      type: 'function',
+      function: { name: 'web_search' },
+    })).toEqual({
+      ok: true,
+      toolChoice: { type: 'tool', toolName: 'web_search' },
+    });
+  });
+
+  it('trims function name whitespace', () => {
+    expect(mapOpenAIToolChoice({
+      type: 'function',
+      function: { name: '  web_search  ' },
+    })).toEqual({
+      ok: true,
+      toolChoice: { type: 'tool', toolName: 'web_search' },
+    });
+  });
+
+  it('rejects unknown strings and invalid objects', () => {
+    expect(mapOpenAIToolChoice('forced').ok).toBe(false);
+    expect(mapOpenAIToolChoice({ type: 'tool', toolName: 'x' }).ok).toBe(false);
+    expect(mapOpenAIToolChoice({ type: 'function', function: {} }).ok).toBe(false);
+    expect(mapOpenAIToolChoice({ type: 'function', function: { name: '   ' } }).ok).toBe(false);
+    expect(mapOpenAIToolChoice(42).ok).toBe(false);
+  });
+});
+
+describe('validateToolChoiceAgainstTools', () => {
+  it('allows auto/none/undefined without tools', () => {
+    expect(validateToolChoiceAgainstTools(undefined, [])).toBeUndefined();
+    expect(validateToolChoiceAgainstTools('auto', [])).toBeUndefined();
+    expect(validateToolChoiceAgainstTools('none', [])).toBeUndefined();
+  });
+
+  it('requires tools for required and specific function', () => {
+    expect(validateToolChoiceAgainstTools('required', [])).toMatch(/requires tools/);
+    expect(validateToolChoiceAgainstTools(
+      { type: 'tool', toolName: 'web_search' },
+      [],
+    )).toMatch(/requires tools/);
+  });
+
+  it('requires specific function name to be in tools', () => {
+    expect(validateToolChoiceAgainstTools(
+      { type: 'tool', toolName: 'missing' },
+      ['web_search'],
+    )).toMatch(/not in the request tools list/);
+    expect(validateToolChoiceAgainstTools(
+      { type: 'tool', toolName: 'web_search' },
+      ['web_search'],
+    )).toBeUndefined();
+    expect(validateToolChoiceAgainstTools('required', ['web_search'])).toBeUndefined();
   });
 });
