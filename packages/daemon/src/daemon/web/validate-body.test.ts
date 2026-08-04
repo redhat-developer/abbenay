@@ -123,6 +123,21 @@ describe('parseRequestBody', () => {
       expect('user' in result.data).toBe(false);
     }
   });
+
+  it('keeps OpenAI tools and tool_choice for passthrough mapping', () => {
+    const tools = [{ type: 'function', function: { name: 'web_search', parameters: {} } }];
+    const result = parseRequestBody(PostOpenAIChatCompletionsBodySchema, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools,
+      tool_choice: 'required',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tools).toEqual(tools);
+      expect(result.data.tool_choice).toBe('required');
+    }
+  });
 });
 
 describe('formatZodError', () => {

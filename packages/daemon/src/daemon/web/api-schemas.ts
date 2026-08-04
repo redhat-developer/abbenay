@@ -208,6 +208,8 @@ export const PostOpenAIChatCompletionsBodySchema = z
     max_completion_tokens: z.number().optional(),
     // DR-032: optional client tools for opt-in passthrough (validated/mapped in openai-compat).
     tools: z.array(z.unknown()).optional(),
+    // DR-046: OpenAI tool_choice — honored only when tools mode is passthrough.
+    tool_choice: z.unknown().optional(),
   })
   .strip();
 

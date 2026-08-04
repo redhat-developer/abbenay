@@ -638,6 +638,16 @@ export interface ChatParams {
   reasoning?: ReasoningLevel;
 }
 
+/**
+ * AI SDK `toolChoice` values (DR-046).
+ * Mapped from OpenAI `tool_choice` on `/v1` passthrough.
+ */
+export type ChatToolChoice =
+  | 'auto'
+  | 'none'
+  | 'required'
+  | { type: 'tool'; toolName: string };
+
 // ── Tool definitions (passed from proto/config to AI SDK tools) ────────
 
 /**
@@ -939,6 +949,7 @@ export async function* streamChat(
   toolValidator?: ToolValidationCallback,
   maxSteps: number = 10,
   jsonMode: boolean = false,
+  toolChoice?: ChatToolChoice,
 ): AsyncGenerator<ChatChunk> {
   // Mock engine — no network, no key, deterministic
   if (engineId === 'mock') {
@@ -1026,6 +1037,8 @@ export async function* streamChat(
       // Always bound tool loops when tools are registered — including passthrough
       // (effectiveMaxSteps === 1) so we do not rely on AI SDK defaults alone.
       ...(aiTools ? { stopWhen: isStepCount(effectiveMaxSteps) } : {}),
+      // OpenAI tool_choice → AI SDK toolChoice (DR-046). Only meaningful with tools.
+      ...(aiTools && toolChoice != null ? { toolChoice } : {}),
       // Bridge Abbenay policy validator into SDK-native toolApproval (DR-042).
       // Awaits toolValidator (which may prompt via onToolApprovalNeeded).
       // Only when Abbenay executes tools (executor present) — not passthrough.

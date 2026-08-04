@@ -139,6 +139,51 @@ describe('streamText AI SDK 7 wiring', () => {
     expect(msgs.some((m) => m.role === 'user')).toBe(true);
   });
 
+  it('forwards toolChoice to streamText when tools are present', async () => {
+    const openai = getEngine('openai');
+    expect(openai).toBeDefined();
+    const originalCreate = openai!.createModel;
+    openai!.createModel = vi.fn(async () => ({
+      modelId: 'gpt-test',
+      provider: 'openai',
+      specificationVersion: 'v3',
+      supportedUrls: {},
+      doGenerate: async () => ({
+        content: [],
+        finishReason: 'stop',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        warnings: [],
+      }),
+      doStream: async () => ({
+        stream: new ReadableStream(),
+      }),
+    })) as typeof originalCreate;
+
+    try {
+      for await (const _chunk of streamChat(
+        'openai',
+        'gpt-test',
+        [{ role: 'user', content: 'hi' }],
+        'sk-test',
+        undefined,
+        undefined,
+        [{ name: 'web_search', description: 'search', inputSchema: '{"type":"object","properties":{}}' }],
+        undefined,
+        undefined,
+        1,
+        false,
+        'required',
+      )) {
+        // drain
+      }
+    } finally {
+      openai!.createModel = originalCreate;
+    }
+
+    const callArg = streamTextMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArg.toolChoice).toBe('required');
+  });
+
   it('passes isStepCount, stream, maxOutputTokens, nested timeout, reasoning, and toolApproval', async () => {
     const openai = getEngine('openai');
     expect(openai).toBeDefined();
