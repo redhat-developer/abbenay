@@ -414,6 +414,17 @@ describe('syncWithConfig', () => {
     await pool.syncWithConfig({});
     expect(pool.getStatus('dyn')?.connected).toBe(true);
   });
+
+  it('should drop a server whose only connection attempt failed once removed from config', async () => {
+    mockCreateMCPClient.mockRejectedValueOnce(new Error('connection closed'));
+    await pool.connect('bad', { transport: 'stdio', command: 'bad', enabled: true }).catch(() => {});
+    // Status exists (with error) even though it never made it into `clients`.
+    expect(pool.getStatus('bad')?.error).toBeTruthy();
+
+    await pool.syncWithConfig({});
+
+    expect(pool.getStatus('bad')).toBeUndefined();
+  });
 });
 
 // ── getStatuses ───────────────────────────────────────────────────────────

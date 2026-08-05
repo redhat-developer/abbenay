@@ -525,7 +525,10 @@ export class McpClientPool {
    */
   async syncWithConfig(configs: Record<string, McpServerConfig>): Promise<void> {
     const newIds = new Set(Object.keys(configs));
-    const currentIds = new Set(this.clients.keys());
+    // Union of connected clients and tracked statuses — a server whose last
+    // connect attempt failed has a status entry but no client, and must still
+    // be reconciled (and dropped) when removed from config.
+    const currentIds = new Set([...this.clients.keys(), ...this.statuses.keys()]);
 
     // Disconnect removed config-based servers (skip dynamic)
     for (const id of currentIds) {
