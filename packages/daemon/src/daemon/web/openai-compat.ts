@@ -13,7 +13,7 @@ import * as crypto from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import type { DaemonState } from '../../daemon/state.js';
 import type { ModelInfo, ChatToolOptions } from '../../core/state.js';
-import type { ChatChunk, ToolDefinition } from '../../core/engines.js';
+import type { ChatChunk, ChatToolChoice, ToolDefinition } from '../../core/engines.js';
 import { extractToolCallFields } from '../../core/engines.js';
 import {
   loadConfig,
@@ -109,6 +109,78 @@ export function coerceToolParametersSchema(parameters: unknown): Record<string, 
     };
   }
   return { type: 'object', properties: {} };
+}
+
+export type MapOpenAIToolChoiceResult =
+  | { ok: true; toolChoice: ChatToolChoice | undefined }
+  | { ok: false; error: string };
+
+/**
+ * Map OpenAI `tool_choice` to AI SDK `toolChoice` (DR-046).
+ *
+ * Accepts `"auto" | "none" | "required"` or
+ * `{ type: "function", function: { name } }`.
+ * Omitted / null → `{ ok: true, toolChoice: undefined }` (provider default).
+ */
+export function mapOpenAIToolChoice(toolChoice: unknown): MapOpenAIToolChoiceResult {
+  if (toolChoice == null) {
+    return { ok: true, toolChoice: undefined };
+  }
+  if (typeof toolChoice === 'string') {
+    if (toolChoice === 'auto' || toolChoice === 'none' || toolChoice === 'required') {
+      return { ok: true, toolChoice };
+    }
+    return {
+      ok: false,
+      error: `Invalid tool_choice "${toolChoice}"; expected "auto", "none", "required", or a function object`,
+    };
+  }
+  if (typeof toolChoice === 'object' && !Array.isArray(toolChoice)) {
+    const obj = toolChoice as Record<string, unknown>;
+    if (obj.type === 'function') {
+      const fn = obj.function && typeof obj.function === 'object' && !Array.isArray(obj.function)
+        ? obj.function as Record<string, unknown>
+        : undefined;
+      const name = typeof fn?.name === 'string' ? fn.name.trim() : '';
+      if (!name) {
+        return {
+          ok: false,
+          error: 'tool_choice.function.name must be a non-empty string',
+        };
+      }
+      return { ok: true, toolChoice: { type: 'tool', toolName: name } };
+    }
+    return {
+      ok: false,
+      error: 'Invalid tool_choice object; expected { type: "function", function: { name } }',
+    };
+  }
+  return {
+    ok: false,
+    error: 'Invalid tool_choice; expected string or function object',
+  };
+}
+
+/**
+ * Validate that a mapped toolChoice is usable with the given tool names.
+ * `required` / specific-tool need at least one tool; specific name must be listed.
+ */
+export function validateToolChoiceAgainstTools(
+  toolChoice: ChatToolChoice | undefined,
+  toolNames: string[],
+): string | undefined {
+  if (toolChoice == null || toolChoice === 'auto' || toolChoice === 'none') {
+    return undefined;
+  }
+  if (toolNames.length === 0) {
+    return 'tool_choice requires tools when set to "required" or a specific function';
+  }
+  if (typeof toolChoice === 'object' && toolChoice.type === 'tool') {
+    if (!toolNames.includes(toolChoice.toolName)) {
+      return `tool_choice function "${toolChoice.toolName}" is not in the request tools list`;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -239,7 +311,7 @@ export function buildStreamChunk(
     };
   }
 
-  // approval_request, approval_result, tool results, errors — not mapped to OpenAI streaming
+  // tool results, errors, and other non-OpenAI chunk types — not mapped
   return null;
 }
 
@@ -340,7 +412,14 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
       max_tokens,
       max_completion_tokens,
       tools,
+      tool_choice,
     } = parsed.data;
+
+    const mappedChoice = mapOpenAIToolChoice(tool_choice);
+    if (!mappedChoice.ok) {
+      openAIError(res, 400, mappedChoice.error, 'invalid_request_error');
+      return;
+    }
 
     const chatMessages = messages.map((m) => normalizeOpenAIChatMessage(m));
 
@@ -352,17 +431,34 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
     const hasParams = Object.keys(requestParams).length > 0;
 
     // Secure-by-default (DR-019): tools off unless config opts into passthrough (DR-032).
-    // Skip disk config + tool mapping when the request has no tools (common default path).
+    // Also enter when tool_choice needs tools (required / specific function) so we can 400.
     let toolOptions: ChatToolOptions = { toolMode: 'none', tools: undefined };
-    if (Array.isArray(tools) && tools.length > 0) {
+    const hasTools = Array.isArray(tools) && tools.length > 0;
+    const needsToolsForChoice = mappedChoice.toolChoice != null
+      && mappedChoice.toolChoice !== 'auto'
+      && mappedChoice.toolChoice !== 'none';
+
+    if (hasTools || needsToolsForChoice) {
       const config = loadConfig();
       const mode = resolveOpenAICompatToolsMode(String(model), config);
       if (mode === 'passthrough') {
-        const mappedTools = mapOpenAIToolsToDefinitions(tools);
+        const mappedTools = hasTools ? mapOpenAIToolsToDefinitions(tools) : [];
+        const toolNames = mappedTools.map((t) => t.name);
+        const choiceError = validateToolChoiceAgainstTools(mappedChoice.toolChoice, toolNames);
+        if (choiceError) {
+          openAIError(res, 400, choiceError, 'invalid_request_error');
+          return;
+        }
         if (mappedTools.length > 0) {
-          toolOptions = { toolMode: 'passthrough', tools: mappedTools, maxToolIterations: 1 };
+          toolOptions = {
+            toolMode: 'passthrough',
+            tools: mappedTools,
+            maxToolIterations: 1,
+            ...(mappedChoice.toolChoice != null ? { toolChoice: mappedChoice.toolChoice } : {}),
+          };
         }
       }
+      // When mode is off, ignore tools and tool_choice (DR-019 / DR-032).
     }
 
     const chatId = generateChatId();

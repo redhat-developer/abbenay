@@ -19,8 +19,8 @@ Abbenay produces two packages from a single source tree:
 
 ## Features
 
-- **20 LLM engines** via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamic provider loading
-- **Red Hat AI** — Inference Server or OpenShift AI MaaS via dedicated `redhat` engine
+- **20 LLM engines** via [Vercel AI SDK 7](https://sdk.vercel.ai/) with dynamic provider loading (Node.js 22.12+ required for npm/`tsx` development; SEA binaries bundle their own runtime)
+- **Red Hat AI** — Inference or OpenShift AI MaaS via dedicated `redhat` engine
 - **OpenAI-compatible API**: Drop-in `/v1/chat/completions` for Cursor, Continue, aider, etc.
 - **CLI chat**: Interactive terminal chat with tool approval and session persistence
 - **Session management**: Persistent conversations with periodic LLM-generated summaries
@@ -32,6 +32,7 @@ Abbenay produces two packages from a single source tree:
 - **MCP aggregation**: Connect to external MCP servers, expose daemon as MCP server
 - **Dynamic model discovery**: Fetches available models from provider APIs
 - **Single Executable Application (SEA)**: Self-contained binary, no Node.js install required
+- **Secure-by-default daemon**: HTTP on `127.0.0.1` with auth + CORS allowlist; gRPC TLS required off-loopback — see [SECURITY.md](docs/SECURITY.md)
 
 ## Why "Abbenay"?
 
@@ -140,10 +141,14 @@ curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" \
 
 Works with Cursor, Continue, aider, and any `openai` SDK script (use the same
 token as the client API key). The HTTP server binds to `127.0.0.1` by default;
-use `--host 0.0.0.0` only when you intentionally expose it.
+use `--host 0.0.0.0` only when you intentionally expose it. gRPC TCP on
+non-loopback addresses requires `--grpc-tls` (or explicit `--insecure`).
 
-> **WARNING:** Auth is on by default. `ABBENAY_HTTP_AUTH=0` disables it for
-> local development only — do not use with a non-loopback bind. See
+> **WARNING:** Auth is on by default. `ABBENAY_HTTP_AUTH=0` disables it on any
+> bind (including `--host 0.0.0.0`) — for example a cluster-internal pod, or
+> when a reverse proxy already authenticates callers. Air-gap or offline use
+> with local models reduces *egress*, but **network isolation alone does not
+> secure Abbenay**. See [Security & air-gap](docs/SECURITY.md) and
 > [Configuration](docs/CONFIGURATION.md#http-api-security-server).
 
 ### Using the core library
@@ -288,6 +293,7 @@ abbenay/
 ## Documentation
 
 - [Getting Started](docs/GETTING_STARTED.md)
+- [Security, Privacy & Air-Gap](docs/SECURITY.md) — defaults, residual risks, operator checklist
 - [Core Library (API Reference)](docs/CORE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)

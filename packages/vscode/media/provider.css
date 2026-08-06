@@ -330,3 +330,76 @@ vscode-textfield {
   border: 1px solid var(--vscode-inputValidation-errorBorder);
   color: var(--vscode-errorForeground);
 }
+
+/* ─── Modal Dialog ───────────────────────────────────────────────── */
+
+dialog#provider-modal {
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  padding: 0;
+  width: 90%;
+  max-width: 640px;
+  max-height: 85vh;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+dialog#provider-modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+dialog#provider-modal::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--vscode-foreground);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground);
+  font-size: 1.3em;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+#modal-body {
+  padding: 18px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.header-actions {
+  margin: 0 0 8px 0;
+}
+
+.chat-link {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--vscode-widget-border);
+}

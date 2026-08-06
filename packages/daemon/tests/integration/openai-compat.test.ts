@@ -346,6 +346,69 @@ describe('POST /v1/chat/completions (non-streaming)', () => {
     expect(body.id).toMatch(/^chatcmpl-/);
   });
 
+  it('accepts >100kb tools payloads without 413', async () => {
+    // Express default JSON limit is 100kb; Open WebUI Default/Legacy FC + MCP
+    // schemas commonly exceed that. Pad a tools array past 100kb to lock the
+    // authenticated /v1/chat/completions 10mb parser.
+    const pad = 'x'.repeat(120 * 1024);
+    const tools = [
+      {
+        type: 'function',
+        function: {
+          name: 'large_tool_schema',
+          description: pad,
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+    ];
+    const body = {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools,
+      stream: false,
+    };
+    expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(100 * 1024);
+
+    const { statusCode, body: resBody } = await httpRequest(
+      'POST',
+      `${baseUrl}/v1/chat/completions`,
+      body,
+    );
+
+    expect(statusCode).toBe(200);
+    expect(resBody.object).toBe('chat.completion');
+    expect(resBody.choices[0].message.content).toBe('Hello world');
+  });
+
+  it('accepts >100kb tools payloads on trailing-slash path', async () => {
+    const pad = 'x'.repeat(120 * 1024);
+    const body = {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'large_tool_schema',
+            description: pad,
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      ],
+      stream: false,
+    };
+    expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(100 * 1024);
+
+    const { statusCode, body: resBody } = await httpRequest(
+      'POST',
+      `${baseUrl}/v1/chat/completions/`,
+      body,
+    );
+
+    expect(statusCode).toBe(200);
+    expect(resBody.choices[0].message.content).toBe('Hello world');
+  });
+
   it('concatenates all text chunks into message content', async () => {
     const { body } = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
       model: 'openai/gpt-4o',
@@ -543,6 +606,76 @@ describe('POST /v1/chat/completions — tool calls', () => {
     expect(body.choices[0].message.tool_calls).toHaveLength(1);
     expect(body.choices[0].message.tool_calls[0].function.name).toBe('web_search');
     expect(body.choices[0].message.tool_calls[0].function.arguments).toBe('{"q":"x"}');
+  });
+
+  it('forwards tool_choice none/required/specific in passthrough mode', async () => {
+    mockLoadConfigResult = { openai_compat: { tools: 'passthrough' } };
+
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'none',
+    });
+    expect(lastChatToolOptions?.toolMode).toBe('passthrough');
+    expect(lastChatToolOptions?.toolChoice).toBe('none');
+
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'required',
+    });
+    expect(lastChatToolOptions?.toolChoice).toBe('required');
+
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: { type: 'function', function: { name: 'web_search' } },
+    });
+    expect(lastChatToolOptions?.toolChoice).toEqual({ type: 'tool', toolName: 'web_search' });
+  });
+
+  it('ignores tool_choice when openai_compat tools mode is off', async () => {
+    await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'required',
+    });
+
+    expect(lastChatToolOptions?.toolMode).toBe('none');
+    expect(lastChatToolOptions?.toolChoice).toBeUndefined();
+  });
+
+  it('rejects invalid tool_choice and required without tools', async () => {
+    mockLoadConfigResult = { openai_compat: { tools: 'passthrough' } };
+
+    const bad = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: 'forced',
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.body.error.type).toBe('invalid_request_error');
+
+    const missingTools = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tool_choice: 'required',
+    });
+    expect(missingTools.statusCode).toBe(400);
+
+    const unknownFn = await httpRequest('POST', `${baseUrl}/v1/chat/completions`, {
+      model: 'openai/gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: sampleTools,
+      tool_choice: { type: 'function', function: { name: 'not_listed' } },
+    });
+    expect(unknownFn.statusCode).toBe(400);
+    expect(unknownFn.body.error.message).toMatch(/not_listed/);
   });
 });
 

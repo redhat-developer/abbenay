@@ -12,8 +12,30 @@
  * the built-in step loop (stopWhen). No wrapper classes required.
  */
 
-import { streamText, jsonSchema, tool, stepCountIs } from 'ai';
+import { streamText, jsonSchema, tool, isStepCount, Output } from 'ai';
 import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
+
+/** Unified AI SDK reasoning effort levels (DR-042). */
+export type ReasoningLevel =
+  | 'provider-default'
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
+
+/**
+ * Map Abbenay's flat timeout (ms) to AI SDK 7 TimeoutConfiguration.
+ * Total-budget only — matches AI SDK 7 number semantics and preserves
+ * prior Abbenay behavior (no invented step/tool half-budgets). DR-042.
+ */
+export function toSdkTimeout(timeoutMs?: number): { totalMs: number } | undefined {
+  if (timeoutMs == null || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return undefined;
+  }
+  return { totalMs: timeoutMs };
+}
 
 import { mockStreamChat, getMockModels } from './mock.js';
 import { debug } from './debug.js';
@@ -549,6 +571,37 @@ export function getEngine(engineId: string): EngineInfo | undefined {
   return ENGINE_MAP.get(engineId);
 }
 
+/**
+ * True when `engineId` is one of the built-in engines (finding A3).
+ * Config cannot introduce new `@ai-sdk/*` packages — only these IDs map
+ * to the fixed {@link PROVIDER_LOADERS} allowlist.
+ */
+export function isKnownEngineId(engineId: string): boolean {
+  return ENGINE_MAP.has(engineId);
+}
+
+/**
+ * Reject configs that reference unknown engine IDs (A3 — no arbitrary
+ * runtime provider packages via writable config).
+ */
+export function validateConfigProviderEngines(config: {
+  providers?: Record<string, { engine?: string } | undefined>;
+}): { ok: true } | { ok: false; error: string } {
+  for (const [id, cfg] of Object.entries(config.providers || {})) {
+    const engine = cfg?.engine;
+    if (!engine) {
+      return { ok: false, error: `provider "${id}": engine is required` };
+    }
+    if (!isKnownEngineId(engine)) {
+      return {
+        ok: false,
+        error: `provider "${id}": unknown engine "${engine}" (not in the built-in engine allowlist)`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
 /** Get predefined templates for the "Add Provider" wizard. */
 export function getProviderTemplates(): ProviderTemplate[] {
   return Object.values(ENGINES).map(e => ({
@@ -581,7 +634,19 @@ export interface ChatParams {
   top_k?: number;
   maxTokens?: number;
   timeout?: number;
+  /** Unified reasoning effort (AI SDK 7); not streamed to clients in Phase 1. */
+  reasoning?: ReasoningLevel;
 }
+
+/**
+ * AI SDK `toolChoice` values (DR-046).
+ * Mapped from OpenAI `tool_choice` on `/v1` passthrough.
+ */
+export type ChatToolChoice =
+  | 'auto'
+  | 'none'
+  | 'required'
+  | { type: 'tool'; toolName: string };
 
 // ── Tool definitions (passed from proto/config to AI SDK tools) ────────
 
@@ -626,8 +691,6 @@ export type ToolValidationCallback = (
 export type ChatChunk =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string; state: string; status?: string; call?: { params: unknown; result: unknown }; done: boolean }
-  | { type: 'approval_request'; requestId: string; toolName: string; args: unknown }
-  | { type: 'approval_result'; requestId: string; decision: 'allow' | 'deny' | 'abort' }
   | { type: 'error'; error: string }
   | { type: 'done'; finishReason: string };
 
@@ -886,6 +949,7 @@ export async function* streamChat(
   toolValidator?: ToolValidationCallback,
   maxSteps: number = 10,
   jsonMode: boolean = false,
+  toolChoice?: ChatToolChoice,
 ): AsyncGenerator<ChatChunk> {
   // Mock engine — no network, no key, deterministic
   if (engineId === 'mock') {
@@ -910,8 +974,10 @@ export async function* streamChat(
       baseURL: baseUrl,
     });
 
-    // Convert messages to Vercel AI SDK format
-    const aiMessages = convertMessages(messages);
+    // AI SDK 7 rejects role=system in messages/prompt — peel them into instructions.
+    // Open WebUI (and others) still send system prompts as chat messages.
+    const { instructions, messages: nonSystemMessages } = splitSystemMessages(messages);
+    const aiMessages = convertMessages(nonSystemMessages);
 
     // Convert ToolDefinition[] to Vercel AI SDK tool() objects.
     // With an executor: Abbenay runs tools (auto mode).
@@ -942,17 +1008,12 @@ export async function* streamChat(
         }
 
         if (toolExecutor) {
+          // Approval is gated by streamText toolApproval only (DR-042) — do not
+          // also validate inside execute or ask tiers prompt twice.
           toolRecord[t.name] = tool({
             description: t.description,
             inputSchema: jsonSchema(schema),
-            execute: async (args: Record<string, unknown>) => {
-              if (toolValidator) {
-                const decision = await toolValidator(t.name, args);
-                if (decision === 'deny') return { error: 'Tool execution denied by policy' };
-                if (decision === 'abort') throw new Error('Tool execution aborted by policy');
-              }
-              return toolExecutor(t.name, args);
-            },
+            execute: async (args: Record<string, unknown>) => toolExecutor(t.name, args),
           });
         } else {
           toolRecord[t.name] = tool({
@@ -964,22 +1025,53 @@ export async function* streamChat(
       aiTools = toolRecord;
     }
 
+    const sdkTimeout = toSdkTimeout(params?.timeout);
+    /** toolCallId → name/input for mapping tool-output-denied (part has no toolName/input). */
+    const toolCallMeta = new Map<string, { name: string; input: unknown }>();
+
     const result = streamText({
       model,
       messages: aiMessages,
+      ...(instructions ? { instructions } : {}),
       ...(aiTools ? { tools: aiTools } : {}),
       // Always bound tool loops when tools are registered — including passthrough
       // (effectiveMaxSteps === 1) so we do not rely on AI SDK defaults alone.
-      ...(aiTools ? { stopWhen: stepCountIs(effectiveMaxSteps) } : {}),
+      ...(aiTools ? { stopWhen: isStepCount(effectiveMaxSteps) } : {}),
+      // OpenAI tool_choice → AI SDK toolChoice (DR-046). Only meaningful with tools.
+      ...(aiTools && toolChoice != null ? { toolChoice } : {}),
+      // Bridge Abbenay policy validator into SDK-native toolApproval (DR-042).
+      // Awaits toolValidator (which may prompt via onToolApprovalNeeded).
+      // Only when Abbenay executes tools (executor present) — not passthrough.
+      ...(aiTools && toolExecutor && toolValidator ? {
+        toolApproval: async ({ toolCall }: { toolCall: { toolName: string; input: unknown } }) => {
+          const decision = await toolValidator(toolCall.toolName, toolCall.input);
+          if (decision === 'allow') return 'approved' as const;
+          if (decision === 'abort') {
+            throw new Error('Tool execution aborted by policy');
+          }
+          return {
+            type: 'denied' as const,
+            reason: 'Tool execution denied by policy',
+          };
+        },
+      } : {}),
       ...(params?.temperature != null ? { temperature: params.temperature } : {}),
-      ...(params?.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
+      ...(params?.maxTokens != null ? { maxOutputTokens: params.maxTokens } : {}),
       ...(params?.top_p != null ? { topP: params.top_p } : {}),
       ...(params?.top_k != null ? { topK: params.top_k } : {}),
-      ...(params?.timeout != null ? { timeout: params.timeout } : {}),
-      ...(jsonMode ? { responseFormat: { type: 'json' as const } } : {}),
+      ...(sdkTimeout ? { timeout: sdkTimeout } : {}),
+      ...(params?.reasoning != null ? { reasoning: params.reasoning } : {}),
+      ...(jsonMode ? { output: Output.json() } : {}),
+      telemetry: {
+        functionId: 'abbenay.streamChat',
+        // Privacy-safe defaults — prompts/tool I/O stay local unless an
+        // operator opts into recording via a custom telemetry integration.
+        recordInputs: false,
+        recordOutputs: false,
+      },
     });
 
-    for await (const part of result.fullStream) {
+    for await (const part of result.stream) {
       switch (part.type) {
         case 'text-delta':
           if (part.text) {
@@ -988,6 +1080,9 @@ export async function* streamChat(
           break;
 
         case 'tool-call':
+          if (part.toolCallId && part.toolName) {
+            toolCallMeta.set(part.toolCallId, { name: part.toolName, input: part.input });
+          }
           yield {
             type: 'tool',
             name: part.toolName,
@@ -998,6 +1093,9 @@ export async function* streamChat(
           break;
 
         case 'tool-result':
+          if (part.toolCallId) {
+            toolCallMeta.delete(part.toolCallId);
+          }
           yield {
             type: 'tool',
             name: part.toolName,
@@ -1006,6 +1104,26 @@ export async function* streamChat(
             done: true,
           };
           break;
+
+        case 'tool-output-denied': {
+          // Preserve prior deny UX: clients see a completed tool with error payload
+          // and the original args from the preceding tool-call part.
+          const denied = part.toolCallId ? toolCallMeta.get(part.toolCallId) : undefined;
+          if (part.toolCallId) {
+            toolCallMeta.delete(part.toolCallId);
+          }
+          yield {
+            type: 'tool',
+            name: denied?.name || 'unknown',
+            state: 'completed',
+            call: {
+              params: denied?.input,
+              result: { error: 'Tool execution denied by policy' },
+            },
+            done: true,
+          };
+          break;
+        }
 
         case 'error': {
           console.error(`[Adapter] Stream error for ${engineId}/${engineModelId}:`, part.error);
@@ -1018,6 +1136,10 @@ export async function* streamChat(
 
         case 'finish':
           yield { type: 'done', finishReason: part.finishReason || 'stop' };
+          break;
+
+        default:
+          // Ignore lifecycle / reasoning / other stream parts — not forwarded yet.
           break;
       }
     }
@@ -1072,13 +1194,40 @@ export function coerceToolCallInput(args: unknown): Record<string, unknown> {
 }
 
 /**
+ * Peel system-role messages into a single instructions string for AI SDK 7+.
+ * Remaining messages are returned without system entries.
+ */
+export function splitSystemMessages(messages: ChatMessage[]): {
+  instructions?: string;
+  messages: ChatMessage[];
+} {
+  const systemParts: string[] = [];
+  const rest: ChatMessage[] = [];
+  for (const m of messages) {
+    if (m.role === 'system') {
+      if (m.content?.trim()) {
+        systemParts.push(m.content);
+      }
+      continue;
+    }
+    rest.push(m);
+  }
+  return {
+    ...(systemParts.length > 0 ? { instructions: systemParts.join('\n\n') } : {}),
+    messages: rest,
+  };
+}
+
+/**
  * Convert our internal message format to Vercel AI SDK ModelMessage format.
+ * System messages must already be removed (see splitSystemMessages).
  */
 function convertMessages(messages: ChatMessage[]): ModelMessage[] {
   return messages.map(m => {
     switch (m.role) {
       case 'system':
-        return { role: 'system' as const, content: m.content };
+        // Should not appear after splitSystemMessages; keep as user text if present.
+        return { role: 'user' as const, content: m.content };
 
       case 'user':
         return { role: 'user' as const, content: m.content };

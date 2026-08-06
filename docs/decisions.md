@@ -128,7 +128,8 @@ keychain libraries -- libsecret on Linux, Keychain.framework on macOS). Neither
 can run on a different OS or architecture. A "universal" VSIX would need to
 bundle all platform variants (tripling size) or would silently fail on
 non-matching platforms. Platform-specific VSIXes ensure the marketplace and
-manual installs deliver the correct binaries for each user's system.
+manual installs deliver the correct binaries for each user's system.  
+**Superseded by:** DR-044
 
 ---
 
@@ -161,7 +162,9 @@ without producing redundant artifacts. All 3 must pass to gate the release.
 **Date:** 2026-03-11  
 **Decision:** Use `.tar.gz` instead of `.zip` for daemon distribution archives.  
 **Rationale:** Smaller file size. tar.gz is the standard for Linux/macOS binary
-distribution and is natively supported on both platforms.
+distribution and is natively supported on both platforms.  
+**Note:** DR-044 adds `.zip` archives for Windows (`win32-x64`) only; Unix
+platforms keep `.tar.gz`.
 
 ---
 
@@ -398,15 +401,15 @@ architecture clean and benefits all gRPC clients (CLI, Python, future editors).
 as part of the release workflow. VS Code Marketplace uses
 `VSCODE_MARKETPLACE_TOKEN` and OpenVSX uses `OVSX_MARKETPLACE_TOKEN`, both
 passed to `scripts/publish-vscode.js` which handles multi-platform VSIX
-publishing. The publish job uses the `release` GitHub environment. Alpha releases
-are excluded from publishing; beta/rc go as pre-release. The extension publisher
-is changed from `abbenay` to `redhat`. This follows the Red Hat convention
-established by `redhat-developer/vscode-yaml`.
+publishing. The publish job uses the `release` GitHub environment. Alpha/beta/rc
+tags are published with `--pre-release`. The extension publisher is changed from
+`abbenay` to `redhat`. This follows the Red Hat convention established by
+`redhat-developer/vscode-yaml`.
 **Rationale:** GitHub Release assets require manual download and sideloading —
 fine for early adopters but a barrier to organic adoption. Publishing to both
 VS Code Marketplace and OpenVSX ensures coverage for VS Code and compatible
-editors (Eclipse Theia, VSCodium, Gitpod). Gating alpha releases prevents
-incomplete builds from reaching end users.
+editors (Eclipse Theia, VSCodium, Gitpod). Pre-release flags keep alpha/beta/rc
+builds out of the stable channel while still allowing Marketplace installs.
 
 ---
 
@@ -443,17 +446,23 @@ state-changing requests. Prefer `GET/POST /login` (token in the form/body)
 over `/?token=` query login to avoid leaking credentials via history,
 Referer, and access logs; the query form remains for compatibility and uses
 a timing-safe compare. Cookies set the `Secure` flag when the request is
-HTTPS or `X-Forwarded-Proto: https`. For local development only,
-`ABBENAY_HTTP_AUTH=0` (or `false`/`off`/`no`/`disabled`) turns auth off and
-logs a loud warning. Combining auth-disabled with a non-loopback bind
-(`0.0.0.0`, LAN IP, etc.) fails closed: the HTTP server refuses to start.
+HTTPS or `X-Forwarded-Proto: https`. `ABBENAY_HTTP_AUTH=0` (or
+`false`/`off`/`no`/`disabled`) turns auth off on any bind address (including
+non-loopback) and logs a loud warning — an explicit opt-out, not the default.
+Intended auth-off deployments include a production pod as a cluster-internal
+Service (private network / NetworkPolicy) and Abbenay behind a reverse proxy
+or gateway that already authenticates callers.
 **Rationale:** The previous defaults (no auth, `Access-Control-Allow-Origin: *`,
 `app.listen(port)` → `0.0.0.0`) allowed any website the user visited to
 cross-origin call the daemon and read/write secrets, config, chat, MCP, and
 sessions. Secure-by-default closes that gap while keeping intentional network
 exposure possible for containers with an explicit opt-in and a strong token.
-An env-var escape hatch keeps local DX workable without baking an insecure
-default back into production paths.
+An env-var opt-out (`ABBENAY_HTTP_AUTH=0`) supports trusted-network labs,
+cluster-internal Services, and proxy-terminated auth without baking an
+insecure default into production paths. Refusing auth-off on non-loopback was
+later dropped: ProdSec required auth **on by default**, not a permanent ban
+on intentional disable when the platform or proxy already provides the
+security boundary.
 
 ---
 
@@ -606,6 +615,27 @@ compare closes token oracle leaks.
 
 ---
 
+## DR-038: Air-gap docs must match secure defaults (finding A4)
+
+**Date:** 2026-07-20
+**Decision:** After DR-029 / DR-030 land, product and feature documentation
+MUST describe the real localhost-first HTTP defaults, auth, CORS allowlist,
+and gRPC TLS posture, and MUST NOT claim that network isolation or air-gap
+alone secures Abbenay. Docs MUST also state that Abbenay does **not** provide
+network-isolation features (firewall / offline enforcement); isolation remains
+an operator/environment control, while bind/auth/CORS/TLS/consumers are the
+daemon controls. Residual risks, a step-by-step operator checklist (bind,
+auth, CORS, TLS, consumers, MCP), and changelog callouts for the security
+default changes are required in `docs/SECURITY.md` and
+`packages/vscode/CHANGELOG.md`.
+**Rationale:** Finding A4 — messaging emphasized air-gap / privacy while
+historical defaults (all-interface HTTP, plaintext gRPC, wildcard CORS) and
+the absence of product-level isolation controls could leave an admin believing
+isolation equals security. Technical fixes live in AAP-82788 / AAP-82804; this
+decision closes the docs / claims half.
+
+---
+
 ## DR-039: Block MCP self-connections to the daemon's own endpoints
 
 **Date:** 2026-07-20
@@ -629,6 +659,40 @@ behavior when the listen set is empty closes the race before
 
 ---
 
+## DR-040: Credential aggregation (A1) + provider endpoint policy (A3); defer encryption-at-rest
+
+**Date:** 2026-07-20
+**Decision:** (1) **A1 — document and harden access, do not eliminate aggregation.**
+Abbenay keeps centralized provider credentials (product choice). Operator docs
+(`docs/CONFIGURATION.md`) explicitly describe the larger blast radius vs
+per-extension storage and give guidance for Enterprise / Security-Conscious /
+air-gapped personas. Secret mutate APIs stay auth-gated (DR-030 / DR-037);
+HTTP secret listing returns presence only (never values); secret set/delete
+emits `[Audit] secret changed` (key + op + source, never the value).
+(2) **A3 — supply chain + malicious endpoint.** Provider `@ai-sdk/*` packages
+load on demand from a **fixed in-code allowlist** (`PROVIDER_LOADERS`); config
+cannot introduce new npm packages. Runtime configure / `POST /api/config` /
+gRPC updates reject unknown `engine` IDs. Separately, validate every provider
+`base_url` / discovery endpoint on mutating paths with a shared scheme/host
+policy: absolute `http` / `https` only, hostname required, no URL userinfo;
+`http` limited to loopback unless the host is on `server.allowed_provider_hosts`
+or `server.allow_insecure_provider_http` is true; when the allowlist is
+non-empty, non-loopback hosts must match it. Successful endpoint changes emit
+`[Audit] provider endpoint changed`. Dynamic provider / MCP registration
+cannot be done anonymously when auth/consumers are configured.
+(3) **Defer** per-secret encryption-at-rest beyond OS keychain / env refs and
+process-level secret isolation until there is a concrete enterprise
+requirement.
+**Rationale:** Finding A1 notes that centralizing 20+ provider keys contradicts
+naive expectations of Enterprise / Security-Conscious / air-gapped personas if
+left undocumented and ungated. Finding A3 is both the multi-provider dependency surface and the
+writable-config malicious `base_url` path. Auth gates (Tasks 1/6 / H4) protect
+writes; the fixed loader map + engine allowlist stop arbitrary package load;
+endpoint policy + audits stop prompt/key exfiltration via fake endpoints
+without breaking local Ollama / RHAI loopback HTTP. Full encryption-at-rest /
+enclave isolation is deferred; OS keychain + 0600 config + auth gates + audits
+are the current control set.
+
 ## DR-041: Prefer direct bumps and lockfile resolution over npm overrides
 
 **Date:** 2026-07-21
@@ -645,3 +709,122 @@ already admit patched versions. Overrides force versions outside the normal
 resolution graph, increase review surface, and can surprise consumers; a
 lockfile refresh after direct bumps is enough when ranges allow the fix.
 
+## DR-042: Upgrade to AI SDK 7 (phased)
+
+**Date:** 2026-07-21
+**Decision:** Upgrade the daemon from AI SDK 6 to AI SDK 7. Require Node.js
+`>=22.12.0` (root and `@abbenay/daemon` engines; SEA/esbuild target `node22`).
+Dependency bump and API renames (`stepCountIs` → `isStepCount`, `fullStream`
+→ `stream`, `maxTokens` → `maxOutputTokens`, JSON mode via `Output.json()`).
+Map Abbenay's flat `timeout` ms to `{ totalMs }` only (no invented step/tool
+half-budgets). Pass-through unified `reasoning` on chat params / model config /
+policy sampling (not streamed to clients yet). Register AI SDK telemetry only
+when `ABBENAY_AI_TELEMETRY` is `1` or `true`, with `recordInputs`/`recordOutputs: false` on
+`streamChat`. Bridge chat tool approval onto SDK `toolApproval` (executor path
+only) via a function that awaits Abbenay's `createToolValidator` /
+`onToolApprovalNeeded` and returns `approved` or `{ type: 'denied', reason }`;
+abort throws. Map `tool-output-denied` stream parts to Abbenay `tool`/`completed`
+chunks with the prior denial error payload. MCP HTTP continues to use
+`authorizeToolExecution` directly. Published `@abbenay/core` peers track AI SDK
+7 majors. Out of scope: HarnessAgent, realtime voice, generateVideo, MCP Apps,
+WorkflowAgent, HMAC-signed approvals.
+**Rationale:** AI SDK 7 is the supported agent runtime; Node 18/20 are no
+longer supported by the SDK. Total-only timeouts preserve prior budgets and
+avoid aborting human approval waits. Opt-in telemetry avoids surprise prompt
+export. Bridging `toolApproval` keeps DR-019 policy tiers without rewriting
+transport UX around SDK `user-approval` stream pauses. Transport approval
+notifications are out-of-band SSE/CLI events via `onToolApprovalNeeded`; they
+are not `ChatChunk` variants (unused `approval_request` / `approval_result`
+chunk types were removed after the bridge landed).
+
+---
+
+## DR-043: Stdio MCP spawn allowlist + operator approval
+
+**Date:** 2026-07-20
+**Decision:** Dynamic `RegisterMcpServer` with `transport: stdio` must not spawn
+arbitrary commands. Before `StdioMCPTransport` is constructed: (1) `command`
+must match configurable `security.stdio_command_allowlist` (empty allowlist
+denies all dynamic stdio); (2) an interactive operator approval is required by
+default (`stdio_require_approval`, dashboard / `GET|POST /api/mcp/stdio-spawns`);
+(3) when `consumers` is configured, stdio `command`/`args` are rejected unless
+the caller authenticates as a consumer with `mcp_register`. Denials are logged
+clearly and surfaced in the API/UI. Config-file `mcp_servers` remain
+admin-trusted and skip these gates. Prefer caller-spawned HTTP/SSE for dynamic
+registration (DR-025).
+**Rationale:** Finding H6 — `mcp-client-pool` previously spawned
+`config.command` / `config.args` for any caller with `mcp_register` (or anyone
+when consumers were unset). Allowlist + approval + auth closes arbitrary
+command execution while keeping trusted MCP binaries usable. Numbered DR-043
+because main already shipped air-gap docs as DR-038 and AAP-82836 claims
+DR-040 for credential aggregation.
+
+---
+
+## DR-044: win32-x64 platform + loopback TCP local IPC
+
+**Date:** 2026-07-23  
+**Decision:** Add `win32-x64` as a fourth supported platform (CI, release,
+Marketplace VSIX). On Windows, local daemon IPC uses loopback TCP
+(`127.0.0.1` + ephemeral port) with `host:port` written to
+`<runtimeDir>/daemon.addr` (runtime dir = `%TEMP%/abbenay`). Do **not** use
+named-pipe gRPC for local IPC in this release. Linux/macOS keep Unix sockets.
+Windows distribution archives are `.zip`; Unix remains `.tar.gz` (DR-013).
+`bootstrap.sh` downloads the official `node-v*-win-x64.zip` layout on Windows.
+**Supersedes:** DR-010 (platform list expands from 3 to 4).  
+**Rationale:** `@grpc/grpc-js` already supports TCP (used for containers via
+`--grpc-port`); named-pipe gRPC was stubbed but unproven. Loopback plaintext is
+already allowed by DR-029. Shipping `win32-x64` unblocks making Abbenay a hard
+`extensionDependency` of vscode-ansible on Windows (AAP-82840 / AAP-82970).
+Authenticode signing, `darwin-x64`, Python Windows paths, and named-pipe gRPC
+remain out of scope.
+
+---
+
+## DR-045: VSCode webview UX — modal provider form, secondary sidebar chat, native chat routing
+
+**Date:** 2026-08-04  
+**Decision:** Refactor the provider configuration webview and chat sidebar
+placement based on the UX review (AAP-77888 / ANSTRAT-1891):
+
+1. Replace the inline accordion add/edit provider form with a native `<dialog>`
+   modal. The "+ Add Provider" button moves above the list; the modal title
+   distinguishes "Add New Provider" from "Edit Provider: {name}".
+2. Move the chat view container from `activitybar` to `secondarySidebar` so
+   it appears on the right side by default, following the convention for chat
+   interfaces in IDEs (Copilot, Cursor, etc.).
+3. The "Start Chatting" button in the provider panel opens the native IDE chat
+   (`workbench.action.chat.open`) and falls back to Abbenay's sidebar only
+   when no native chat is available. Chat provider routing configuration is
+   the consumer's responsibility (e.g. vscode-ansible's
+   `ansibleEnvironments.llm.chatProvider`), not Abbenay's — avoiding duplicate
+   settings and detection logic.
+4. Add cross-navigation: gear menu in the chat toolbar with "Configure
+   Providers" / "Open Dashboard"; `view/title` menu contributions in the chat
+   title bar; "Start Chatting" link in the provider panel.
+
+**Rationale:** The UX review identified that the add/edit form was invisible
+below the fold (UX-001/002), the chat was not discoverable (UX-003), and a
+dedicated activity bar icon was questionable for a fallback chat (UX-003).
+The `secondarySidebar` contribution point (VS Code 1.93+) places the chat on
+the right without programmatic workarounds. Deferring chat provider routing
+to the consumer avoids duplication with vscode-ansible's existing
+`chatProvider.ts` pattern. `<dialog>` was chosen over a custom overlay for
+built-in accessibility, focus trapping, and `::backdrop` support.
+
+---
+
+## DR-046: Honor OpenAI `tool_choice` on `/v1` passthrough
+
+**Date:** 2026-08-03
+**Decision:** When `openai_compat` tools mode is `passthrough` (DR-032), map
+OpenAI `tool_choice` (`auto` / `none` / `required` / specific function) to the
+AI SDK `toolChoice` and forward it through `ChatToolOptions` → `streamChat` →
+`streamText`. Reject invalid shapes and `required`/specific-function without a
+matching request tool with `400`. When tools mode is `off`, ignore
+`tool_choice` the same way `tools` are ignored. Passthrough keeps
+`maxToolIterations: 1` so forced tool choice cannot open an executor loop.
+**Rationale:** Clients such as Open WebUI Native function calling send
+`tool_choice` to force or suppress tool use; dropping it silently made
+passthrough incomplete versus a real OpenAI-compatible endpoint (issue #77).
+Numbered DR-046 because main already shipped VS Code webview UX as DR-045.

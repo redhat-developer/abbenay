@@ -6,8 +6,11 @@ A lightweight, transport-agnostic library for integrating 20 LLM engines into yo
 
 `@abbenay/core` is the reusable library extracted from the Abbenay daemon. It provides:
 
-- **Multi-engine abstraction** over 15+ LLM providers via the Vercel AI SDK
-- **Streaming chat** with tool calling support
+- **Multi-engine abstraction** over 20 LLM providers via the Vercel AI SDK 7
+  (requires Node.js 22.12+)
+- **Streaming chat** with tool calling; optional `reasoning` effort pass-through
+  to the model (reasoning deltas are not streamed to clients yet); flat
+  `timeout` ms maps to AI SDK `{ totalMs }`
 - **Model discovery** from provider APIs
 - **YAML configuration** management (user-level and workspace-level)
 - **Pluggable secret store** for API key management
@@ -16,8 +19,12 @@ It has **zero transport dependencies** — no gRPC, no Express, no CLI. Just the
 
 ## Install
 
+Download the `abbenay-core-*.tgz` tarball from the
+[latest GitHub release](https://github.com/redhat-developer/abbenay/releases)
+and install it locally:
+
 ```bash
-npm install @abbenay/core
+npm install abbenay-core-<version>.tgz
 ```
 
 Then install only the AI SDK provider packages you need:
@@ -219,7 +226,7 @@ if (core.hasProvider('my-anthropic')) { ... }
 | `engine` | `string` | **Required.** Engine type (`"openai"`, `"anthropic"`, etc.) |
 | `apiKey` | `string` | API key value — stored in SecretStore automatically |
 | `apiKeyEnvVar` | `string` | Environment variable name (alternative to `apiKey`) |
-| `baseUrl` | `string` | Custom base URL (overrides engine default) |
+| `baseUrl` | `string` | Custom base URL (overrides engine default); validated per DR-040 endpoint policy |
 | `models` | `Record<string, ModelConfig>` | Models to enable |
 
 In-memory providers merge over disk config. If both define the same provider ID, the in-memory version wins.
@@ -281,7 +288,10 @@ for await (const chunk of core.chat(
 }
 ```
 
-The Vercel AI SDK handles the tool execution loop automatically (up to `maxSteps: 10`).
+The Vercel AI SDK (v7) handles the tool execution loop automatically via
+`stopWhen: isStepCount(...)` (default max 10 iterations, configurable through
+`tool_policy.max_tool_iterations`). Tool approval uses SDK-native `toolApproval`
+bridged to Abbenay's secure-by-default policy (DR-019 / DR-042).
 
 ## Supported Engines
 
@@ -306,7 +316,7 @@ The Vercel AI SDK handles the tool execution loop automatically (up to `maxSteps
 | LM Studio | `lmstudio` | No | `@ai-sdk/openai-compatible` | Local models |
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` | Fast inference |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` | Llama API |
-| Red Hat AI | `redhat` | No | `@ai-sdk/openai-compatible` | Inference Server or OpenShift AI MaaS |
+| Red Hat AI | `redhat` | No | `@ai-sdk/openai-compatible` | Red Hat AI Inference or OpenShift AI MaaS |
 | Mock | `mock` | No | *(built-in)* | Testing only |
 
 ## Policies

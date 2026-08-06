@@ -13,12 +13,16 @@ an OpenAI-compatible REST API:
 Both speak the same protocol, so Abbenay routes them through
 `@ai-sdk/openai-compatible` — no additional SDK packages are required.
 
+Local Inference Server deployments support air-gapped / offline inference
+(prompts stay on your network). That does **not** mean network isolation
+secures the daemon — see [SECURITY.md](./SECURITY.md).
+
 ---
 
 ## Profile A — Inference Server
 
-Red Hat AI Inference Server is a standalone vLLM instance running locally,
-on a RHEL AI host, or in an OpenShift container.
+Red Hat AI Inference is a standalone vLLM-based inference stack running
+locally, on a RHEL AI host, or in an OpenShift container.
 
 ### Quick start
 
@@ -128,6 +132,11 @@ providers:
 export REDHAT_AI_API_KEY="your-maas-api-key"
 ```
 
+> **Note:** The `base_url` must point to the OpenAI-compatible inference
+> endpoint (`/v1`), not the native MaaS management API (`/maas-api/v1`).
+> The `/maas-api/v1` prefix is used for token generation and
+> subscription-level model listing — Abbenay does not use it.
+
 ### Key differences from Inference Server
 
 | Aspect | Inference Server | MaaS |
@@ -189,9 +198,10 @@ providers:
 | 5 | Model discovery (CLI) | `aby list-models --discover redhat` |
 | 6 | Model discovery (web) | Add Provider wizard → select `redhat` |
 | 7 | Chat completions | `aby chat -m redhat-inference/<model>` |
-| 8 | Streaming | `curl http://localhost:8787/v1/chat/completions` with `"stream": true` |
+| 8 | Streaming | `curl -H "Authorization: Bearer $ABBENAY_API_TOKEN" http://127.0.0.1:8787/v1/chat/completions` with `"stream": true` |
 | 9 | Tool calling | `aby chat` with tools enabled (if model supports it) |
 | 10 | VS Code LM API | Configure Provider → select model → chat |
+| 11 | Air-gap / privacy | Use local Inference Server only; isolation alone does not secure Abbenay — see [SECURITY.md](./SECURITY.md) |
 
 ---
 
@@ -202,3 +212,4 @@ providers:
 - [Red Hat AI Inference — Configuring API key authentication](https://docs.redhat.com/en/documentation/red_hat_ai_inference/3.4/html/getting_started/configuring-api-key-authentication_getting-started)
 - [RHEL AI 3.4 — Getting Started](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux_ai/3.4/html-single/getting_started/getting_started)
 - [Abbenay Configuration Guide](CONFIGURATION.md)
+- [Security, Privacy & Air-Gap](SECURITY.md)

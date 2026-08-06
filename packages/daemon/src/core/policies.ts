@@ -17,6 +17,7 @@ import * as path from 'node:path';
 import yaml from 'js-yaml';
 import { getConfigDir } from './paths.js';
 import type { ModelConfig } from './config.js';
+import type { ReasoningLevel } from './engines.js';
 
 // ── PolicyConfig interface ──────────────────────────────────────────────
 
@@ -24,6 +25,8 @@ export interface PolicySampling {
   temperature?: number;
   top_p?: number;
   top_k?: number;
+  /** Unified AI SDK reasoning effort (DR-042). */
+  reasoning?: ReasoningLevel;
 }
 
 export interface PolicyOutput {
@@ -218,7 +221,7 @@ function warnUnenforcedFields(name: string, policy: PolicyConfig): void {
  */
 export interface FlattenedPolicy {
   /** Standard ModelConfig-compatible sampling/output fields */
-  params: Partial<Pick<ModelConfig, 'temperature' | 'top_p' | 'top_k' | 'max_tokens' | 'timeout'>>;
+  params: Partial<Pick<ModelConfig, 'temperature' | 'top_p' | 'top_k' | 'max_tokens' | 'timeout' | 'reasoning'>>;
   /** System prompt snippet from the policy */
   systemPromptSnippet?: string;
   /** How to combine snippet with model's system_prompt */
@@ -243,6 +246,7 @@ export function flattenPolicy(policy: PolicyConfig): FlattenedPolicy {
   if (policy.sampling?.temperature != null) params.temperature = policy.sampling.temperature;
   if (policy.sampling?.top_p != null) params.top_p = policy.sampling.top_p;
   if (policy.sampling?.top_k != null) params.top_k = policy.sampling.top_k;
+  if (policy.sampling?.reasoning != null) params.reasoning = policy.sampling.reasoning;
   if (policy.output?.max_tokens != null) params.max_tokens = policy.output.max_tokens;
   if (policy.reliability?.timeout != null) params.timeout = policy.reliability.timeout;
 

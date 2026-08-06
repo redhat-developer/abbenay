@@ -87,10 +87,14 @@ aby web           # Start web dashboard
 aby start         # Or start everything at once
 ```
 
-Open http://localhost:8787 to:
+Open http://127.0.0.1:8787 to:
 - Add API keys (stored in system keychain or referenced from environment variables)
 - Enable/disable providers
 - Select which models to expose
+
+HTTP auth is on by default — use the dashboard login / API token when prompted.
+The daemon binds to loopback by default; see
+[Security & air-gap](../../docs/SECURITY.md).
 
 ### Config Files
 
@@ -226,7 +230,7 @@ npm run package
 
 ### Models Not Appearing
 
-1. Open web dashboard (http://localhost:8787)
+1. Open web dashboard (http://127.0.0.1:8787) — sign in with the API token if prompted
 2. Ensure provider has valid API key
 3. Enable the models you want
 4. Reload VS Code window

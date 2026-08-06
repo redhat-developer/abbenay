@@ -35,7 +35,7 @@ export interface ResolvedHttpSecurity {
   apiToken: string;
   host: string;
   corsOrigins: string[];
-  /** False when ABBENAY_HTTP_AUTH disables auth (local-dev escape hatch). */
+  /** False when ABBENAY_HTTP_AUTH disables auth (explicit opt-out). */
   authEnabled: boolean;
   /** True when the token was freshly generated and persisted */
   generated: boolean;
@@ -73,8 +73,9 @@ const AUTH_DISABLE_VALUES = new Set(['0', 'false', 'off', 'no', 'disabled']);
 /**
  * Return true when HTTP auth is enabled (the secure default).
  *
- * Set `ABBENAY_HTTP_AUTH=0` (or false/off/no/disabled) to turn auth off for
- * local development only. Never disable auth when binding beyond loopback.
+ * Set `ABBENAY_HTTP_AUTH=0` (or false/off/no/disabled) to turn auth off.
+ * Allowed on any bind address (cluster-internal Service, auth at a reverse
+ * proxy, lab). The server logs a loud warning when auth is disabled.
  */
 export function isHttpAuthEnabled(options?: WebSecurityOptions): boolean {
   if (options?.authEnabled !== undefined) {
@@ -201,33 +202,6 @@ export function mayAutoEstablishDashboardSession(opts: {
   if (!opts.authEnabled) return true;
   if (opts.hasValidAuthCookie) return true;
   return !shouldRedirectDashboardToLogin({ ...opts, hasValidAuthCookie: false });
-}
-
-/**
- * Thrown when HTTP auth is disabled on a non-loopback bind (fail-closed).
- */
-export class HttpAuthBindSecurityError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'HttpAuthBindSecurityError';
-  }
-}
-
-/**
- * Refuse auth-disabled HTTP binds beyond loopback.
- *
- * `ABBENAY_HTTP_AUTH=0` is a local-dev escape hatch only. Combining it with
- * `--host 0.0.0.0` (or any non-loopback bind) would expose an unauthenticated
- * API on the network — refuse to start instead of warning.
- */
-export function assertHttpAuthBindAllowed(host: string, authEnabled: boolean): void {
-  if (authEnabled || isLocalhostBind(host)) {
-    return;
-  }
-  throw new HttpAuthBindSecurityError(
-    `Refusing to bind HTTP on non-loopback address "${host}" with authentication disabled ` +
-      '(ABBENAY_HTTP_AUTH=0). Re-enable auth, or bind to 127.0.0.1 / ::1 / localhost.',
-  );
 }
 
 /**
@@ -513,7 +487,7 @@ export function createCorsMiddleware(allowlist: string[]) {
 /**
  * Auth + CSRF middleware for protected HTTP routes.
  *
- * When `authEnabled` is false (ABBENAY_HTTP_AUTH disable escape hatch), all
+ * When `authEnabled` is false (ABBENAY_HTTP_AUTH opt-out), all
  * requests pass through without checking credentials.
  *
  * Accepts:

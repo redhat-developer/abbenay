@@ -38,7 +38,8 @@ locally-runnable scripts; CI just calls them.
 | `npm run lint` | Lint all workspace packages | Quality gate |
 | `npm run check:no-query-secrets` | Ban query-secret URL patterns in sources (DR-035) | Quality gate |
 | `npm test` | Test all workspace packages | Quality gate |
-| `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + tar.gz) | Build artifacts |
+| `npm run ci:build` | Full build with `--skip-proto` (SEA + VSIX + archive) | Build artifacts |
+| `npm run ci:smoke-win32-ipc` | Start Windows SEA, HealthCheck over loopback TCP | Windows build smoke |
 | `npm run ci:package-python` | Build Python wheel via `uvx hatch build` | Python artifact |
 | `npm run ci:publish-vscode` | Publish VSIXes to Marketplace + OpenVSX | Release only |
 
@@ -48,9 +49,10 @@ The CI workflow (`.github/workflows/ci.yml`) has three jobs:
 
 - **lint-and-test**: runs on ubuntu-latest with xvfb (for VS Code extension
   tests), gates all other jobs
-- **build**: matrix across linux-x64, linux-arm64, macos-arm64; produces SEA
-  binaries, platform-specific VSIXes, and distribution tar.gz archives; runs
-  `@abbenay/core` smoke test on all runners
+- **build**: matrix across linux-x64, linux-arm64, macos-arm64, win32-x64;
+  produces SEA binaries, platform-specific VSIXes, and distribution archives
+  (`.tar.gz` on Unix, `.zip` on Windows); runs `@abbenay/core` smoke test on
+  all runners and `npm run ci:smoke-win32-ipc` on Windows
 - **package-python**: produces the Python client wheel
 
 ## Rules for modifications
@@ -91,12 +93,35 @@ Right (logic in npm script):
   run: npm run ci:docs
 ```
 
+## Release drafter workflow
+
+`.github/workflows/push.yml` triggers on every push to `main` (i.e. each PR
+merge) and on `workflow_dispatch`. It calls the shared reusable workflow from
+`ansible/team-devtools/.github/workflows/push.yml@main`, which runs
+`release-drafter/release-drafter@v7`. This:
+
+1. Auto-labels the merged PR based on its conventional commit title prefix
+   (`feat:` -> `feat`, `fix:` -> `fix`, `chore:` / `build:` / `ci:` -> `chore`, etc.).
+2. Updates a **draft** GitHub Release with categorized changelog entries
+   (Features, Fixes, Maintenance).
+3. The draft accumulates across merges until a maintainer publishes a release.
+
+Configuration lives in `.github/release-drafter.yml` (not in the workflows
+directory). It uses `_extends` to inherit the shared config from
+`ansible/team-devtools`, matching the pattern used by other Ansible DevTools projects.
+
+The release workflow (below) merges the draft changelog into the final release
+body when a tag is pushed, then deletes the consumed draft.
+
 ## Release workflow
 
 `.github/workflows/release.yml` triggers on `v*` tags. It injects the version
 from the tag into all `package.json` files via `scripts/set-version.js`, builds
 all platforms, then creates a GitHub Release with the artifacts attached. Tags
 containing `alpha`, `beta`, or `rc` are automatically marked as prereleases.
+
+If a release-drafter draft exists, its changelog body is prepended above the
+artifacts table in the final release notes, and the draft is deleted.
 
 Release assets: platform-specific `.vsix` files, `.tar.gz` daemon archives
 (with version in filename), `@abbenay/core` npm tarball, and Python wheel.
@@ -108,13 +133,13 @@ public registries (uses the `release` GitHub environment):
 
 | Job | Target | Trigger condition | Auth mechanism |
 |-----|--------|-------------------|----------------|
-| `publish-vscode` | VS Code Marketplace + OpenVSX | All tags except `*alpha*` | `VSCODE_MARKETPLACE_TOKEN`, `OVSX_MARKETPLACE_TOKEN` |
+| `publish-vscode` | VS Code Marketplace + OpenVSX | All release tags | `VSCODE_MARKETPLACE_TOKEN`, `OVSX_MARKETPLACE_TOKEN` |
 
 - **VS Code Marketplace + OpenVSX**: `scripts/publish-vscode.js` finds all
   `.vsix` files in the downloaded artifacts and publishes each with
-  `vsce publish -p <token>` and `ovsx publish -p <token>`. Beta/RC tags are
-  published with `--pre-release`. Alpha tags are excluded entirely.
-  Follows the Red Hat convention from `redhat-developer/vscode-yaml`.
+  `vsce publish -p <token>` and `ovsx publish -p <token>`. Alpha/beta/RC
+  tags are published with `--pre-release`. Follows the Red Hat convention
+  from `redhat-developer/vscode-yaml`.
 
 ### One-time setup for publishing
 

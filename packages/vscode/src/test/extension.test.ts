@@ -1,9 +1,28 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 
 suite('Extension Smoke Tests', () => {
   suiteSetup(async function () {
-    this.timeout(30000);
+    // Activation may auto-start the bundled SEA and wait for IPC readiness.
+    this.timeout(60000);
+
+    // Clear stale runtime artifacts so a dead PID / leftover socket cannot
+    // confuse liveness checks or leave activate() waiting on a bad endpoint.
+    const runtimeDir = path.join(os.tmpdir(), 'abbenay');
+    for (const name of ['abbenay.pid', 'daemon.sock', 'daemon.addr']) {
+      const p = path.join(runtimeDir, name);
+      try {
+        if (fs.existsSync(p)) {
+          fs.unlinkSync(p);
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
+
     const ext = vscode.extensions.getExtension('redhat.abbenay-provider');
     if (ext && !ext.isActive) {
       try {

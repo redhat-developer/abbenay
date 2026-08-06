@@ -11,8 +11,6 @@ import {
   shouldRedirectDashboardToLogin,
   mayAutoEstablishDashboardSession,
   isHttpAuthEnabled,
-  assertHttpAuthBindAllowed,
-  HttpAuthBindSecurityError,
   resolveHttpApiToken,
   resolveHttpHost,
   resolveCorsOrigins,
@@ -214,25 +212,6 @@ describe('isHttpAuthEnabled', () => {
     expect(isHttpAuthEnabled({ authEnabled: true })).toBe(true);
     process.env.ABBENAY_HTTP_AUTH = '1';
     expect(isHttpAuthEnabled({ authEnabled: false })).toBe(false);
-  });
-});
-
-describe('assertHttpAuthBindAllowed', () => {
-  it('allows auth-disabled binds on loopback', () => {
-    expect(() => assertHttpAuthBindAllowed('127.0.0.1', false)).not.toThrow();
-    expect(() => assertHttpAuthBindAllowed('::1', false)).not.toThrow();
-    expect(() => assertHttpAuthBindAllowed('localhost', false)).not.toThrow();
-  });
-
-  it('allows auth-enabled binds on any host', () => {
-    expect(() => assertHttpAuthBindAllowed('0.0.0.0', true)).not.toThrow();
-    expect(() => assertHttpAuthBindAllowed('192.168.1.10', true)).not.toThrow();
-  });
-
-  it('refuses auth-disabled binds beyond loopback', () => {
-    expect(() => assertHttpAuthBindAllowed('0.0.0.0', false)).toThrow(HttpAuthBindSecurityError);
-    expect(() => assertHttpAuthBindAllowed('192.168.1.10', false)).toThrow(HttpAuthBindSecurityError);
-    expect(() => assertHttpAuthBindAllowed('::', false)).toThrow(HttpAuthBindSecurityError);
   });
 });
 

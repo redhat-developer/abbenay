@@ -34,9 +34,16 @@ import {
   type ToolDefinition,
   type ToolExecutor,
   type ToolValidationCallback,
+  type ChatToolChoice,
 } from './engines.js';
 import type { ToolRegistry } from './tool-registry.js';
 import { createToolValidator } from './tool-approval.js';
+import {
+  auditProviderEndpointChange,
+  endpointPolicyFromServer,
+  validateProviderEndpoint,
+} from './provider-endpoint.js';
+import { auditSecretChange } from './secrets.js';
 import { VERSION } from '../version.js';
 
 // ── Virtual provider info (runtime, for API responses) ─────────────────
@@ -100,12 +107,17 @@ export interface ChatToolOptions {
   toolMode?: string;
   /** Client-provided tool definitions (overrides registry when present) */
   tools?: ToolDefinition[];
-  /** Max tool execution rounds (0 = unlimited, default 10) */
+  /** Max tool execution rounds (default 10; must be a positive integer when set) */
   maxToolIterations?: number;
   /** Only expose these tools to the LLM (empty = all). Matches namespaced names. */
   toolFilter?: string[];
   /** Session ID for session-scoped tool visibility */
   sessionId?: string;
+  /**
+   * AI SDK toolChoice (DR-046). Used by `/v1` passthrough when OpenAI
+   * `tool_choice` is present; ignored when no tools are registered.
+   */
+  toolChoice?: ChatToolChoice;
   /**
    * Called when a tool matches `require_approval` patterns and needs user confirmation.
    * The implementation is transport-specific: the web server writes an SSE event and
@@ -207,7 +219,19 @@ export class CoreState {
     };
 
     if (options.baseUrl) {
-      providerCfg.base_url = options.baseUrl;
+      const server = this.configLoader?.()?.server ?? loadConfig()?.server;
+      const policy = endpointPolicyFromServer(server);
+      const endpoint = validateProviderEndpoint(options.baseUrl, policy);
+      if (!endpoint.ok) {
+        throw new Error(endpoint.error);
+      }
+      providerCfg.base_url = endpoint.normalized;
+      auditProviderEndpointChange({
+        providerId,
+        previousBaseUrl: null,
+        newBaseUrl: endpoint.normalized,
+        source: 'core-add',
+      });
     }
 
     // Store API key in SecretStore if provided
@@ -215,6 +239,7 @@ export class CoreState {
       const keychainName = `abbenay.${providerId}`;
       await this.secretStore.set(keychainName, options.apiKey);
       providerCfg.api_key_keychain_name = keychainName;
+      auditSecretChange({ key: keychainName, op: 'set', source: 'core-add' });
     } else if (options.apiKeyEnvVar) {
       providerCfg.api_key_env_var_name = options.apiKeyEnvVar;
     }
@@ -669,24 +694,30 @@ export class CoreState {
     const isJsonStrict = flatPolicy?.outputFormat === 'json_only';
     const shouldRetryJson = isJsonStrict && flatPolicy?.retryOnInvalidJson;
 
+    const toolChoice = toolOptions?.toolChoice;
+
     if (isJsonStrict && !shouldRetryJson) {
       yield* streamChat(
         providerCfg.engine, engineModelId, processedMessages,
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
         true,
+        toolChoice,
       );
     } else if (shouldRetryJson) {
       yield* streamChatWithJsonRetry(
         providerCfg.engine, engineModelId, processedMessages,
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
+        toolChoice,
       );
     } else {
       yield* streamChat(
         providerCfg.engine, engineModelId, processedMessages,
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
+        false,
+        toolChoice,
       );
     }
   }
@@ -810,6 +841,7 @@ function mergeParams(
   if (pp?.top_k != null) { merged.top_k = pp.top_k; hasAny = true; }
   if (pp?.max_tokens != null) { merged.maxTokens = pp.max_tokens; hasAny = true; }
   if (pp?.timeout != null) { merged.timeout = pp.timeout; hasAny = true; }
+  if (pp?.reasoning != null) { merged.reasoning = pp.reasoning; hasAny = true; }
 
   // Layer 2: Explicit model config (overrides policy)
   if (configParams?.temperature != null) { merged.temperature = configParams.temperature; hasAny = true; }
@@ -817,6 +849,7 @@ function mergeParams(
   if (configParams?.top_k != null) { merged.top_k = configParams.top_k; hasAny = true; }
   if (configParams?.max_tokens != null) { merged.maxTokens = configParams.max_tokens; hasAny = true; }
   if (configParams?.timeout != null) { merged.timeout = configParams.timeout; hasAny = true; }
+  if (configParams?.reasoning != null) { merged.reasoning = configParams.reasoning; hasAny = true; }
 
   // Layer 3: Per-request params (overrides everything)
   if (requestParams?.temperature != null) { merged.temperature = requestParams.temperature; hasAny = true; }
@@ -824,6 +857,7 @@ function mergeParams(
   if (requestParams?.top_k != null) { merged.top_k = requestParams.top_k; hasAny = true; }
   if (requestParams?.maxTokens != null) { merged.maxTokens = requestParams.maxTokens; hasAny = true; }
   if (requestParams?.timeout != null) { merged.timeout = requestParams.timeout; hasAny = true; }
+  if (requestParams?.reasoning != null) { merged.reasoning = requestParams.reasoning; hasAny = true; }
 
   return hasAny ? merged : undefined;
 }
@@ -868,12 +902,13 @@ async function* streamChatWithJsonRetry(
   toolExecutor: ToolExecutor | undefined,
   toolValidator: ToolValidationCallback | undefined,
   maxSteps: number,
+  toolChoice?: ChatToolChoice,
 ): AsyncGenerator<ChatChunk> {
   let fullText = '';
   let finishReason = 'stop';
   const buffered: ChatChunk[] = [];
 
-  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true)) {
+  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice)) {
     buffered.push(chunk);
     if (chunk.type === 'text') {
       fullText += chunk.text;
@@ -925,5 +960,5 @@ async function* streamChatWithJsonRetry(
     { role: 'user', content: retryPrompt },
   ];
 
-  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true);
+  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice);
 }

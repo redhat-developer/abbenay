@@ -164,6 +164,13 @@ function init(): void {
           </vscode-single-select>
           <vscode-button id="newSessionBtn" secondary class="toolbar-btn" title="New session">+ New</vscode-button>
           <vscode-button id="deleteSessionBtn" secondary class="toolbar-btn" title="Delete session">&times;</vscode-button>
+          <div class="gear-menu-wrapper">
+            <button id="gearBtn" class="gear-btn" title="Settings">&#9881;</button>
+            <div id="gearMenu" class="gear-menu">
+              <button class="gear-menu-item" data-action="configureProvider">Configure Providers</button>
+              <button class="gear-menu-item" data-action="openDashboard">Open Dashboard</button>
+            </div>
+          </div>
           <button id="sendBtn" class="send-btn" disabled title="Send (Enter)">&#9650;</button>
           <button id="cancelBtn" class="cancel-btn" style="display: none;" title="Cancel">&#9632;</button>
         </div>
@@ -192,6 +199,28 @@ function init(): void {
   $textarea.addEventListener('keydown', handleTextareaKeydown);
   $textarea.addEventListener('input', autoResize);
   $messageList.addEventListener('scroll', handleScroll);
+
+  const gearBtn = document.getElementById('gearBtn')!;
+  const gearMenu = document.getElementById('gearMenu')!;
+
+  gearBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    gearMenu.classList.toggle('open');
+  });
+
+  gearMenu.querySelectorAll('.gear-menu-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const action = (item as HTMLElement).dataset.action;
+      if (action) {
+        api.postMessage({ type: action });
+      }
+      gearMenu.classList.remove('open');
+    });
+  });
+
+  document.addEventListener('click', () => {
+    gearMenu.classList.remove('open');
+  });
 
   window.addEventListener('message', onMessage);
   api.postMessage({ type: 'ready' });

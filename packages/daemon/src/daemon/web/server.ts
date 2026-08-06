@@ -17,11 +17,18 @@ import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
 import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, type ConfigFile, type ProviderConfig } from '../../core/config.js';
+import { auditSecretChange } from '../../core/secrets.js';
+import {
+  auditProviderEndpointChange,
+  auditProviderEndpointConfigDiff,
+  endpointPolicyFromServer,
+  validateProviderEndpoint,
+} from '../../core/provider-endpoint.js';
 import { listAllPolicies, loadCustomPolicies, saveCustomPolicies, BUILTIN_POLICY_NAMES, type PolicyConfig } from '../../core/policies.js';
 import { maybeSummarize, generateSessionSummary } from '../../core/session-summarizer.js';
 import type { DaemonState } from '../state.js';
 import type { ChatToolOptions } from '../../core/state.js';
-import { getEngines, getProviderTemplates } from '../../core/engines.js';
+import { getEngine, getEngines, getProviderTemplates, validateConfigProviderEngines } from '../../core/engines.js';
 import { DEFAULT_WEB_PORT, DEFAULT_HTTP_HOST } from '../../core/constants.js';
 import { registerOpenAIRoutes } from './openai-compat.js';
 import {
@@ -38,7 +45,6 @@ import {
   shouldRedirectDashboardToLogin,
   mayAutoEstablishDashboardSession,
   requestDashboardHost,
-  assertHttpAuthBindAllowed,
   type WebSecurityOptions,
   type ResolvedHttpSecurity,
   type RequestWithOwner,
@@ -53,6 +59,7 @@ import {
   PostConfigBodySchema,
   PostMcpApprovalBodySchema,
   PostMcpConnectionDecisionBodySchema,
+  PostMcpStdioSpawnDecisionBodySchema,
   PostPolicyBodySchema,
   PostProviderConfigureBodySchema,
   PostSecretBodySchema,
@@ -105,7 +112,7 @@ const STATIC_PATH = resolveStaticPath();
  *
  * Used both for production (embedded in daemon) and testing.
  * All /api/*, /v1/*, and /mcp routes require Bearer (or cookie) auth unless
- * ABBENAY_HTTP_AUTH disables authentication for local development.
+ * ABBENAY_HTTP_AUTH disables authentication (explicit opt-out).
  */
 export function createWebApp(state: DaemonState, options?: WebSecurityOptions): Express {
   const app = express();
@@ -113,9 +120,22 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   const security = resolveHttpSecurity(port, options?.host, options);
   app.locals.httpSecurity = security;
 
-  // Parse JSON / form bodies (form used by POST /login)
-  app.use(express.json());
+  // Form bodies (POST /login) — keep Express default size limit (API token only).
   app.use(express.urlencoded({ extended: false }));
+
+  // JSON bodies: default 100kb for /api and most routes. Defer parsing for
+  // /v1/chat/completions so the larger limit runs only after requireAuth
+  // (Open WebUI Legacy/Default FC embeds MCP tool schemas; ~200kb+).
+  const defaultJsonParser = express.json();
+  const isChatCompletionsPath = (path: string): boolean =>
+    path === '/v1/chat/completions' || path === '/v1/chat/completions/';
+  app.use((req, res, next) => {
+    if (isChatCompletionsPath(req.path)) {
+      next();
+      return;
+    }
+    defaultJsonParser(req, res, next);
+  });
 
   // CORS — explicit allowlist only (never *)
   app.use(createCorsMiddleware(security.corsOrigins));
@@ -301,9 +321,14 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   app.use('/v1', requireAuth);
   app.use('/mcp', requireAuth);
 
+  // Large JSON limit only on authenticated chat-completions (not global /login).
+  const largeChatCompletionsJsonParser = express.json({ limit: '10mb' });
+  app.use('/v1/chat/completions', largeChatCompletionsJsonParser);
+
   // ── MCP connection consent + tool approval (DR-033 / DR-034) ───────────
   // Connection: initialize blocks until POST /api/mcp/connections resolves.
   // Tools: authorizeAndExecute blocks until POST /api/mcp/approvals resolves.
+  // Stdio spawn: RegisterMcpServer blocks until POST /api/mcp/stdio-spawns resolves (DR-043).
   // Abandoned pending entries auto-deny after mcpPendingTtlMs (default 5m).
   const DEFAULT_MCP_PENDING_TTL_MS = 5 * 60 * 1000;
   const mcpPendingTtlMs = options?.mcpPendingTtlMs != null && options.mcpPendingTtlMs > 0
@@ -324,6 +349,59 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     clientVersion: string;
     createdAt: number;
   }>();
+
+  const pendingStdioSpawns = new Map<string, {
+    resolve: (decision: 'allow' | 'deny') => void;
+    serverId: string;
+    command: string;
+    args: string[];
+    consumer?: string;
+    createdAt: number;
+  }>();
+
+  // Keep pool security settings current when the web app starts
+  const pool = state.mcpClientPool;
+  if (typeof pool?.applySecurityConfig === 'function') {
+    try {
+      pool.applySecurityConfig(loadConfig().security);
+    } catch {
+      // ignore — config may be empty in tests
+    }
+  }
+
+  if (typeof pool?.setStdioSpawnApprovalHandler === 'function') {
+    pool.setStdioSpawnApprovalHandler(async (request) => {
+      console.log(
+        `[Web] MCP stdio spawn approval required: server=${request.serverId} ` +
+          `command=${request.command} (requestId=${request.requestId})`,
+      );
+      return new Promise<'allow' | 'deny'>((resolve) => {
+        const timer = setTimeout(() => {
+          if (!pendingStdioSpawns.has(request.requestId)) return;
+          pendingStdioSpawns.delete(request.requestId);
+          console.log(
+            `[Web] MCP stdio spawn expired → deny: server=${request.serverId} ` +
+              `command=${request.command} (requestId=${request.requestId})`,
+          );
+          resolve('deny');
+        }, mcpPendingTtlMs);
+        pendingStdioSpawns.set(request.requestId, {
+          resolve: (decision) => {
+            clearTimeout(timer);
+            resolve(decision);
+          },
+          serverId: request.serverId,
+          command: request.command,
+          args: request.args,
+          consumer: request.consumer,
+          createdAt: request.createdAt,
+        });
+      });
+    });
+    _clearStdioSpawnHandler = () => {
+      pool.setStdioSpawnApprovalHandler(undefined);
+    };
+  }
 
   if (typeof state.mcpServer?.configure === 'function') {
     state.mcpServer.configure({
@@ -528,6 +606,50 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     res.json({ success: true });
   });
 
+  /**
+   * GET /api/mcp/stdio-spawns — pending dynamic stdio MCP spawn approvals + recent denials (DR-043)
+   */
+  app.get('/api/mcp/stdio-spawns', (_req, res) => {
+    const pending = [...pendingStdioSpawns.entries()].map(([requestId, p]) => ({
+      requestId,
+      serverId: p.serverId,
+      command: p.command,
+      args: p.args,
+      consumer: p.consumer,
+      createdAt: p.createdAt,
+    }));
+    const denials = typeof state.mcpClientPool.getRecentDenials === 'function'
+      ? state.mcpClientPool.getRecentDenials()
+      : [];
+    res.json({ pending, denials });
+  });
+
+  /**
+   * POST /api/mcp/stdio-spawns/:requestId — allow / deny a pending stdio MCP spawn
+   * Body: { decision: 'allow' | 'deny' }
+   */
+  app.post('/api/mcp/stdio-spawns/:requestId', (req, res) => {
+    const parsed = parseRequestBody(PostMcpStdioSpawnDecisionBodySchema, req.body);
+    if (!parsed.success) {
+      sendBadRequest(res, parsed.error);
+      return;
+    }
+    const { requestId } = req.params;
+    const { decision } = parsed.data;
+    const pending = pendingStdioSpawns.get(requestId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending MCP stdio spawn with requestId "${requestId}"` });
+      return;
+    }
+    console.log(
+      `[Web] MCP stdio spawn: server=${pending.serverId} command=${pending.command} → ${decision} ` +
+        `(requestId=${requestId})`,
+    );
+    pending.resolve(decision);
+    pendingStdioSpawns.delete(requestId);
+    res.json({ success: true });
+  });
+
   // ─── API Routes ────────────────────────────────────────────────────────
 
   /**
@@ -642,6 +764,16 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         if (resolved.baseUrl && !baseUrl) baseUrl = resolved.baseUrl;
       }
 
+      if (baseUrl) {
+        const policy = endpointPolicyFromServer(loadConfig()?.server);
+        const endpoint = validateProviderEndpoint(baseUrl, policy);
+        if (!endpoint.ok) {
+          res.status(400).json({ error: endpoint.error });
+          return;
+        }
+        baseUrl = endpoint.normalized;
+      }
+
       const models = await state.discoverModels(req.params.engineId, apiKey, baseUrl);
       res.json({
         models: models.map((m) => ({
@@ -734,22 +866,64 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * POST /api/config - Save configuration
    * Accepts { location: 'user' | workspacePath, config: ConfigFile }
    * Body is Zod-validated; workspace locations must be allowlisted.
+   *
+   * When `config.server` is omitted, the existing server block is merged in
+   * before validation/persist so `allowed_provider_hosts` stays enforced
+   * (parity with gRPC UpdateConfig).
    */
   app.post('/api/config', (req, res) => {
     try {
-      const parsed = parseRequestBody(PostConfigBodySchema, req.body);
+      const rawBody =
+        req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+          ? (req.body as Record<string, unknown>)
+          : {};
+      const location =
+        typeof rawBody.location === 'string' && rawBody.location.length > 0
+          ? rawBody.location
+          : 'user';
+      const loc = resolveConfigLocation(location, state);
+      if (!loc.ok) {
+        res.status(loc.status).json({ error: loc.error });
+        return;
+      }
+
+      // Merge server policy from existing config so partial updates retain the
+      // endpoint allowlist. Without this, Zod would validate without the
+      // allowlist and persistence would drop server.allowed_provider_hosts.
+      let bodyForParse: unknown = rawBody;
+      const rawConfig = rawBody.config;
+      if (rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)) {
+        const cfg = rawConfig as Record<string, unknown>;
+        if (!cfg.server) {
+          const existingServer = (loc.kind === 'user'
+            ? loadConfig()
+            : loadWorkspaceConfig(loc.resolved))?.server;
+          if (existingServer) {
+            bodyForParse = {
+              ...rawBody,
+              config: { ...cfg, server: existingServer },
+            };
+          }
+        }
+      }
+
+      const parsed = parseRequestBody(PostConfigBodySchema, bodyForParse);
       if (!parsed.success) {
         sendBadRequest(res, parsed.error);
         return;
       }
 
       const { config } = parsed.data;
-      const location = parsed.data.location ?? 'user';
-      const loc = resolveConfigLocation(location, state);
-      if (!loc.ok) {
-        res.status(loc.status).json({ error: loc.error });
+
+      const enginesCheck = validateConfigProviderEngines(config);
+      if (!enginesCheck.ok) {
+        res.status(400).json({ error: enginesCheck.error });
         return;
       }
+
+      const previous = loc.kind === 'user'
+        ? loadConfig()
+        : loadWorkspaceConfig(loc.resolved);
 
       let savedPath: string;
       if (loc.kind === 'user') {
@@ -759,6 +933,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         saveWorkspaceConfig(loc.resolved, config);
         savedPath = getWorkspaceConfigPath(loc.resolved);
       }
+
+      auditProviderEndpointConfigDiff(previous, config, 'http-config');
 
       res.json({ success: true, path: savedPath });
       state.notifyModelsChanged('config_changed');
@@ -875,6 +1051,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
       await state.secretStore.set(key, parsed.data.value);
+      auditSecretChange({ key, op: 'set', source: 'http-secrets' });
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -896,6 +1073,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
       await state.secretStore.set(parsed.data.key, parsed.data.value);
+      auditSecretChange({ key: parsed.data.key, op: 'set', source: 'http-secrets' });
       res.json({ success: true });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
@@ -916,6 +1094,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
       await state.secretStore.delete(req.params.key);
+      auditSecretChange({ key: req.params.key, op: 'delete', source: 'http-secrets' });
       res.json({ success: true });
       state.notifyModelsChanged('secret_deleted');
     } catch (err: unknown) {
@@ -995,8 +1174,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    * POST /api/chat - Stream chat via Server-Sent Events
    *
    * Calls state.chat() directly — no gRPC in the loop.
-   * When a tool matches require_approval, an approval_request SSE event is
-   * emitted and the stream pauses until POST /api/chat/:chatId/approve resolves it.
+   * When a tool needs approval, onToolApprovalNeeded writes an approval_request
+   * SSE event (not a ChatChunk) and pauses until POST /api/chat/:chatId/approve.
    */
   app.post('/api/chat', (req, res) => {
     const parsed = parseRequestBody(PostChatBodySchema, req.body);
@@ -1115,10 +1294,6 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
               toolData.call = { params: chunk.call.params, result: chunk.call.result };
             }
             safeWrite(`data: ${JSON.stringify(toolData)}\n\n`);
-          } else if (chunk.type === 'approval_request') {
-            safeWrite(`data: ${JSON.stringify({ type: 'approval_request', chatId, requestId: chunk.requestId, toolName: chunk.toolName, args: chunk.args })}\n\n`);
-          } else if (chunk.type === 'approval_result') {
-            safeWrite(`data: ${JSON.stringify({ type: 'approval_result', requestId: chunk.requestId, decision: chunk.decision })}\n\n`);
           } else if (chunk.type === 'error') {
             safeWrite(`data: ${JSON.stringify({ type: 'error', error: chunk.error })}\n\n`);
           } else if (chunk.type === 'done') {
@@ -1173,13 +1348,40 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
       // Initialize or update provider config
       const existing: Partial<ProviderConfig> & { display_name?: string } = config.providers[providerId] ? { ...config.providers[providerId] } : {};
+      const previousBaseUrl = existing.base_url;
       if (engine) existing.engine = engine;
       delete existing.display_name;
+
+      const effectiveEngine = existing.engine;
+      if (!effectiveEngine) {
+        res.status(400).json({ error: 'engine is required when configuring a new provider' });
+        return;
+      }
+      if (!getEngine(effectiveEngine)) {
+        res.status(400).json({
+          error: `unknown engine "${effectiveEngine}" (not in the built-in engine allowlist)`,
+        });
+        return;
+      }
+
+      let normalizedBaseUrl: string | undefined;
+      if (baseUrl) {
+        // Host policy uses user-level server settings (allowlist / insecure http).
+        const policy = endpointPolicyFromServer(loadConfig()?.server);
+        const endpoint = validateProviderEndpoint(baseUrl, policy);
+        if (!endpoint.ok) {
+          res.status(400).json({ error: endpoint.error });
+          return;
+        }
+        normalizedBaseUrl = endpoint.normalized;
+      }
+
       config.providers[providerId] = existing as ProviderConfig;
 
       if (apiKey) {
         const keychainName = `${providerId.toUpperCase()}_API_KEY`;
         await state.secretStore.set(keychainName, apiKey);
+        auditSecretChange({ key: keychainName, op: 'set', source: 'http-configure' });
         config.providers[providerId].api_key_keychain_name = keychainName;
         delete config.providers[providerId].api_key_env_var_name;
       } else if (envVarName) {
@@ -1187,14 +1389,23 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         delete config.providers[providerId].api_key_keychain_name;
       }
 
-      if (baseUrl) {
-        config.providers[providerId].base_url = baseUrl;
+      if (normalizedBaseUrl) {
+        config.providers[providerId].base_url = normalizedBaseUrl;
       }
 
       if (resolvedWorkspace) {
         saveWorkspaceConfig(resolvedWorkspace, config);
       } else {
         saveConfig(config);
+      }
+
+      if (normalizedBaseUrl && normalizedBaseUrl !== previousBaseUrl) {
+        auditProviderEndpointChange({
+          providerId,
+          previousBaseUrl,
+          newBaseUrl: normalizedBaseUrl,
+          source: 'http-configure',
+        });
       }
 
       res.json({ success: true });
@@ -1242,7 +1453,10 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       if (config.providers && config.providers[providerId]) {
         const keychainName = config.providers[providerId].api_key_keychain_name;
         if (keychainName) {
-          try { await state.secretStore.delete(keychainName); } catch { /* ignore */ }
+          try {
+            await state.secretStore.delete(keychainName);
+            auditSecretChange({ key: keychainName, op: 'delete', source: 'http-configure' });
+          } catch { /* ignore */ }
         }
 
         delete config.providers[providerId];
@@ -1721,6 +1935,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
 let _httpServer: http.Server | null = null;
 let _webPort: number | null = null;
+/** Clears stdio spawn approval handler when the web server stops (DR-043). */
+let _clearStdioSpawnHandler: (() => void) | null = null;
 let _webHost: string | null = null;
 let _lastApp: Express | null = null;
 let _lastSecurity: ResolvedHttpSecurity | null = null;
@@ -1749,7 +1965,6 @@ export async function startEmbeddedWebServer(
 
   const security = resolveHttpSecurity(port, host, options);
   const bindHost = security.host || DEFAULT_HTTP_HOST;
-  assertHttpAuthBindAllowed(bindHost, security.authEnabled);
   const app = createWebApp(state, {
     ...options,
     apiToken: security.apiToken,
@@ -1767,15 +1982,18 @@ export async function startEmbeddedWebServer(
   _webHost = bindHost;
 
   if (!security.authEnabled) {
+    const scope = isLocalhostBind(bindHost)
+      ? 'Any local process (and any site that can reach this loopback port)'
+      : `Listening on ${bindHost}:${port} (beyond loopback) — any host/process that can reach this port`;
     console.warn(
       '[Web] WARNING: HTTP authentication is DISABLED (ABBENAY_HTTP_AUTH). ' +
-      'Any local process (and any site that can reach this bind address) can ' +
-      'read/write secrets, config, chat, MCP, and sessions. ' +
-      'Re-enable auth for anything beyond throwaway local development.',
+      `${scope} can read/write secrets, config, chat, MCP, and sessions. ` +
+      'Use only when that is intentional (e.g. cluster-internal Service, or ' +
+      'a reverse proxy that already authenticates callers).',
     );
   }
 
-  if (!isLocalhostBind(bindHost)) {
+  if (!isLocalhostBind(bindHost) && security.authEnabled) {
     console.warn(
       `[Web] WARNING: HTTP server is bound to ${bindHost} — accessible beyond loopback. ` +
       'Ensure ABBENAY_API_TOKEN (or server.api_token) is set and CORS origins are restricted. ' +
@@ -1821,6 +2039,9 @@ export async function startEmbeddedWebServer(
  */
 export async function stopEmbeddedWebServer(): Promise<void> {
   if (!_httpServer) return;
+
+  _clearStdioSpawnHandler?.();
+  _clearStdioSpawnHandler = null;
   
   await new Promise<void>((resolve) => {
     _httpServer!.close(() => {

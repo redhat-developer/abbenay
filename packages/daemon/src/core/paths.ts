@@ -5,11 +5,15 @@
  * consistent file placement across Linux, macOS, and Windows.
  *
  * Conventions:
- *   Runtime dir  (ephemeral: PID, socket, lock)
+ *   Runtime dir  (ephemeral: PID, socket/address, lock)
  *     Linux:   $XDG_RUNTIME_DIR/abbenay  → /run/user/<uid>/abbenay
  *     macOS:   os.tmpdir()/abbenay        → /var/folders/.../abbenay
- *     Windows: named pipe (no dir needed for socket)
+ *     Windows: os.tmpdir()/abbenay        → %TEMP%/abbenay (PID + daemon.addr)
  *     Fallback: /tmp/abbenay
+ *
+ *   Local IPC:
+ *     Linux/macOS: Unix socket at <runtimeDir>/daemon.sock
+ *     Windows:     loopback TCP; host:port written to <runtimeDir>/daemon.addr
  *
  *   Config dir   (persistent user config)
  *     Linux:   $XDG_CONFIG_HOME/abbenay   → ~/.config/abbenay
@@ -28,11 +32,12 @@ const APP_NAME = 'abbenay';
 // ── Runtime directory ────────────────────────────────────────────────
 
 /**
- * Get the platform runtime directory (for ephemeral files: PID, socket, lock).
+ * Get the platform runtime directory (for ephemeral files: PID, socket/address, lock).
  *
- * - Linux:  XDG_RUNTIME_DIR  → /run/user/<uid>
- * - macOS:  os.tmpdir()      → /var/folders/...
- * - Other:  /tmp
+ * - Linux:   XDG_RUNTIME_DIR  → /run/user/<uid>
+ * - macOS:   os.tmpdir()      → /var/folders/...
+ * - Windows: os.tmpdir()      → %TEMP%
+ * - Other:   /tmp
  */
 export function getRuntimeDir(): string {
     // 1. Respect XDG_RUNTIME_DIR (standard on Linux)
@@ -45,17 +50,20 @@ export function getRuntimeDir(): string {
         return path.join(os.tmpdir(), APP_NAME);
     }
 
-    // 3. Linux without XDG_RUNTIME_DIR — try /run/user/<uid>
-    if (process.platform !== 'win32') {
-        try {
-            const uid = os.userInfo().uid;
-            return path.join(`/run/user/${uid}`, APP_NAME);
-        } catch {
-            // os.userInfo() can fail in some sandboxes
-        }
+    // 3. Windows — %TEMP%/abbenay (PID + daemon.addr for loopback TCP IPC)
+    if (process.platform === 'win32') {
+        return path.join(os.tmpdir(), APP_NAME);
     }
 
-    // 4. Fallback
+    // 4. Linux without XDG_RUNTIME_DIR — try /run/user/<uid>
+    try {
+        const uid = os.userInfo().uid;
+        return path.join(`/run/user/${uid}`, APP_NAME);
+    } catch {
+        // os.userInfo() can fail in some sandboxes
+    }
+
+    // 5. Fallback
     return path.join('/tmp', APP_NAME);
 }
 
@@ -124,12 +132,21 @@ export function getWorkspaceConfigDir(workspacePath: string): string {
 
 // ── Derived helpers ──────────────────────────────────────────────────
 
-/** Socket path:  <runtimeDir>/daemon.sock  (or Windows named pipe) */
+/**
+ * Socket path: <runtimeDir>/daemon.sock on Unix.
+ * On Windows a named-pipe stub remains for compatibility but is not used for IPC
+ * (local IPC uses loopback TCP + daemon.addr).
+ */
 export function getSocketPath(): string {
     if (process.platform === 'win32') {
         return '\\\\.\\pipe\\abbenay-daemon';
     }
     return path.join(getRuntimeDir(), 'daemon.sock');
+}
+
+/** Address file (Windows loopback TCP):  <runtimeDir>/daemon.addr */
+export function getAddressPath(): string {
+    return path.join(getRuntimeDir(), 'daemon.addr');
 }
 
 /** PID file:  <runtimeDir>/abbenay.pid */

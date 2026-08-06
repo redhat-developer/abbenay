@@ -10,9 +10,9 @@
  * Environment variables:
  *   VSCODE_MARKETPLACE_TOKEN  — PAT for VS Code Marketplace (required)
  *   OVSX_MARKETPLACE_TOKEN    — PAT for OpenVSX Registry (optional, skipped if unset)
- *   GITHUB_REF_NAME           — used to detect pre-release tags (beta/rc)
+ *   GITHUB_REF_NAME           — used to detect pre-release tags (alpha/beta/rc)
  *
- * Pre-release versions (tags containing beta/rc) are published with --pre-release.
+ * Pre-release versions (tags containing alpha/beta/rc) are published with --pre-release.
  * Follows the Red Hat convention from redhat-developer/vscode-yaml.
  */
 
@@ -50,7 +50,7 @@ if (vsixFiles.length === 0) {
   process.exit(1);
 }
 
-const isPreRelease = (process.env.GITHUB_REF_NAME || '').match(/(beta|rc)/);
+const isPreRelease = (process.env.GITHUB_REF_NAME || '').match(/(alpha|beta|rc)/);
 const preReleaseFlag = isPreRelease ? ' --pre-release' : '';
 const vsceToken = process.env.VSCODE_MARKETPLACE_TOKEN;
 const ovsxToken = process.env.OVSX_MARKETPLACE_TOKEN;

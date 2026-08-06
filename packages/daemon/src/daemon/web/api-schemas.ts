@@ -11,6 +11,7 @@ import { z } from 'zod';
 import {
   ConfigFileSchema,
   PolicyConfigSchema,
+  ProviderBaseUrlSchema,
   VirtualNameSchema,
 } from '../../core/config-schema.js';
 
@@ -102,7 +103,8 @@ export const PostProviderConfigureBodySchema = z
     engine: z.string().min(1).optional(),
     apiKey: z.string().min(1).optional(),
     envVarName: z.string().min(1).optional(),
-    baseUrl: z.string().min(1).optional(),
+    /** Format-checked here; host policy applied in the route with server config. */
+    baseUrl: ProviderBaseUrlSchema.optional(),
     target: z.enum(['user', 'workspace']).optional(),
     workspacePath: z.string().min(1).optional(),
   })
@@ -153,7 +155,8 @@ export const PostSessionChatBodySchema = z
 export const DiscoverModelsBodySchema = z
   .object({
     apiKey: z.string().min(1).optional(),
-    baseUrl: z.string().min(1).optional(),
+    /** Format-checked here; host policy applied in the route with server config. */
+    baseUrl: ProviderBaseUrlSchema.optional(),
     providerId: z.string().min(1).optional(),
   })
   .strict();
@@ -170,6 +173,13 @@ export const PostMcpConnectionDecisionBodySchema = z
 export const PostMcpApprovalBodySchema = z
   .object({
     decision: z.enum(['allow', 'deny', 'abort']),
+  })
+  .strict();
+
+/** Operator decision for pending dynamic stdio MCP spawn (DR-043 / H6). */
+export const PostMcpStdioSpawnDecisionBodySchema = z
+  .object({
+    decision: z.enum(['allow', 'deny']),
   })
   .strict();
 
@@ -198,6 +208,8 @@ export const PostOpenAIChatCompletionsBodySchema = z
     max_completion_tokens: z.number().optional(),
     // DR-032: optional client tools for opt-in passthrough (validated/mapped in openai-compat).
     tools: z.array(z.unknown()).optional(),
+    // DR-046: OpenAI tool_choice — honored only when tools mode is passthrough.
+    tool_choice: z.unknown().optional(),
   })
   .strip();
 

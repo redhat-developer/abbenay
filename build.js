@@ -253,13 +253,17 @@ function createDistribution() {
 
     ensureDir(PLATFORM_DIR);
 
-    // Copy SEA binary
+    // Copy SEA binary (Windows SEA build emits a .exe suffix)
     const seaDir = path.join(DAEMON_ROOT, 'dist', 'sea');
-    const seaBinaryName = `abbenay-daemon-${PLATFORM}-${ARCH}`;
+    const seaBinaryName = IS_WIN
+        ? `abbenay-daemon-${PLATFORM}-${ARCH}.exe`
+        : `abbenay-daemon-${PLATFORM}-${ARCH}`;
     const seaBinary = path.join(seaDir, seaBinaryName);
     if (fs.existsSync(seaBinary)) {
         fs.copyFileSync(seaBinary, path.join(PLATFORM_DIR, seaBinaryName));
-        fs.chmodSync(path.join(PLATFORM_DIR, seaBinaryName), 0o755);
+        if (!IS_WIN) {
+            fs.chmodSync(path.join(PLATFORM_DIR, seaBinaryName), 0o755);
+        }
     }
 
     // Copy keytar.node sidecar
