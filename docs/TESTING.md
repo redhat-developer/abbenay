@@ -163,6 +163,29 @@ Handler tests mock the `DaemonClient` and `vscode.Webview` to test message routi
 - **`mockDaemonClient.ts`** — Creates a stub `DaemonClient` with empty default return values. Override individual methods per test.
 - **`mockWebview.ts`** — Creates a stub `vscode.Webview` that records all `postMessage()` calls in a `.messages` array for assertion.
 
+## Coverage
+
+The daemon package generates coverage via [Vitest + v8](https://vitest.dev/guide/coverage):
+
+```bash
+cd packages/daemon
+npm run test:coverage          # produces coverage/ with lcov + text
+```
+
+CI uploads the lcov report to [Codecov](https://codecov.io) on every push and PR. PRs get an inline coverage summary comment showing the diff impact.
+
+### Configuration
+
+- **[codecov.yml](../codecov.yml)** — project/patch thresholds, PR comment layout, flag definitions.
+- **Project target**: `auto` (must not drop from current baseline by more than 1%).
+- **Patch target**: 80% (new/changed lines in a PR).
+- The `daemon` flag scopes coverage to `packages/daemon/src/`.
+
+### Troubleshooting
+
+- **No coverage comment on PR**: check that the `CODECOV_TOKEN` repo secret is set.
+- **Coverage report not found**: ensure `packages/daemon/coverage/lcov.info` exists after the test step.
+
 ## Adding Tests
 
 ### Daemon tests

@@ -48,8 +48,19 @@ jobs:
           mkdir -p ~/.vscode
           echo '{ "disable-hardware-acceleration": true }' > ~/.vscode/argv.json
 
-      - name: Test
-        run: xvfb-run -a npm test
+      - name: Test (daemon – with coverage)
+        run: npm run test:coverage --workspace=packages/daemon
+
+      - name: Test (vscode)
+        run: xvfb-run -a npm test --workspace=packages/vscode
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: packages/daemon/coverage/lcov.info
+          flags: daemon
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     needs: lint-and-test

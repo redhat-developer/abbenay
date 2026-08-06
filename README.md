@@ -1,6 +1,7 @@
 # Abbenay
 
 [![CI](https://github.com/redhat-developer/abbenay/actions/workflows/ci.yml/badge.svg)](https://github.com/redhat-developer/abbenay/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/redhat-developer/abbenay/graph/badge.svg)](https://codecov.io/gh/redhat-developer/abbenay)
 
 <img src="logos/abbenay-logo-sq.png" width="100" height="100" style="float: left; margin-right: 15px;">
 
