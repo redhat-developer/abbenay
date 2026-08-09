@@ -552,11 +552,19 @@ export class DaemonClient {
   }
 
   /**
+   * Tear down transport (and unregister if needed) without resetting connectionMode.
+   * Used after failed/timed-out init so status still reflects configured remote vs local.
+   */
+  async disposeTransport(): Promise<void> {
+    await this.unregister();
+    await this.closeChannelOnly();
+  }
+
+  /**
    * Close the connection and reset address/mode so the next connect re-resolves.
    */
   async close(): Promise<void> {
-    await this.unregister();
-    await this.closeChannelOnly();
+    await this.disposeTransport();
     this.connectionMode = 'local';
     this.address = DEFAULT_DAEMON_ADDRESS;
   }
@@ -907,7 +915,8 @@ export async function initializeDaemon(
     ]);
   } catch (err) {
     // Roll back half-open channel if connect raced past the deadline.
-    await client.close().catch(() => {});
+    // Keep connectionMode from settings (do not reset via close()).
+    await client.disposeTransport().catch(() => {});
     throw err;
   } finally {
     if (timer) {
