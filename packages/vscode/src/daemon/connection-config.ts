@@ -38,8 +38,8 @@ export function normalizeDaemonAddress(raw: string | undefined): string | undefi
     return undefined;
   }
 
-  // Accept accidental URL forms; gRPC wants host:port.
-  value = value.replace(/^https?:\/\//i, '');
+  // Accept accidental URL forms (http(s), grpc, tcp, …); gRPC wants host:port.
+  value = value.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
   // Drop path/query if pasted as a URL.
   const slash = value.indexOf('/');
   if (slash >= 0) {

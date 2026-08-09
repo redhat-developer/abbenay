@@ -282,8 +282,10 @@ export class DaemonClient {
       this.client = await this.createGrpcClient(this.channel, config);
     } catch (err) {
       await this.closeChannelOnly();
-      this.connectionMode = 'local';
-      this.address = DEFAULT_DAEMON_ADDRESS;
+      // Keep connectionMode from settings so status/errors still say remote:… after a failed attach.
+      this.address = config.isRemote && config.address
+        ? config.address
+        : (DEFAULT_DAEMON_ADDRESS || resolveDaemonChannelAddress() || '');
       throw err;
     }
   }

@@ -26,6 +26,8 @@ suite('connection-config', () => {
     assert.strictEqual(normalizeDaemonAddress('  127.0.0.1:50051  '), '127.0.0.1:50051');
     assert.strictEqual(normalizeDaemonAddress('http://127.0.0.1:50051'), '127.0.0.1:50051');
     assert.strictEqual(normalizeDaemonAddress('https://host:50051/path'), 'host:50051');
+    assert.strictEqual(normalizeDaemonAddress('grpc://127.0.0.1:50051'), '127.0.0.1:50051');
+    assert.strictEqual(normalizeDaemonAddress('tcp://host:50051'), 'host:50051');
     assert.strictEqual(normalizeDaemonAddress('[::1]:50051'), '[::1]:50051');
     assert.strictEqual(normalizeDaemonAddress(''), undefined);
     assert.strictEqual(normalizeDaemonAddress('   '), undefined);
