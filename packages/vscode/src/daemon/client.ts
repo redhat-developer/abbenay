@@ -7,9 +7,20 @@
  * Local IPC:
  *   Linux/macOS: Unix domain socket at <runtimeDir>/daemon.sock
  *   Windows:     loopback TCP; host:port from <runtimeDir>/daemon.addr
+ *
+ * Remote / container:
+ *   Set abbenay.daemonAddress (host:port). TLS + CA + consumer token optional.
+ *   Skips local PID/socket discovery and auto-start.
  */
 
-import { createChannel, createClient, Channel } from 'nice-grpc';
+import {
+  createChannel,
+  createClient,
+  createClientFactory,
+  Channel,
+  ChannelCredentials,
+  Metadata,
+} from 'nice-grpc';
 import * as proto from '../proto/abbenay/v1/service';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -26,6 +37,12 @@ import {
   getBundledSeaBinaryName,
   getUnixDaemonAddress,
 } from './runtime-paths';
+import {
+  DaemonConnectionConfig,
+  describeConnectionMode,
+  readDaemonConnectionConfig,
+  resolveDaemonToken,
+} from './connection-config';
 
 // Re-export the generated types for convenience
 export * from '../proto/abbenay/v1/service';
@@ -34,6 +51,16 @@ export {
   parseDaemonAddress,
   getAddressFilePath,
 } from './runtime-paths';
+export {
+  DAEMON_TOKEN_SECRET_KEY,
+  GRPC_TLS_DEFAULT_CN,
+  affectsDaemonConnection,
+  dashboardUrlFromDaemonAddress,
+  describeConnectionMode,
+  normalizeDaemonAddress,
+  readDaemonConnectionConfig,
+  resolveDaemonToken,
+} from './connection-config';
 
 // Daemon paths — PID + socket/address in runtime dir (matches daemon's paths.ts)
 const RUNTIME_DIR = getRuntimeDir();
@@ -48,12 +75,22 @@ const DEFAULT_DAEMON_ADDRESS = IS_WIN32 ? '' : getUnixDaemonAddress(SOCKET_FILE)
 // Extension path for finding bundled binaries (set during activation)
 let extensionPath: string | undefined;
 
+// Optional SecretStorage for consumer token (set during activation)
+let secretStorage: vscode.SecretStorage | undefined;
+
 /**
  * Set the extension path for finding bundled binaries.
  * Must be called during extension activation before connecting to daemon.
  */
 export function setExtensionPath(extPath: string): void {
   extensionPath = extPath;
+}
+
+/**
+ * Provide VS Code SecretStorage for resolving the daemon consumer token.
+ */
+export function setDaemonSecretStorage(secrets: vscode.SecretStorage): void {
+  secretStorage = secrets;
 }
 
 /**
@@ -162,61 +199,166 @@ export class DaemonClient {
   private client: proto.AbbenayClient | null = null;
   private clientId: string | null = null;
   private address: string;
+  private connectionMode = 'local';
 
   constructor(address: string = DEFAULT_DAEMON_ADDRESS) {
     this.address = address;
   }
 
+  /** Human-readable mode for status (e.g. local or remote:host:port (tls)). */
+  getConnectionMode(): string {
+    return this.connectionMode;
+  }
+
   /**
    * Connect to the daemon.
    * By default, will auto-start the daemon if it's not running.
+   * When abbenay.daemonAddress is set, connects to that gRPC target and never auto-starts.
    *
-   * @param options.autoStart - Start daemon if not running (default: true)
+   * @param options.autoStart - Start daemon if not running (default: true; forced off for remote)
    * @param options.timeout - Timeout waiting for daemon to start (default: 15000ms)
    */
   async connect(options: { autoStart?: boolean; timeout?: number } = {}): Promise<void> {
-    if (this.channel) {
+    if (this.channel && this.client) {
       return; // Already connected
     }
 
+    // Clear any half-open channel from a previous failed attempt.
+    if (this.channel || this.client) {
+      await this.closeChannelOnly();
+    }
+
     const logger = getLogger();
-    const { autoStart = true, timeout = 15000 } = options;
+    const { timeout = 15000 } = options;
+    const config = readDaemonConnectionConfig();
+    this.connectionMode = describeConnectionMode(config);
 
-    // Check if daemon is running
-    const running = await isDaemonReady();
-    logger.info(
-      `[Daemon] isDaemonReady=${running}, PID_FILE=${PID_FILE}, ` +
-      `SOCKET=${SOCKET_FILE}, ADDRESS_FILE=${ADDRESS_FILE}`,
-    );
+    try {
+      if (config.isRemote && config.address) {
+        await this.connectRemote(config);
+        return;
+      }
 
-    if (!running) {
-      if (autoStart) {
-        logger.info('[Daemon] Daemon not running, attempting to start...');
-        await this.startDaemon();
-        // Wait for daemon to be ready
-        await this.waitForDaemon(timeout);
-        logger.info('[Daemon] Daemon started and ready');
-      } else {
-        const endpoint = IS_WIN32 ? ADDRESS_FILE : SOCKET_FILE;
+      const { autoStart = true } = options;
+
+      // Always re-resolve local address (never keep a sticky remote host).
+      this.address = resolveDaemonChannelAddress() || DEFAULT_DAEMON_ADDRESS;
+
+      // Check if daemon is running
+      const running = await isDaemonReady();
+      logger.info(
+        `[Daemon] mode=${this.connectionMode}, isDaemonReady=${running}, PID_FILE=${PID_FILE}, ` +
+        `SOCKET=${SOCKET_FILE}, ADDRESS_FILE=${ADDRESS_FILE}`,
+      );
+
+      if (!running) {
+        if (autoStart) {
+          logger.info('[Daemon] Daemon not running, attempting to start...');
+          await this.startDaemon();
+          // Wait for daemon to be ready
+          await this.waitForDaemon(timeout);
+          logger.info('[Daemon] Daemon started and ready');
+        } else {
+          const endpoint = IS_WIN32 ? ADDRESS_FILE : SOCKET_FILE;
+          throw new Error(
+            `Abbenay daemon is not running. ` +
+            `Expected endpoint via ${endpoint}. ` +
+            `Start the daemon with: abbenay daemon`,
+          );
+        }
+      }
+
+      // Windows: address file appears after start — re-resolve.
+      const address = resolveDaemonChannelAddress() || this.address;
+      if (!address) {
         throw new Error(
-          `Abbenay daemon is not running. ` +
-          `Expected endpoint via ${endpoint}. ` +
-          `Start the daemon with: abbenay daemon`,
+          `Abbenay daemon address not found. Expected ${ADDRESS_FILE} with host:port.`,
         );
       }
-    }
+      this.address = address;
 
-    const address = this.address || resolveDaemonChannelAddress();
-    if (!address) {
-      throw new Error(
-        `Abbenay daemon address not found. Expected ${ADDRESS_FILE} with host:port.`,
-      );
+      logger.info(`[Daemon] Creating gRPC channel to ${this.address} (${this.connectionMode})`);
+      this.channel = createChannel(this.address);
+      this.client = await this.createGrpcClient(this.channel, config);
+    } catch (err) {
+      await this.closeChannelOnly();
+      this.connectionMode = 'local';
+      this.address = DEFAULT_DAEMON_ADDRESS;
+      throw err;
     }
+  }
+
+  /**
+   * Connect to a configured remote/container gRPC endpoint (no auto-start).
+   */
+  private async connectRemote(config: DaemonConnectionConfig): Promise<void> {
+    const logger = getLogger();
+    const address = config.address!;
     this.address = address;
 
-    logger.info(`[Daemon] Creating gRPC channel to ${this.address}`);
-    this.channel = createChannel(this.address);
-    this.client = createClient(proto.AbbenayDefinition, this.channel);
+    logger.info(
+      `[Daemon] Remote mode: connecting to ${address} ` +
+      `(tls=${config.tls}, caPath=${config.caPath ? 'set' : 'unset'}, ` +
+      `sslTargetName=${config.sslTargetName})`,
+    );
+
+    const credentials = this.buildChannelCredentials(config);
+    const channelOptions = config.tls
+      ? {
+          'grpc.ssl_target_name_override': config.sslTargetName,
+          'grpc.default_authority': config.sslTargetName,
+        }
+      : undefined;
+
+    this.channel = createChannel(address, credentials, channelOptions);
+    this.client = await this.createGrpcClient(this.channel, config);
+    logger.info(`[Daemon] Remote gRPC channel created (${this.connectionMode})`);
+  }
+
+  private buildChannelCredentials(config: DaemonConnectionConfig): ChannelCredentials {
+    if (!config.tls) {
+      return ChannelCredentials.createInsecure();
+    }
+
+    if (config.caPath) {
+      if (!fs.existsSync(config.caPath)) {
+        throw new Error(
+          `Abbenay daemon CA file not found: ${config.caPath}. ` +
+          `Set abbenay.daemonCaPath to the daemon's tls/ca.crt (container runtime tls dir).`,
+        );
+      }
+      const rootCerts = fs.readFileSync(config.caPath);
+      return ChannelCredentials.createSsl(rootCerts);
+    }
+
+    getLogger().warn(
+      '[Daemon] TLS enabled without abbenay.daemonCaPath — using system trust store. ' +
+      'Self-signed container certs need daemonCaPath.',
+    );
+    return ChannelCredentials.createSsl();
+  }
+
+  /**
+   * Build the typed client, attaching x-abbenay-token when a consumer token is configured.
+   */
+  private async createGrpcClient(
+    channel: Channel,
+    config: DaemonConnectionConfig,
+  ): Promise<proto.AbbenayClient> {
+    const token = await resolveDaemonToken(config, secretStorage);
+    if (!token) {
+      return createClient(proto.AbbenayDefinition, channel);
+    }
+
+    getLogger().info('[Daemon] Attaching x-abbenay-token metadata on gRPC calls');
+    return createClientFactory()
+      .use(async function* tokenMiddleware(call, options) {
+        return yield* call.next(call.request, {
+          ...options,
+          metadata: Metadata(options.metadata).set('x-abbenay-token', token),
+        });
+      })
+      .create(proto.AbbenayDefinition, channel);
   }
 
   /**
@@ -392,15 +534,29 @@ export class DaemonClient {
   }
 
   /**
-   * Close the connection
+   * Close channel without unregister (for failed connect cleanup).
+   */
+  private async closeChannelOnly(): Promise<void> {
+    this.client = null;
+    this.clientId = null;
+    if (this.channel) {
+      try {
+        this.channel.close();
+      } catch {
+        // ignore
+      }
+      this.channel = null;
+    }
+  }
+
+  /**
+   * Close the connection and reset address/mode so the next connect re-resolves.
    */
   async close(): Promise<void> {
     await this.unregister();
-    if (this.channel) {
-      this.channel.close();
-      this.channel = null;
-      this.client = null;
-    }
+    await this.closeChannelOnly();
+    this.connectionMode = 'local';
+    this.address = DEFAULT_DAEMON_ADDRESS;
   }
 
   /**
@@ -747,6 +903,10 @@ export async function initializeDaemon(
         }, timeoutMs);
       }),
     ]);
+  } catch (err) {
+    // Roll back half-open channel if connect raced past the deadline.
+    await client.close().catch(() => {});
+    throw err;
   } finally {
     if (timer) {
       clearTimeout(timer);
