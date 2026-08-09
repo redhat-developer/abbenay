@@ -31,8 +31,13 @@ suite('connection-config', () => {
     assert.strictEqual(normalizeDaemonAddress('   '), undefined);
     assert.strictEqual(normalizeDaemonAddress('unix:///tmp/daemon.sock'), undefined);
     assert.strictEqual(normalizeDaemonAddress('hostname'), undefined);
+    // Userinfo must be rejected (with or without a URL scheme).
     assert.strictEqual(normalizeDaemonAddress('https://user:secret@host:50051'), undefined);
+    assert.strictEqual(normalizeDaemonAddress('user:secret@host:50051'), undefined);
+    // HTTP dashboard port is never a gRPC target (IPv4 and IPv6).
     assert.strictEqual(normalizeDaemonAddress('http://127.0.0.1:8787'), undefined);
+    assert.strictEqual(normalizeDaemonAddress('127.0.0.1:8787'), undefined);
+    assert.strictEqual(normalizeDaemonAddress('[::1]:8787'), undefined);
   });
 
   test('dashboardUrlFromDaemonAddress uses host:8787', () => {

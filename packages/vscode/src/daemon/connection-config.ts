@@ -72,7 +72,7 @@ export function normalizeDaemonAddress(raw: string | undefined): string | undefi
       return undefined;
     }
     const port = Number(value.slice(end + 2));
-    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    if (!isValidGrpcPort(port)) {
       return undefined;
     }
     return value;
@@ -84,16 +84,16 @@ export function normalizeDaemonAddress(raw: string | undefined): string | undefi
   }
   const host = value.slice(0, lastColon).trim();
   const port = Number(value.slice(lastColon + 1).trim());
-  if (!host || !Number.isFinite(port) || port <= 0 || port > 65535) {
-    return undefined;
-  }
-
-  // Common footgun: HTTP dashboard port is not gRPC.
-  if (port === 8787) {
+  if (!host || !isValidGrpcPort(port)) {
     return undefined;
   }
 
   return `${host}:${port}`;
+}
+
+/** Valid gRPC listen port; excludes the HTTP dashboard footgun (:8787). */
+function isValidGrpcPort(port: number): boolean {
+  return Number.isFinite(port) && port > 0 && port <= 65535 && port !== 8787;
 }
 
 /**
