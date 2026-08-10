@@ -1047,3 +1047,245 @@ describe('stripJsonFences', () => {
     expect(stripJsonFences(prose)).toBe(prose.trim());
   });
 });
+
+// ── MCP connections ──────────────────────────────────────────────────────────
+
+describe('DaemonState MCP connections', () => {
+  it('initMcpConnections applies security config and connects servers', async () => {
+    mockLoadConfig.mockReturnValue({
+      providers: {},
+      security: { mcp_http_allowlist: ['https://example.com/*'] },
+      mcp_servers: {
+        remote: { url: 'https://example.com/mcp' },
+      },
+    });
+
+    const connectAll = vi.spyOn(state.mcpClientPool, 'connectAll').mockResolvedValue(undefined);
+    const applySecurity = vi.spyOn(state.mcpClientPool, 'applySecurityConfig');
+
+    await state.initMcpConnections();
+
+    expect(applySecurity).toHaveBeenCalledWith({ mcp_http_allowlist: ['https://example.com/*'] });
+    expect(connectAll).toHaveBeenCalledWith({ remote: { url: 'https://example.com/mcp' } });
+  });
+
+  it('initMcpConnections skips connectAll when no mcp_servers', async () => {
+    const connectAll = vi.spyOn(state.mcpClientPool, 'connectAll').mockResolvedValue(undefined);
+
+    await state.initMcpConnections();
+
+    expect(connectAll).not.toHaveBeenCalled();
+  });
+
+  it('refreshMcpConnections syncs pool with config', async () => {
+    mockLoadConfig.mockReturnValue({
+      providers: {},
+      security: {},
+      mcp_servers: { a: { command: 'echo' } },
+    });
+
+    const sync = vi.spyOn(state.mcpClientPool, 'syncWithConfig').mockResolvedValue(undefined);
+
+    await state.refreshMcpConnections();
+
+    expect(sync).toHaveBeenCalledWith({ a: { command: 'echo' } });
+  });
+});
+
+// ── VS Code backchannel ──────────────────────────────────────────────────────
+
+function createStreamCapture() {
+  const writes: object[] = [];
+  const stream = {
+    write: (data: object) => writes.push(data),
+    end: () => {},
+  };
+  return { writes, stream };
+}
+
+describe('DaemonState VS Code backchannel', () => {
+  it('registers and unregisters VS Code connections', () => {
+    const { stream } = createStreamCapture();
+    const id = state.registerVSCodeConnection(stream);
+    expect(state.hasVSCodeConnection()).toBe(true);
+    expect(state.getVSCodeConnectionIds()).toContain(id);
+
+    expect(state.unregisterVSCodeConnection(id)).toBe(true);
+    expect(state.hasVSCodeConnection()).toBe(false);
+  });
+
+  it('sendVSCodeRequest resolves when response arrives', async () => {
+    const { stream, writes } = createStreamCapture();
+    const connId = state.registerVSCodeConnection(stream);
+
+    const responsePromise = state.sendVSCodeRequest(connId, { ping: {} }, 5000);
+    const sent = writes[0] as { request_id: string };
+    state.handleVSCodeResponse(connId, {
+      request_id: sent.request_id,
+      pong: { ok: true },
+    });
+
+    await expect(responsePromise).resolves.toEqual({
+      request_id: sent.request_id,
+      pong: { ok: true },
+    });
+  });
+
+  it('sendVSCodeRequest rejects on timeout', async () => {
+    const { stream } = createStreamCapture();
+    const connId = state.registerVSCodeConnection(stream);
+
+    await expect(
+      state.sendVSCodeRequest(connId, { slow: {} }, 30),
+    ).rejects.toThrow('timed out');
+  });
+
+  it('invokeVSCodeTool parses tool result', async () => {
+    const { stream, writes } = createStreamCapture();
+    state.registerVSCodeConnection(stream);
+
+    const toolPromise = state.invokeVSCodeTool('readFile', { path: '/tmp' });
+    await new Promise((r) => setTimeout(r, 0));
+    const req = writes[0] as { request_id: string };
+    const connId = state.getVSCodeConnectionIds()[0];
+    state.handleVSCodeResponse(connId, {
+      request_id: req.request_id,
+      invoke_tool: { result_json: '{"content":"hi"}', is_error: false },
+    });
+
+    await expect(toolPromise).resolves.toEqual({
+      resultJson: '{"content":"hi"}',
+      isError: false,
+    });
+  });
+
+  it('requestWorkspace updates connection workspace fields', async () => {
+    const { stream, writes } = createStreamCapture();
+    const connId = state.registerVSCodeConnection(stream);
+
+    const workspacePromise = state.requestWorkspace(connId);
+    await new Promise((r) => setTimeout(r, 0));
+    const req = writes[0] as { request_id: string };
+    state.handleVSCodeResponse(connId, {
+      request_id: req.request_id,
+      get_workspace: {
+        workspace_path: '/home/user/project',
+        workspace_folders: ['/home/user/project'],
+      },
+    });
+
+    const ws = await workspacePromise;
+    expect(ws.workspacePath).toBe('/home/user/project');
+    expect(state.getVSCodeWorkspaces()).toContain('/home/user/project');
+  });
+
+  it('requestVSCodeTools registers tools in registry', async () => {
+    const { stream, writes } = createStreamCapture();
+    const connId = state.registerVSCodeConnection(stream);
+    state.updateVSCodeWorkspace(connId, '/home/user/myproject', ['/home/user/myproject']);
+
+    const toolsPromise = state.requestVSCodeTools(connId);
+    await new Promise((r) => setTimeout(r, 0));
+    const req = writes[0] as { request_id: string };
+    state.handleVSCodeResponse(connId, {
+      request_id: req.request_id,
+      list_tools: {
+        tools: [{ tool_name: 'readFile', description: 'Read', input_schema: '{}' }],
+      },
+    });
+    await toolsPromise;
+
+    expect(state.toolRegistry?.resolve('ws:myproject/readFile')).toBeTruthy();
+  });
+
+  it('handleRegisterToolsNotification refreshes tool list', () => {
+    const connId = state.registerVSCodeConnection(createStreamCapture().stream);
+    state.updateVSCodeWorkspace(connId, '/tmp/demo', ['/tmp/demo']);
+
+    state.handleRegisterToolsNotification(connId, {
+      tools: [{ name: 'search', description: 'Search', input_schema: '{}' }],
+    });
+
+    expect(state.toolRegistry?.resolve('ws:demo/search')).toBeTruthy();
+  });
+
+  it('getVSCodeWorkspaces aggregates client and connection paths', () => {
+    state.registerClient(ClientType.VSCODE, false, '/clients/workspace');
+    const connId = state.registerVSCodeConnection(createStreamCapture().stream);
+    state.updateVSCodeWorkspace(connId, '/conn/workspace', ['/conn/folder']);
+
+    const workspaces = state.getVSCodeWorkspaces();
+    expect(workspaces).toEqual([
+      '/clients/workspace',
+      '/conn/folder',
+      '/conn/workspace',
+    ]);
+  });
+
+  it('notifyModelsChanged writes to connected streams', () => {
+    const { stream, writes } = createStreamCapture();
+    state.registerVSCodeConnection(stream);
+    state.notifyModelsChanged('config-changed');
+    expect(writes.some((w) => (w as { models_changed?: { reason: string } }).models_changed?.reason === 'config-changed')).toBe(true);
+  });
+
+  it('listVSCodeModels returns empty when no connection', async () => {
+    expect(await state.listVSCodeModels()).toEqual([]);
+  });
+
+  it('listVSCodeModels returns models from VS Code', async () => {
+    const { stream, writes } = createStreamCapture();
+    const connId = state.registerVSCodeConnection(stream);
+
+    const modelsPromise = state.listVSCodeModels('gpt');
+    await new Promise((r) => setTimeout(r, 0));
+    const req = writes[0] as { request_id: string };
+    state.handleVSCodeResponse(connId, {
+      request_id: req.request_id,
+      list_models: { models: [{ id: 'gpt-4o' }] },
+    });
+
+    await expect(modelsPromise).resolves.toEqual([{ id: 'gpt-4o' }]);
+  });
+
+  it('notifyModelsChanged logs when stream write fails', () => {
+    const stream = {
+      write: () => { throw new Error('broken stream'); },
+      end: () => {},
+    };
+    state.registerVSCodeConnection(stream);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    state.notifyModelsChanged('test');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('sendVSCodeRequest rejects when stream write fails', async () => {
+    const stream = {
+      write: () => { throw new Error('write failed'); },
+      end: () => {},
+    };
+    const connId = state.registerVSCodeConnection(stream);
+    await expect(state.sendVSCodeRequest(connId, { ping: {} }, 5000)).rejects.toThrow('write failed');
+  });
+
+  it('requestVSCodeTools handles empty tool list', async () => {
+    const { stream, writes } = createStreamCapture();
+    const connId = state.registerVSCodeConnection(stream);
+    const toolsPromise = state.requestVSCodeTools(connId);
+    await new Promise((r) => setTimeout(r, 0));
+    const req = writes[0] as { request_id: string };
+    state.handleVSCodeResponse(connId, {
+      request_id: req.request_id,
+      list_tools: { tools: [] },
+    });
+    await toolsPromise;
+    expect(state.toolRegistry?.getAll().length).toBe(0);
+  });
+
+  it('handleVSCodeResponse ignores malformed responses', () => {
+    const connId = state.registerVSCodeConnection(createStreamCapture().stream);
+    state.handleVSCodeResponse(connId, { bad: true });
+    state.handleVSCodeResponse(connId, { request_id: 123 });
+  });
+});

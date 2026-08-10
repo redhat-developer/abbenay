@@ -76,9 +76,42 @@ rename/symlink to `aby`).
 
 ## Configuration
 
-Provider and model configuration is managed through the **web dashboard**,
-not VS Code settings. The extension contributes only `abbenay.logLevel`
-as a VS Code setting.
+Provider and model configuration is managed through the **web dashboard**.
+VS Code settings control logging and optional **remote gRPC** connection:
+
+| Setting | Purpose |
+|---------|---------|
+| `abbenay.logLevel` | Extension log level |
+| `abbenay.daemonAddress` | Remote gRPC `host:port` (e.g. `127.0.0.1:50051`). Empty = local IPC + auto-start |
+| `abbenay.daemonTls` | Use TLS for remote address (default `true`) |
+| `abbenay.daemonCaPath` | Path to daemon CA PEM (`tls/ca.crt` from the container runtime dir) |
+| `abbenay.daemonSslTargetName` | SSL name override (default `abbenay-grpc`) |
+| `abbenay.daemonTokenEnv` | Env var holding consumer token (`x-abbenay-token`) |
+
+Commands **Abbenay: Set Daemon Token** / **Clear Daemon Token** store the
+consumer token in VS Code SecretStorage (preferred over putting secrets in
+settings.json).
+
+### Remote / container daemon
+
+When Abbenay runs in a container with gRPC published (`-p 50051:50051` and
+`--grpc-tls`), point the extension at that port — **not** HTTP `:8787`:
+
+```json
+{
+  "abbenay.daemonAddress": "127.0.0.1:50051",
+  "abbenay.daemonTls": true,
+  "abbenay.daemonCaPath": "/path/to/ca.crt",
+  "abbenay.daemonTokenEnv": "APME_TOKEN"
+}
+```
+
+Copy or mount the daemon’s `tls/ca.crt`, configure a matching `consumers`
+entry on the daemon, then set the token via SecretStorage or the env var.
+With `daemonAddress` set, the extension does **not** auto-start a local SEA.
+`daemonAddress` must be `host:port` for **gRPC** (typically `50051`); the
+HTTP dashboard port `8787` is rejected. Open Dashboard uses the same host
+on `:8787` when a remote address is configured (publish that port too).
 
 ### Start the Web Dashboard
 
@@ -126,9 +159,11 @@ providers:
 
 | Command | Description |
 |---------|-------------|
-| `Abbenay: Show Daemon Status` | Check daemon connection status |
+| `Abbenay: Show Daemon Status` | Check daemon connection status (includes local vs remote mode) |
 | `Abbenay: Open Dashboard` | Open web dashboard in browser |
-| `Abbenay: Configure Provider` | Open provider configuration |
+| `Abbenay: Configure Providers` | Open provider configuration |
+| `Abbenay: Set Daemon Token` | Store consumer token in SecretStorage |
+| `Abbenay: Clear Daemon Token` | Remove stored consumer token |
 
 ## Supported Providers
 
@@ -175,16 +210,17 @@ The extension is a thin gRPC client with these responsibilities:
 
 | Component | Description |
 |-----------|-------------|
-| **Daemon Client** | Connects to the Abbenay daemon via Unix socket |
+| **Daemon Client** | Connects via local IPC (Unix socket / loopback) or remote gRPC `host:port` |
 | **Backchannel** | Provides workspace path to daemon for workspace-level config |
 | **LM Provider** | Implements `LanguageModelChatProvider` to register models with VS Code |
 | **Chat Sidebar** | Provides chat view in the activity bar |
 
 The extension does **not**:
-- Store secrets (secrets are in system keychain)
-- Store configuration (config is in YAML files)
+- Store provider API keys (those live in the daemon keychain / env)
+- Store provider configuration (config is in YAML files / dashboard)
 - Make direct HTTP calls to LLM providers (daemon handles this)
-- Provide a chat UI (use the web dashboard or other extensions)
+
+Optional: consumer token for remote gRPC may be stored in VS Code SecretStorage.
 
 ## Development
 
@@ -227,6 +263,11 @@ npm run package
    ```
 
 4. Check Output panel: View → Output → "Abbenay Provider"
+
+5. For a container / remote daemon: confirm `abbenay.daemonAddress` is
+   `host:50051` (gRPC), not `:8787` (HTTP). Verify TLS CA path, consumer
+   token, and that port `50051` is published. Status shows
+   `remote:host:port (tls)`.
 
 ### Models Not Appearing
 
