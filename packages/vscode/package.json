@@ -63,6 +63,16 @@
         "command": "abbenay.chat.send",
         "title": "Send Message to Chat",
         "category": "Abbenay"
+      },
+      {
+        "command": "abbenay.setDaemonToken",
+        "title": "Set Daemon Token",
+        "category": "Abbenay"
+      },
+      {
+        "command": "abbenay.clearDaemonToken",
+        "title": "Clear Daemon Token",
+        "category": "Abbenay"
       }
     ],
     "viewsContainers": {
@@ -96,6 +106,31 @@
           ],
           "default": "info",
           "description": "Logging level for the extension"
+        },
+        "abbenay.daemonAddress": {
+          "type": "string",
+          "default": "",
+          "description": "Remote Abbenay gRPC address (host:port), e.g. 127.0.0.1:50051. When set, the extension connects to this daemon and does not auto-start a local process. Leave empty for local IPC (Unix socket / daemon.addr)."
+        },
+        "abbenay.daemonTls": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use TLS when connecting to abbenay.daemonAddress. Defaults to true (matches container --grpc-tls). Ignored for local Unix-socket connections."
+        },
+        "abbenay.daemonCaPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the daemon CA PEM file (e.g. container runtime tls/ca.crt). Required for self-signed / auto-generated certs."
+        },
+        "abbenay.daemonSslTargetName": {
+          "type": "string",
+          "default": "abbenay-grpc",
+          "description": "SSL target name override for auto-generated daemon certificates (default: abbenay-grpc)."
+        },
+        "abbenay.daemonTokenEnv": {
+          "type": "string",
+          "default": "",
+          "description": "Environment variable name whose value is sent as x-abbenay-token consumer auth metadata. Prefer Abbenay: Set Daemon Token (SecretStorage) when possible."
         }
       }
     },

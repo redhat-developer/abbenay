@@ -52,6 +52,8 @@ suite('Extension Smoke Tests', () => {
       'abbenay.openDashboard',
       'abbenay.configureProvider',
       'abbenay.chat.send',
+      'abbenay.setDaemonToken',
+      'abbenay.clearDaemonToken',
     ];
 
     for (const cmd of expected) {
@@ -74,5 +76,8 @@ suite('Extension Smoke Tests', () => {
     const config = vscode.workspace.getConfiguration('abbenay');
     const logLevel = config.get<string>('logLevel');
     assert.strictEqual(logLevel, 'info', 'Default logLevel should be "info"');
+    assert.strictEqual(config.get<string>('daemonAddress'), '');
+    assert.strictEqual(config.get<boolean>('daemonTls'), true);
+    assert.strictEqual(config.get<string>('daemonSslTargetName'), 'abbenay-grpc');
   });
 });

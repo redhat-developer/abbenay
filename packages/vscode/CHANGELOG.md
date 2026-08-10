@@ -23,6 +23,12 @@ This project uses [CalVer](https://calver.org/) versioning (`YYYY.M.MICRO`).
 
 ### Added
 
+- **Remote gRPC daemon address:** `abbenay.daemonAddress` (plus TLS / CA /
+  SSL target name / token env) so the extension can attach to a container or
+  other TCP daemon at `host:port` without auto-starting the bundled SEA.
+  Consumer token via SecretStorage (`Abbenay: Set/Clear Daemon Token`) or
+  `abbenay.daemonTokenEnv` (`x-abbenay-token`). Unset address keeps local IPC
+  + auto-start behavior.
 - Initial VS Code Marketplace release
 - Language Model API provider for all configured LLM backends
 - Activity bar with chat webview
