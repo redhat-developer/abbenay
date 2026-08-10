@@ -7,6 +7,8 @@
  * - PID file: <runtimeDir>/abbenay.pid
  * - Config: <configDir>/config.yaml
  *
+ * Remote / container: set abbenay.daemonAddress (gRPC host:port) to skip local auto-start.
+ *
  * Architecture:
  * - VS Code → Daemon: gRPC client for chat, sessions, config, etc.
  * - Daemon → VS Code: Bidirectional stream for tool invocation, Copilot access
