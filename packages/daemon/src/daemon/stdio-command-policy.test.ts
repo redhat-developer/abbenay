@@ -3,6 +3,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   assertStdioCommandAllowlisted,
   isStdioCommandAllowlisted,
@@ -54,5 +56,18 @@ describe('assertStdioCommandAllowlisted', () => {
     expect(() =>
       assertStdioCommandAllowlisted('npx', ['npx', 'uvx'], { serverId: 'ok' }),
     ).not.toThrow();
+  });
+
+  it('throws when command is empty', () => {
+    expect(() => assertStdioCommandAllowlisted('', ['npx'])).toThrow(/requires a command/);
+  });
+
+  it('matches realpath for absolute entries', () => {
+    const bin = path.join(process.cwd(), 'node_modules', '.bin');
+    if (!fs.existsSync(bin)) return;
+    const entries = fs.readdirSync(bin);
+    if (entries.length === 0) return;
+    const target = path.join(bin, entries[0]);
+    expect(isStdioCommandAllowlisted(target, [target])).toBe(true);
   });
 });
