@@ -214,6 +214,16 @@ describe('resolveTcpGrpcBind', () => {
 });
 
 describe('createClientCredentials', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-tls-client-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
   it('returns insecure by default', () => {
     const creds = createClientCredentials({});
     expect(creds).toBeInstanceOf(grpc.ChannelCredentials);
@@ -223,6 +233,20 @@ describe('createClientCredentials', () => {
     const { certPem } = generateSelfSignedPem();
     const creds = createClientCredentials({ tls: true, caPem: certPem });
     expect(creds).toBeInstanceOf(grpc.ChannelCredentials);
+  });
+
+  it('createClientCredentials reads caPath from disk', () => {
+    const { certPem } = generateSelfSignedPem();
+    const caPath = path.join(tmpDir, 'ca.crt');
+    fs.writeFileSync(caPath, certPem);
+    const creds = createClientCredentials({ tls: true, caPath });
+    expect(creds).toBeInstanceOf(grpc.ChannelCredentials);
+  });
+
+  it('generateSelfSignedPem supports long common names', () => {
+    const longCn = 'x'.repeat(200);
+    const { certPem } = generateSelfSignedPem(longCn);
+    expect(certPem).toContain('BEGIN CERTIFICATE');
   });
 
   it('exposes channel options for auto-generated CN', () => {
