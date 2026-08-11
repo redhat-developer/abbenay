@@ -86,7 +86,9 @@ jobs:
 
           IFS="/" read -r REPO_OWNER REPO_NAME_ONLY <<< "${REPO_NAME}"
 
-          SONAR_ARGS="-Dsonar.projectKey=${REPO_OWNER}_${REPO_NAME_ONLY} -Dsonar.organization=${REPO_OWNER}"
+          # Pin endpoint; PRs must not override via sonar-project.properties
+          SONAR_ARGS="-Dsonar.host.url=https://sonarcloud.io"
+          SONAR_ARGS="${SONAR_ARGS} -Dsonar.projectKey=${REPO_OWNER}_${REPO_NAME_ONLY} -Dsonar.organization=${REPO_OWNER}"
           SONAR_ARGS="${SONAR_ARGS} -Dsonar.scm.revision=${COMMIT_SHA}"
 
           if [[ "${WORKFLOW_EVENT}" == "pull_request" ]]; then
