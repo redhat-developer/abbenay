@@ -7,24 +7,49 @@ on:
     types:
       - completed
 
-permissions: read-all
+permissions:
+  actions: read
+  checks: write
+  contents: read
+  pull-requests: read
+  statuses: write
 
 jobs:
-  finalize:
-    name: finalize
+  sonar:
+    name: sonar
     if: |
+      github.repository == 'redhat-developer/abbenay' &&
       github.event.workflow_run.conclusion == 'success' &&
       (github.event.workflow_run.event == 'pull_request' ||
        (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     steps:
+      - name: Create check run
+        id: create-check
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          result-encoding: string
+          script: |
+            const check = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'sonar',
+              head_sha: '${{ github.event.workflow_run.head_sha }}',
+              status: 'in_progress',
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+            console.log(`In progress check created with ID: ${check.data.id}`);
+            return check.data.id;
+
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          repository: ${{ github.event.workflow_run.head_repository.full_name }}
           fetch-depth: 0
           show-progress: false
           persist-credentials: false
+          allow-unsafe-pr-checkout: true
 
       - name: Download coverage artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -116,8 +141,59 @@ jobs:
           echo "Running SonarCloud analysis..."
 
       - name: SonarCloud Scan
+        if: env.SONAR_ARGS != ''
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: ${{ env.SONAR_ARGS }}
+
+      - name: Update check run (success)
+        if: success()
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            const isPullRequest = '${{ github.event.workflow_run.event }}' === 'pull_request';
+            const prNumber = process.env.PR_NUMBER;
+            const summary = isPullRequest && prNumber
+              ? `SonarCloud analysis passed for PR #${prNumber}.`
+              : 'SonarCloud analysis passed.';
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.create-check.outputs.result }},
+              status: 'completed',
+              conclusion: 'success',
+              completed_at: new Date().toISOString(),
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              output: {
+                title: 'SonarCloud analysis passed',
+                summary,
+              },
+            });
+
+      - name: Update check run (failure)
+        if: failure() && steps.create-check.outcome == 'success'
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            const isPullRequest = '${{ github.event.workflow_run.event }}' === 'pull_request';
+            const prNumber = process.env.PR_NUMBER;
+            const summary = isPullRequest && prNumber
+              ? `SonarCloud analysis failed for PR #${prNumber}. Click Details for logs.`
+              : 'SonarCloud analysis failed. Click Details for logs.';
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.create-check.outputs.result }},
+              status: 'completed',
+              conclusion: 'failure',
+              completed_at: new Date().toISOString(),
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              output: {
+                title: 'SonarCloud analysis failed',
+                summary,
+                text: `**Workflow run:** [View details](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              },
+            });
