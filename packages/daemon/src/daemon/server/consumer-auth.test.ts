@@ -107,6 +107,18 @@ describe('hasConfiguredConsumers / resolveAllowOpenAuth / buildConsumerAuthConte
       grpcHost: '127.0.0.1',
     })).toEqual({ loopbackOnly: true, allowOpenAuth: false });
   });
+
+  it('defaults grpcHost to loopback when grpcPort set without host', () => {
+    expect(buildConsumerAuthContext({ grpcPort: 50051 })).toEqual({
+      loopbackOnly: true,
+      allowOpenAuth: false,
+    });
+  });
+
+  it('resolves yes/on env variants for open auth', () => {
+    expect(resolveAllowOpenAuth({ env: { ABBENAY_ALLOW_OPEN_AUTH: 'yes' } })).toBe(true);
+    expect(resolveAllowOpenAuth({ env: { ABBENAY_ALLOW_OPEN_AUTH: 'on' } })).toBe(true);
+  });
 });
 
 describe('assertConsumersConfiguredForBind', () => {
@@ -157,6 +169,30 @@ describe('matchConsumerByToken', () => {
     expect(matchConsumerByToken(config, 'tok-abc')).toBe('apme');
     expect(matchConsumerByToken(config, 'wrong')).toBeUndefined();
     expect(matchConsumerByToken(config, undefined)).toBeUndefined();
+  });
+
+  it('skips consumers with missing token env values', () => {
+    const config: ConfigFile = {
+      consumers: {
+        missing: { token_env: 'NOT_SET_ENV', capabilities: { chat: true } },
+        apme: { token_env: 'TEST_CONSUMER_TOKEN', capabilities: { chat: true } },
+      },
+    };
+    withEnv('TEST_CONSUMER_TOKEN', 'tok-abc', () => {
+      expect(matchConsumerByToken(config, 'tok-abc')).toBe('apme');
+    });
+  });
+
+  // Config file order — not a security tie-breaker.
+  it('returns first matching consumer when multiple tokens match', () => {
+    const config: ConfigFile = {
+      consumers: {
+        first: { token_env: 'TOKEN_A', capabilities: { chat: true } },
+        second: { token_env: 'TOKEN_B', capabilities: { chat: true } },
+      },
+    };
+    const env = { TOKEN_A: 'shared', TOKEN_B: 'shared' };
+    expect(matchConsumerByToken(config, 'shared', env)).toBe('first');
   });
 });
 
