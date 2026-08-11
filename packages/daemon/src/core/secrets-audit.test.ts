@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { auditSecretChange } from './secrets.js';
+import { auditSecretChange, MemorySecretStore } from './secrets.js';
 
 describe('auditSecretChange', () => {
   afterEach(() => {
@@ -39,5 +39,20 @@ describe('auditSecretChange', () => {
     expect(line).not.toMatch(/\n|\r/);
     expect(line).toContain('key=OPENAI_API_KEY[Audit] forged');
     expect(line).toContain('actor=alicebob');
+  });
+});
+
+describe('MemorySecretStore', () => {
+  it('stores, checks, and deletes secrets in memory', async () => {
+    const store = new MemorySecretStore();
+    expect(await store.has('TOKEN')).toBe(false);
+
+    await store.set('TOKEN', 'secret-value');
+    expect(await store.get('TOKEN')).toBe('secret-value');
+    expect(await store.has('TOKEN')).toBe(true);
+
+    expect(await store.delete('TOKEN')).toBe(true);
+    expect(await store.get('TOKEN')).toBeNull();
+    expect(await store.delete('TOKEN')).toBe(false);
   });
 });

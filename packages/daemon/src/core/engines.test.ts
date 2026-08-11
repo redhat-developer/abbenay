@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { sanitizeVertexRequestBody, convertAnthropicJsonToSse, fetchModels } from './engines.js';
+import { sanitizeVertexRequestBody, convertAnthropicJsonToSse, fetchModels, getEngines, getEngine, isKnownEngineId, validateConfigProviderEngines, getProviderTemplates } from './engines.js';
 
 const ENGINES_SRC = fs.readFileSync(
   path.join(__dirname, 'engines.ts'),
@@ -91,7 +91,58 @@ describe('sanitizeVertexRequestBody', () => {
     const result = sanitizeVertexRequestBody(input);
     expect(result).toBeNull();
   });
+
+  it('should drop messages with whitespace-only string content', () => {
+    const input = JSON.stringify({
+      messages: [
+        { role: 'user', content: '   ' },
+        { role: 'user', content: 'real question' },
+      ],
+      anthropic_version: 'vertex-2023-10-16',
+    });
+    const result = sanitizeVertexRequestBody(input);
+    expect(result).not.toBeNull();
+    expect(result!.removed).toContain('empty_text_blocks');
+    const parsed = JSON.parse(result!.body);
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.messages[0].content).toBe('real question');
+  });
+
+  it('should filter whitespace-only text blocks from array content', () => {
+    const input = JSON.stringify({
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: ' ' },
+          { type: 'text', text: 'keep me' },
+        ],
+      }],
+      anthropic_version: 'vertex-2023-10-16',
+    });
+    const result = sanitizeVertexRequestBody(input);
+    expect(result).not.toBeNull();
+    expect(result!.removed).toContain('empty_text_blocks');
+    const parsed = JSON.parse(result!.body);
+    expect(parsed.messages[0].content).toEqual([{ type: 'text', text: 'keep me' }]);
+  });
+
+  it('should drop messages when all array text blocks are whitespace', () => {
+    const input = JSON.stringify({
+      messages: [{
+        role: 'user',
+        content: [{ type: 'text', text: '  ' }],
+      }],
+      anthropic_version: 'vertex-2023-10-16',
+    });
+    const result = sanitizeVertexRequestBody(input);
+    expect(result).not.toBeNull();
+    expect(parsedMessages(result!.body)).toEqual([]);
+  });
 });
+
+function parsedMessages(body: string): unknown[] {
+  return JSON.parse(body).messages as unknown[];
+}
 
 describe('convertAnthropicJsonToSse', () => {
   it('should convert a text-only response to SSE events', () => {
@@ -220,6 +271,14 @@ describe('convertAnthropicJsonToSse', () => {
     const deltaData = JSON.parse(deltaLine!.replace('data: ', ''));
     expect(deltaData.delta.stop_reason).toBe('end_turn');
   });
+
+  it('should reject unsupported content block types', () => {
+    const json = JSON.stringify({
+      id: 'msg',
+      content: [{ type: 'image', source: { type: 'base64' } }],
+    });
+    expect(convertAnthropicJsonToSse(json)).toEqual({ ok: false, reason: 'non-text-content' });
+  });
 });
 
 describe('Gemini model discovery auth (no query-string keys)', () => {
@@ -262,5 +321,141 @@ describe('Gemini model discovery auth (no query-string keys)', () => {
     expect(ENGINES_SRC).not.toMatch(/`\$\{[^`]*\}\?key=\$\{/);
     expect(ENGINES_SRC).not.toMatch(/['"`]\?key=\$\{/);
     expect(ENGINES_SRC).toMatch(/x-goog-api-key/);
+  });
+});
+
+describe('engine registry accessors', () => {
+  it('should list all built-in engines including mock', () => {
+    const engines = getEngines();
+    const ids = engines.map((e) => e.id);
+    expect(ids).toEqual(expect.arrayContaining(['mock', 'openai', 'ollama', 'anthropic']));
+  });
+
+  it('should resolve engines by id and report known ids', () => {
+    expect(getEngine('mock')?.requiresKey).toBe(false);
+    expect(getEngine('openai')?.supportsTools).toBe(true);
+    expect(getEngine('missing-engine')).toBeUndefined();
+    expect(isKnownEngineId('mock')).toBe(true);
+    expect(isKnownEngineId('not-registered')).toBe(false);
+  });
+
+  it('should validate provider engine references in config', () => {
+    expect(validateConfigProviderEngines({ providers: {} })).toEqual({ ok: true });
+    expect(validateConfigProviderEngines({
+      providers: { good: { engine: 'mock' } },
+    })).toEqual({ ok: true });
+    expect(validateConfigProviderEngines({
+      providers: { bad: {} },
+    })).toEqual({ ok: false, error: 'provider "bad": engine is required' });
+    expect(validateConfigProviderEngines({
+      providers: { evil: { engine: 'custom-runtime' } },
+    })).toEqual({
+      ok: false,
+      error: 'provider "evil": unknown engine "custom-runtime" (not in the built-in engine allowlist)',
+    });
+  });
+
+  it('should expose provider templates for the add-provider wizard', () => {
+    const templates = getProviderTemplates();
+    expect(templates.some((t) => t.engine === 'openai' && t.requiresKey)).toBe(true);
+    expect(templates.every((t) => t.suggestedName === t.engine)).toBe(true);
+  });
+});
+
+describe('fetchModels', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('should return static mock models without network', async () => {
+    const models = await fetchModels('mock');
+    expect(models.length).toBeGreaterThanOrEqual(4);
+    expect(models.every((m) => m.engine === 'mock')).toBe(true);
+  });
+
+  it('should return empty for unknown engines and keyless discovery skips', async () => {
+    expect(await fetchModels('not-real')).toEqual([]);
+    expect(await fetchModels('bedrock')).toEqual([]);
+    expect(await fetchModels('vertex-anthropic')).toEqual([]);
+  });
+
+  it('should fetch OpenAI-compatible models from /v1/models', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe('https://openrouter.ai/api/v1/models');
+      return new Response(JSON.stringify({
+        data: [{ id: 'anthropic/claude-sonnet-4', context_length: 200000 }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const models = await fetchModels('openrouter', 'sk-test');
+    expect(models).toHaveLength(1);
+    expect(models[0]).toMatchObject({
+      id: 'anthropic/claude-sonnet-4',
+      engine: 'openrouter',
+      contextWindow: 200000,
+    });
+  });
+
+  it('should build models URL for trailing-slash base paths', async () => {
+    let capturedUrl = '';
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(input);
+      const headers = new Headers(init?.headers);
+      expect(headers.get('Authorization')).toBe('Bearer local-key');
+      return new Response(JSON.stringify({
+        models: [{ name: 'llama3', context_window: 8192 }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const models = await fetchModels('ollama', 'local-key', 'http://127.0.0.1:11434/');
+    expect(capturedUrl).toBe('http://127.0.0.1:11434/models');
+    expect(models[0].id).toBe('llama3');
+  });
+
+  it('should fetch Anthropic models with x-api-key header', async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = init?.headers;
+      return new Response(JSON.stringify({
+        data: [{ id: 'claude-sonnet-4-20250514', max_tokens: 200000 }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const models = await fetchModels('anthropic', 'ant-key');
+    expect(new Headers(capturedHeaders).get('x-api-key')).toBe('ant-key');
+    expect(models[0]).toMatchObject({
+      id: 'claude-sonnet-4-20250514',
+      engine: 'anthropic',
+      capabilities: { supportsTools: true, supportsVision: true },
+    });
+  });
+
+  it('should filter Gemini models to generateContent-capable entries', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      models: [
+        { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'], inputTokenLimit: 1000 },
+        { name: 'models/embedding-only', supportedGenerationMethods: ['embedContent'] },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+    const models = await fetchModels('gemini', 'gem-key');
+    expect(models).toHaveLength(1);
+    expect(models[0].id).toBe('gemini-2.0-flash');
+  });
+
+  it('should return empty when provider HTTP fails', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
+
+    expect(await fetchModels('openrouter', 'sk-test')).toEqual([]);
+    expect(errSpy).toHaveBeenCalled();
+  });
+
+  it('should return empty when OpenAI-compatible provider has no base URL', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    expect(await fetchModels('azure')).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

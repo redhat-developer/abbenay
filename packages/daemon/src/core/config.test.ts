@@ -20,8 +20,15 @@ vi.mock('./paths.js', () => ({
 
 import {
   loadConfigFromPath,
+  loadConfig,
+  saveConfig,
+  loadWorkspaceConfig,
+  saveWorkspaceConfig,
   mergeConfigs,
   mergeMultipleWorkspaceConfigs,
+  getProviderConfig,
+  getConfiguredProviders,
+  getEnabledModelNames,
   isValidVirtualName,
   resolveEngineModelId,
   type ConfigFile,
@@ -441,6 +448,119 @@ describe('mergeMultipleWorkspaceConfigs', () => {
 });
 
 // ── ModelConfig params ───────────────────────────────────────────────────────
+
+describe('loadConfig / saveConfig', () => {
+  it('should round-trip user config through loadConfig and saveConfig', () => {
+    setUserConfig({
+      providers: {
+        openai: { engine: 'openai', api_key_keychain_name: 'OPENAI_KEY' },
+      },
+    });
+
+    const loaded = loadConfig();
+    expect(loaded.providers?.openai?.engine).toBe('openai');
+
+    saveConfig({
+      providers: {
+        mock: { engine: 'mock', models: { echo: {} } },
+      },
+    });
+
+    const reloaded = loadConfig();
+    expect(reloaded.providers?.mock?.models?.echo).toEqual({});
+  });
+});
+
+describe('loadWorkspaceConfig / saveWorkspaceConfig', () => {
+  it('should load and save workspace-level config', () => {
+    const wsDir = path.join(tmpDir, 'workspace');
+    const wsConfig: ConfigFile = {
+      providers: {
+        ollama: { engine: 'ollama', base_url: 'http://127.0.0.1:11434' },
+      },
+    };
+
+    saveWorkspaceConfig(wsDir, wsConfig);
+    const loaded = loadWorkspaceConfig(wsDir);
+    expect(loaded?.providers?.ollama?.base_url).toBe('http://127.0.0.1:11434');
+  });
+});
+
+describe('getProviderConfig / getConfiguredProviders / getEnabledModelNames', () => {
+  it('should return merged provider config and ids', () => {
+    setUserConfig({
+      providers: {
+        openrouter: {
+          engine: 'openrouter',
+          api_key_keychain_name: 'OR_KEY',
+          models: { 'model-a': {}, 'model-b': {} },
+        },
+        openai: { engine: 'openai', api_key_keychain_name: 'OAI_KEY' },
+      },
+    });
+
+    const wsDir = createWorkspace('ws', {
+      providers: {
+        openrouter: {
+          engine: 'openrouter',
+          api_key_keychain_name: 'WS_KEY',
+          models: { 'model-a': {} },
+        },
+      },
+    });
+
+    expect(getConfiguredProviders()).toEqual(['openrouter', 'openai']);
+    expect(getConfiguredProviders(wsDir).sort()).toEqual(['openai', 'openrouter']);
+
+    const wsProvider = getProviderConfig('openrouter', wsDir);
+    expect(wsProvider?.api_key_keychain_name).toBe('WS_KEY');
+    expect(getEnabledModelNames(wsProvider!)).toEqual(['model-a']);
+    expect(getProviderConfig('missing')).toBeNull();
+  });
+});
+
+describe('mergeConfigs tool_policy and security', () => {
+  it('should merge tool_policy arrays and workspace security overrides', () => {
+    const userConfig: ConfigFile = {
+      providers: {},
+      tool_policy: {
+        max_tool_iterations: 5,
+        auto_approve: ['local:a'],
+        require_approval: ['local:b'],
+        disabled_tools: ['local:c'],
+        aliases: { old: 'new' },
+      },
+      security: {
+        max_dynamic_mcp_servers: 2,
+        stdio_command_allowlist: ['node'],
+        stdio_require_approval: true,
+      },
+    };
+    const wsConfig: ConfigFile = {
+      providers: {},
+      tool_policy: {
+        max_tool_iterations: 8,
+        auto_approve: ['local:d'],
+        require_approval: ['local:e'],
+        disabled_tools: ['local:f'],
+        aliases: { other: 'alias' },
+      },
+      security: {
+        max_dynamic_mcp_servers: 4,
+        stdio_command_allowlist: ['python'],
+        stdio_require_approval: false,
+      },
+    };
+
+    const merged = mergeConfigs(userConfig, wsConfig);
+    expect(merged.tool_policy?.max_tool_iterations).toBe(8);
+    expect(merged.tool_policy?.auto_approve).toEqual(['local:a', 'local:d']);
+    expect(merged.tool_policy?.aliases).toEqual({ old: 'new', other: 'alias' });
+    expect(merged.security?.max_dynamic_mcp_servers).toBe(4);
+    expect(merged.security?.stdio_command_allowlist).toEqual(['python']);
+    expect(merged.security?.stdio_require_approval).toBe(false);
+  });
+});
 
 describe('ModelConfig', () => {
   it('should parse all model parameters from YAML', () => {
