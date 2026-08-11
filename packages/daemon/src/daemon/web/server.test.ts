@@ -24,15 +24,28 @@ import { API_TOKEN_COOKIE, CSRF_COOKIE } from './http-security.js';
 
 const TEST_TOKEN = 'unit-test-web-api-token';
 
-const tmpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-server-unit-config-'));
+const { tmpConfigDir, configOverrides } = vi.hoisted(() => {
+  const nodeFs = require('node:fs') as typeof import('node:fs');
+  const nodeOs = require('node:os') as typeof import('node:os');
+  const nodePath = require('node:path') as typeof import('node:path');
+  return {
+    tmpConfigDir: nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'abbenay-server-unit-config-')),
+    configOverrides: { userConfigPath: null as string | null },
+  };
+});
+
 vi.mock('../../core/paths.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../core/paths.js')>();
   return {
     ...actual,
-    getUserConfigPath: () => path.join(tmpConfigDir, 'config.yaml'),
+    getUserConfigPath: () => configOverrides.userConfigPath ?? path.join(tmpConfigDir, 'config.yaml'),
     getWorkspaceConfigPath: (wsPath: string) => path.join(wsPath, '.config', 'abbenay', 'config.yaml'),
     getConfigDir: () => tmpConfigDir,
   };
+});
+
+afterAll(() => {
+  fs.rmSync(tmpConfigDir, { recursive: true, force: true });
 });
 
 function getEphemeralPort(host = '127.0.0.1'): Promise<number> {
@@ -829,8 +842,10 @@ describe('createWebApp routes', () => {
   });
 
   it('GET /api/mcp-servers includes configured servers from config file', async () => {
-    const configPath = path.join(tmpConfigDir, 'config.yaml');
+    const isolatedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-mcp-servers-config-'));
+    const configPath = path.join(isolatedConfigDir, 'config.yaml');
     fs.writeFileSync(configPath, 'mcp_servers:\n  myserver:\n    transport: stdio\n    enabled: true\n');
+    configOverrides.userConfigPath = configPath;
     const mcpState = createMockState({
       sessionsDir,
       mcpPoolStatuses: [{
@@ -850,7 +865,8 @@ describe('createWebApp routes', () => {
       expect(servers.some((s) => s.id === 'orphan')).toBe(true);
     } finally {
       await stopTestApp(mcpServer);
-      if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
+      configOverrides.userConfigPath = null;
+      fs.rmSync(isolatedConfigDir, { recursive: true, force: true });
     }
   });
 
@@ -984,8 +1000,11 @@ describe('createWebApp error paths', () => {
   it('GET /api/providers returns 500 when listProviders throws', async () => {
     const state = createMockState({ sessionsDir, throwOnListProviders: true });
     const { httpServer, baseUrl } = await startTestApp(state);
-    const res = await httpRequest(baseUrl, 'GET', '/api/providers');
-    expect(res.statusCode).toBe(500);
-    await stopTestApp(httpServer);
+    try {
+      const res = await httpRequest(baseUrl, 'GET', '/api/providers');
+      expect(res.statusCode).toBe(500);
+    } finally {
+      await stopTestApp(httpServer);
+    }
   });
 });

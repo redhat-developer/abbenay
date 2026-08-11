@@ -3,6 +3,8 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
+import * as path from 'node:path';
+import { getConfigDir } from '../../core/paths.js';
 import {
   isLocalhostBind,
   isLoopbackRemoteAddress,
@@ -446,7 +448,7 @@ describe('resolveHttpSecurity', () => {
 
 describe('getHttpApiTokenPath', () => {
   it('points under the config directory', () => {
-    expect(getHttpApiTokenPath()).toMatch(/http-api-token$/);
+    expect(getHttpApiTokenPath()).toBe(path.join(getConfigDir(), 'http-api-token'));
   });
 });
 
@@ -491,6 +493,22 @@ function runMiddleware(
   middleware(req as Request, res as unknown as Response, () => {
     res.nextCalled = true;
   });
+  return res;
+}
+
+function runMiddlewareChain(
+  middlewares: Array<(req: Request, res: Response, next: () => void) => void>,
+  req: Partial<Request>,
+): MockResponse {
+  const res = createMockResponse();
+  const run = (index: number) => {
+    if (index >= middlewares.length) {
+      res.nextCalled = true;
+      return;
+    }
+    middlewares[index](req as Request, res as unknown as Response, () => run(index + 1));
+  };
+  run(0);
   return res;
 }
 
@@ -577,6 +595,7 @@ describe('createAuthMiddleware', () => {
     } as Partial<Request>);
     expect(res.nextCalled).toBe(false);
     expect(res.statusCode).toBe(401);
+    expect(res.headers['www-authenticate']).toBe('Bearer');
     expect(res.body).toEqual({ error: 'Unauthorized' });
   });
 
@@ -610,6 +629,16 @@ describe('createAuthMiddleware', () => {
       },
     } as Partial<Request>);
     expect(withCsrf.nextCalled).toBe(true);
+
+    const mismatched = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'POST',
+      headers: {
+        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}; ${CSRF_COOKIE}=${encodeURIComponent(csrf)}`,
+        [CSRF_HEADER]: 'other-value',
+      },
+    } as Partial<Request>);
+    expect(mismatched.nextCalled).toBe(false);
+    expect(mismatched.statusCode).toBe(403);
   });
 
   it('accepts cookie auth on POST when Referer matches same-origin Host', () => {
@@ -624,16 +653,18 @@ describe('createAuthMiddleware', () => {
     expect(res.nextCalled).toBe(true);
   });
 
-  it('accepts cookie auth on POST when Origin matches Host via x-forwarded-proto', () => {
-    const res = runMiddleware(createAuthMiddleware(token, ['https://app.example.com']), {
-      method: 'POST',
-      headers: {
-        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
-        host: 'abbenay.example.com',
-        origin: 'https://abbenay.example.com',
-        'x-forwarded-proto': 'https',
-      },
-    } as Partial<Request>);
+  it('accepts cookie auth on POST when Origin is in CORS allowlist (CORS then auth chain)', () => {
+    const productionOrigins = ['http://127.0.0.1:8787', 'https://abbenay.example.com'];
+    const res = runMiddlewareChain(
+      [createCorsMiddleware(productionOrigins), createAuthMiddleware(token, productionOrigins)],
+      {
+        method: 'POST',
+        headers: {
+          cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
+          origin: 'https://abbenay.example.com',
+        },
+      } as Partial<Request>,
+    );
     expect(res.nextCalled).toBe(true);
   });
 
