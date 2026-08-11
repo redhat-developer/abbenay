@@ -21,8 +21,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           show-progress: false
+          persist-credentials: false
 
       - name: Download coverage artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -32,59 +34,72 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Fetch PR Number artifact
-        if: github.event.workflow_run.event == 'pull_request'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: pr_number
-          path: .
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-
-      - name: Extract PR Number
-        if: github.event.workflow_run.event == 'pull_request'
-        run: |
-          cat pr_number.txt
-          PR_NUM=$(head -n1 pr_number.txt | awk '{print $3}')
-          echo "Found PR number: $PR_NUM"
-          echo "PR_NUMBER=$PR_NUM" >> $GITHUB_ENV
-
-      - name: Get Additional PR Information
+      - name: Resolve PR metadata
         if: github.event.workflow_run.event == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+          # Trusted GitHub payload — not PR-controlled artifact content
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
-          PR_DATA=$(gh api "repos/${{ github.repository }}/pulls/${{ env.PR_NUMBER }}")
-          echo "PR_BASE=$(echo "$PR_DATA" | jq -r '.base.ref')" >> $GITHUB_ENV
-          echo "PR_HEAD=$(echo "$PR_DATA" | jq -r '.head.ref')" >> $GITHUB_ENV
+          set -euo pipefail
 
-      - name: Checkout PR branch
-        if: github.event.workflow_run.event == 'pull_request'
-        run: |
-          gh pr checkout ${{ env.PR_NUMBER }} || echo "::warning::Failed to checkout PR branch ${{ env.PR_NUMBER }}, this can happen if it was already merged and deleted."
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [[ -z "${PR_NUMBER}" ]]; then
+            PR_NUMBER=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPO}/commits/${HEAD_SHA}/pulls" \
+              --jq '.[0].number // empty')
+          fi
+
+          if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Unable to resolve a trusted PR number for head SHA ${HEAD_SHA}"
+            exit 1
+          fi
+
+          PR_DATA=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")
+          PR_BASE=$(jq -r '.base.ref' <<< "${PR_DATA}")
+          PR_HEAD=$(jq -r '.head.ref' <<< "${PR_DATA}")
+
+          if [[ -z "${PR_BASE}" || "${PR_BASE}" == "null" || -z "${PR_HEAD}" || "${PR_HEAD}" == "null" ]]; then
+            echo "::error::Unable to resolve PR branch metadata for PR ${PR_NUMBER}"
+            exit 1
+          fi
+
+          {
+            echo "PR_NUMBER=${PR_NUMBER}"
+            echo "PR_BASE=${PR_BASE}"
+            echo "PR_HEAD=${PR_HEAD}"
+          } >> "${GITHUB_ENV}"
+
+          echo "Resolved PR #${PR_NUMBER} (${PR_HEAD} -> ${PR_BASE})"
 
       - name: Prepare SonarCloud args
         if: hashFiles('packages/daemon/coverage/lcov.info') != ''
         shell: bash
+        env:
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO_NAME: ${{ github.repository }}
         run: |
-          REPO_NAME="${{ github.repository }}"
-          COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
+          set -euo pipefail
 
-          IFS="/" read -r REPO_OWNER REPO_NAME_ONLY <<< "$REPO_NAME"
+          IFS="/" read -r REPO_OWNER REPO_NAME_ONLY <<< "${REPO_NAME}"
 
           SONAR_ARGS="-Dsonar.projectKey=${REPO_OWNER}_${REPO_NAME_ONLY} -Dsonar.organization=${REPO_OWNER}"
-          SONAR_ARGS="${SONAR_ARGS} -Dsonar.scm.revision=$COMMIT_SHA"
+          SONAR_ARGS="${SONAR_ARGS} -Dsonar.scm.revision=${COMMIT_SHA}"
 
-          WORKFLOW_EVENT="${{ github.event.workflow_run.event }}"
-          if [[ "$WORKFLOW_EVENT" == "pull_request" && -n "$PR_NUMBER" ]]; then
-            SONAR_ARGS="${SONAR_ARGS} -Dsonar.pullrequest.key=$PR_NUMBER"
-            SONAR_ARGS="${SONAR_ARGS} -Dsonar.pullrequest.branch=$PR_HEAD"
-            SONAR_ARGS="${SONAR_ARGS} -Dsonar.pullrequest.base=$PR_BASE"
+          if [[ "${WORKFLOW_EVENT}" == "pull_request" ]]; then
+            if [[ ! "${PR_NUMBER:-}" =~ ^[0-9]+$ ]]; then
+              echo "::error::PR_NUMBER is missing or invalid"
+              exit 1
+            fi
+            SONAR_ARGS="${SONAR_ARGS} -Dsonar.pullrequest.key=${PR_NUMBER}"
+            SONAR_ARGS="${SONAR_ARGS} -Dsonar.pullrequest.branch=${PR_HEAD}"
+            SONAR_ARGS="${SONAR_ARGS} -Dsonar.pullrequest.base=${PR_BASE}"
           fi
 
-          echo "SONAR_ARGS=$SONAR_ARGS" >> $GITHUB_ENV
+          echo "SONAR_ARGS=${SONAR_ARGS}" >> "${GITHUB_ENV}"
 
       - name: Check for coverage files
         run: |
