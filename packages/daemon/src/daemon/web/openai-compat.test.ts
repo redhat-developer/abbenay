@@ -6,7 +6,9 @@
  * and complete response building.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import express from 'express';
+import * as http from 'node:http';
 import {
   mapModelToOpenAI,
   mapFinishReason,
@@ -19,11 +21,16 @@ import {
   validateToolChoiceAgainstTools,
   normalizeOpenAIToolCalls,
   normalizeOpenAIChatMessage,
+  coerceToolParametersSchema,
+  registerOpenAIRoutes,
   type StreamChunkOptions,
 } from './openai-compat.js';
+import * as configModule from '../../core/config.js';
 import type { ModelInfo } from '../../core/state.js';
 import type { ChatChunk } from '../../core/engines.js';
+import type { ChatToolOptions } from '../../core/state.js';
 import type { ConfigFile } from '../../core/config.js';
+import type { DaemonState } from '../state.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- test assertions need flexible access to untyped response shapes */
 
@@ -553,5 +560,282 @@ describe('validateToolChoiceAgainstTools', () => {
       ['web_search'],
     )).toBeUndefined();
     expect(validateToolChoiceAgainstTools('required', ['web_search'])).toBeUndefined();
+  });
+});
+
+describe('coerceToolParametersSchema', () => {
+  it('normalizes object schemas with default type and properties', () => {
+    expect(coerceToolParametersSchema({
+      properties: { q: { type: 'string' } },
+    })).toEqual({
+      type: 'object',
+      properties: { q: { type: 'string' } },
+    });
+  });
+
+  it('returns empty object schema for invalid parameters', () => {
+    expect(coerceToolParametersSchema(null)).toEqual({ type: 'object', properties: {} });
+    expect(coerceToolParametersSchema('bad')).toEqual({ type: 'object', properties: {} });
+  });
+});
+
+async function startOpenAIApp(state: DaemonState): Promise<{ server: http.Server; baseUrl: string }> {
+  const app = express();
+  app.use(express.json({ limit: '10mb' }));
+  registerOpenAIRoutes(app, state);
+  const server = await new Promise<http.Server>((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  const addr = server.address();
+  const port = typeof addr === 'object' && addr ? addr.port : 0;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+async function stopOpenAIApp(server: http.Server): Promise<void> {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+function openaiRequest(
+  baseUrl: string,
+  method: string,
+  urlPath: string,
+  body?: unknown,
+): Promise<{ statusCode: number; body: unknown; raw: string }> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlPath, baseUrl);
+    const postData = body === undefined ? undefined : JSON.stringify(body);
+    const req = http.request(
+      url,
+      {
+        method,
+        headers: postData
+          ? {
+              'content-type': 'application/json',
+              'content-length': Buffer.byteLength(postData),
+            }
+          : undefined,
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => { raw += chunk; });
+        res.on('end', () => {
+          let parsed: unknown = raw;
+          if ((res.headers['content-type'] || '').includes('application/json')) {
+            try { parsed = JSON.parse(raw); } catch { /* keep raw */ }
+          }
+          resolve({ statusCode: res.statusCode || 0, body: parsed, raw });
+        });
+      },
+    );
+    req.on('error', reject);
+    if (postData) req.write(postData);
+    req.end();
+  });
+}
+
+function createOpenAIState(
+  chatChunks: ChatChunk[],
+  listModelsImpl?: () => Promise<ModelInfo[]>,
+): DaemonState {
+  return {
+    async listModels() {
+      if (listModelsImpl) return listModelsImpl();
+      return [{
+        id: 'openai/gpt-4o',
+        name: 'gpt-4o',
+        engineModelId: 'gpt-4o',
+        provider: 'openai',
+        engine: 'openai',
+        contextWindow: 128000,
+      } as ModelInfo];
+    },
+    async *chat() {
+      for (const chunk of chatChunks) {
+        yield chunk;
+      }
+    },
+  } as unknown as DaemonState;
+}
+
+describe('registerOpenAIRoutes', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('GET /v1/models returns OpenAI-formatted models', async () => {
+    const { server, baseUrl } = await startOpenAIApp(createOpenAIState([]));
+    try {
+      const res = await openaiRequest(baseUrl, 'GET', '/v1/models');
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({
+        object: 'list',
+        data: [{ id: 'openai/gpt-4o', object: 'model', owned_by: 'openai' }],
+      });
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
+  it('GET /v1/models returns 500 when listModels throws', async () => {
+    const state = createOpenAIState([], async () => {
+      throw new Error('list failed');
+    });
+    const { server, baseUrl } = await startOpenAIApp(state);
+    try {
+      const res = await openaiRequest(baseUrl, 'GET', '/v1/models');
+      expect(res.statusCode).toBe(500);
+      expect((res.body as { error: { message: string } }).error.message).toBe('list failed');
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
+  it('POST /v1/chat/completions returns a non-streaming completion', async () => {
+    const state = createOpenAIState([
+      { type: 'text', text: 'Hello' },
+      { type: 'done', finishReason: 'stop' },
+    ]);
+    const { server, baseUrl } = await startOpenAIApp(state);
+    try {
+      const res = await openaiRequest(baseUrl, 'POST', '/v1/chat/completions', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hi' }],
+        temperature: 0.2,
+        max_tokens: 64,
+      });
+      expect(res.statusCode).toBe(200);
+      expect((res.body as { choices: Array<{ message: { content: string } }> }).choices[0].message.content)
+        .toBe('Hello');
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
+  it('POST /v1/chat/completions streams SSE chunks', async () => {
+    const state = createOpenAIState([
+      { type: 'text', text: 'Hi' },
+      {
+        type: 'tool',
+        name: 'search',
+        state: 'running',
+        call: { params: { q: 'x' }, result: undefined },
+        done: false,
+      },
+      { type: 'done', finishReason: 'tool-calls' },
+    ]);
+    const { server, baseUrl } = await startOpenAIApp(state);
+    try {
+      const url = new URL('/v1/chat/completions', baseUrl);
+      const raw = await new Promise<string>((resolve, reject) => {
+        const postData = JSON.stringify({
+          model: 'openai/gpt-4o',
+          messages: [{ role: 'user', content: 'search' }],
+          stream: true,
+        });
+        const req = http.request(url, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(postData),
+          },
+        }, (res) => {
+          let buf = '';
+          res.on('data', (chunk) => { buf += chunk; });
+          res.on('end', () => resolve(buf));
+        });
+        req.on('error', reject);
+        req.write(postData);
+        req.end();
+      });
+      expect(raw).toContain('chat.completion.chunk');
+      expect(raw).toContain('tool_calls');
+      expect(raw).toContain('[DONE]');
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
+  it('returns 400 for invalid request bodies and tool_choice', async () => {
+    const { server, baseUrl } = await startOpenAIApp(createOpenAIState([]));
+    try {
+      const invalidBody = await openaiRequest(baseUrl, 'POST', '/v1/chat/completions', {
+        model: 'openai/gpt-4o',
+        messages: [],
+      });
+      expect(invalidBody.statusCode).toBe(400);
+
+      const invalidChoice = await openaiRequest(baseUrl, 'POST', '/v1/chat/completions', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hi' }],
+        tool_choice: 'forced',
+      });
+      expect(invalidChoice.statusCode).toBe(400);
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
+  it('honors passthrough tools when config enables them', async () => {
+    vi.spyOn(configModule, 'loadConfig').mockReturnValue({
+      openai_compat: { tools: 'passthrough' },
+      providers: {},
+    } as ConfigFile);
+
+    let capturedToolOptions: ChatToolOptions | undefined;
+    const state = {
+      async listModels() {
+        return [{
+          id: 'openai/gpt-4o',
+          name: 'gpt-4o',
+          engineModelId: 'gpt-4o',
+          provider: 'openai',
+          engine: 'openai',
+          contextWindow: 128000,
+        } as ModelInfo];
+      },
+      async *chat(
+        _model: string,
+        _messages: Array<{ role: string; content: string }>,
+        _params?: Record<string, unknown>,
+        toolOptions?: ChatToolOptions,
+      ) {
+        capturedToolOptions = toolOptions;
+        yield { type: 'done', finishReason: 'stop' } as ChatChunk;
+      },
+    } as unknown as DaemonState;
+
+    const { server, baseUrl } = await startOpenAIApp(state);
+    try {
+      const res = await openaiRequest(baseUrl, 'POST', '/v1/chat/completions', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hi' }],
+        tools: [{
+          type: 'function',
+          function: { name: 'web_search', parameters: { type: 'object', properties: {} } },
+        }],
+        tool_choice: 'required',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(capturedToolOptions?.toolMode).toBe('passthrough');
+      expect(capturedToolOptions?.tools?.map((t) => t.name)).toEqual(['web_search']);
+      expect(capturedToolOptions?.toolChoice).toBe('required');
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
+  it('returns 500 when chat yields an error chunk', async () => {
+    const state = createOpenAIState([{ type: 'error', error: 'model failed' }]);
+    const { server, baseUrl } = await startOpenAIApp(state);
+    try {
+      const res = await openaiRequest(baseUrl, 'POST', '/v1/chat/completions', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hi' }],
+      });
+      expect(res.statusCode).toBe(500);
+      expect((res.body as { error: { message: string } }).error.message).toBe('model failed');
+    } finally {
+      await stopOpenAIApp(server);
+    }
   });
 });

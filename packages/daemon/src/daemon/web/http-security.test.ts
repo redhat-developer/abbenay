@@ -3,6 +3,8 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
+import * as path from 'node:path';
+import { getConfigDir } from '../../core/paths.js';
 import {
   isLocalhostBind,
   isLoopbackRemoteAddress,
@@ -14,12 +16,19 @@ import {
   resolveHttpApiToken,
   resolveHttpHost,
   resolveCorsOrigins,
+  resolveHttpSecurity,
+  getHttpApiTokenPath,
   extractBearerToken,
   getCookie,
   timingSafeEqualString,
   cookieSecureFromRequest,
   setAuthCookies,
   clearAuthCookies,
+  createCorsMiddleware,
+  createAuthMiddleware,
+  API_TOKEN_COOKIE,
+  CSRF_COOKIE,
+  CSRF_HEADER,
 } from './http-security.js';
 import {
   ownerIdFromHttpToken,
@@ -418,5 +427,257 @@ describe('session owner helpers', () => {
 
   it('assertSessionOwner throws not-found for wrong owner', () => {
     expect(() => assertSessionOwner({ id: 'abc', owner: 'a' }, 'b')).toThrow('Session not found: abc');
+  });
+});
+
+describe('resolveHttpSecurity', () => {
+  it('combines token, host, cors, and auth settings', () => {
+    const security = resolveHttpSecurity(8787, '127.0.0.1', {
+      apiToken: 'combined-token',
+      skipConfig: true,
+      corsOrigins: ['https://app.example.com'],
+    });
+    expect(security.apiToken).toBe('combined-token');
+    expect(security.host).toBe('127.0.0.1');
+    expect(security.authEnabled).toBe(true);
+    expect(security.tokenSource).toBe('options');
+    expect(security.corsOrigins).toContain('http://127.0.0.1:8787');
+    expect(security.corsOrigins).toContain('https://app.example.com');
+  });
+});
+
+describe('getHttpApiTokenPath', () => {
+  it('points under the config directory', () => {
+    expect(getHttpApiTokenPath()).toBe(path.join(getConfigDir(), 'http-api-token'));
+  });
+});
+
+type MockResponse = {
+  statusCode: number;
+  headers: Record<string, string | string[] | undefined>;
+  body?: unknown;
+  nextCalled: boolean;
+  setHeader(name: string, value: string): void;
+  status(code: number): MockResponse;
+  json(body: unknown): void;
+  sendStatus(code: number): void;
+};
+
+function createMockResponse(): MockResponse {
+  const res: MockResponse = {
+    statusCode: 200,
+    headers: {},
+    nextCalled: false,
+    setHeader(name, value) {
+      this.headers[name.toLowerCase()] = value;
+    },
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+    },
+    sendStatus(code) {
+      this.statusCode = code;
+    },
+  };
+  return res;
+}
+
+function runMiddleware(
+  middleware: (req: Request, res: Response, next: () => void) => void,
+  req: Partial<Request>,
+): MockResponse {
+  const res = createMockResponse();
+  middleware(req as Request, res as unknown as Response, () => {
+    res.nextCalled = true;
+  });
+  return res;
+}
+
+function runMiddlewareChain(
+  middlewares: Array<(req: Request, res: Response, next: () => void) => void>,
+  req: Partial<Request>,
+): MockResponse {
+  const res = createMockResponse();
+  const run = (index: number) => {
+    if (index >= middlewares.length) {
+      res.nextCalled = true;
+      return;
+    }
+    middlewares[index](req as Request, res as unknown as Response, () => run(index + 1));
+  };
+  run(0);
+  return res;
+}
+
+describe('createCorsMiddleware', () => {
+  const allowlist = ['http://127.0.0.1:8787', 'https://app.example.com'];
+
+  it('allows listed origins and sets CORS headers', () => {
+    const res = runMiddleware(createCorsMiddleware(allowlist), {
+      method: 'GET',
+      headers: { origin: 'https://app.example.com', host: '127.0.0.1:8787' },
+      path: '/api/health',
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(true);
+    expect(res.headers['access-control-allow-origin']).toBe('https://app.example.com');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+  });
+
+  it('rejects foreign origins on actual requests', () => {
+    const res = runMiddleware(createCorsMiddleware(allowlist), {
+      method: 'GET',
+      headers: { origin: 'https://evil.example.com', host: '127.0.0.1:8787' },
+      path: '/api/health',
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'Origin not allowed' });
+  });
+
+  it('rejects foreign origins on OPTIONS preflight', () => {
+    const res = runMiddleware(createCorsMiddleware(allowlist), {
+      method: 'OPTIONS',
+      headers: { origin: 'https://evil.example.com' },
+      path: '/api/health',
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('responds 204 to OPTIONS for allowed origins', () => {
+    const res = runMiddleware(createCorsMiddleware(allowlist), {
+      method: 'OPTIONS',
+      headers: { origin: 'http://127.0.0.1:8787' },
+      path: '/api/health',
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(false);
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('allows requests without Origin header (non-browser clients)', () => {
+    const res = runMiddleware(createCorsMiddleware(allowlist), {
+      method: 'GET',
+      headers: { host: '127.0.0.1:8787' },
+      path: '/api/health',
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(true);
+  });
+});
+
+describe('createAuthMiddleware', () => {
+  const token = 'test-api-token';
+  const corsOrigins = ['http://127.0.0.1:8787'];
+
+  it('passes through when auth is disabled', () => {
+    const res = runMiddleware(createAuthMiddleware(token, corsOrigins, false), {
+      method: 'GET',
+      headers: {},
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('accepts valid Bearer token', () => {
+    const res = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'GET',
+      headers: { authorization: `Bearer ${token}` },
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(true);
+  });
+
+  it('rejects missing credentials with 401', () => {
+    const res = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'GET',
+      headers: {},
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(false);
+    expect(res.statusCode).toBe(401);
+    expect(res.headers['www-authenticate']).toBe('Bearer');
+    expect(res.body).toEqual({ error: 'Unauthorized' });
+  });
+
+  it('accepts cookie auth on GET without CSRF', () => {
+    const res = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'GET',
+      headers: {
+        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
+      },
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(true);
+  });
+
+  it('requires CSRF or allowlisted origin for cookie auth on POST', () => {
+    const csrf = 'csrf-token-value';
+    const withoutCsrf = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'POST',
+      headers: {
+        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
+        host: '127.0.0.1:8787',
+      },
+    } as Partial<Request>);
+    expect(withoutCsrf.nextCalled).toBe(false);
+    expect(withoutCsrf.statusCode).toBe(403);
+
+    const withCsrf = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'POST',
+      headers: {
+        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}; ${CSRF_COOKIE}=${encodeURIComponent(csrf)}`,
+        [CSRF_HEADER]: csrf,
+      },
+    } as Partial<Request>);
+    expect(withCsrf.nextCalled).toBe(true);
+
+    const mismatched = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'POST',
+      headers: {
+        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}; ${CSRF_COOKIE}=${encodeURIComponent(csrf)}`,
+        [CSRF_HEADER]: 'other-value',
+      },
+    } as Partial<Request>);
+    expect(mismatched.nextCalled).toBe(false);
+    expect(mismatched.statusCode).toBe(403);
+  });
+
+  it('accepts cookie auth on POST when Referer matches same-origin Host', () => {
+    const res = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'POST',
+      headers: {
+        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
+        host: '127.0.0.1:8787',
+        referer: 'http://127.0.0.1:8787/dashboard',
+      },
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(true);
+  });
+
+  it('accepts cookie auth on POST when Origin is in CORS allowlist (CORS then auth chain)', () => {
+    const productionOrigins = ['http://127.0.0.1:8787', 'https://abbenay.example.com'];
+    const res = runMiddlewareChain(
+      [createCorsMiddleware(productionOrigins), createAuthMiddleware(token, productionOrigins)],
+      {
+        method: 'POST',
+        headers: {
+          cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
+          origin: 'https://abbenay.example.com',
+        },
+      } as Partial<Request>,
+    );
+    expect(res.nextCalled).toBe(true);
+  });
+
+  it('still requires CSRF when Referer is not a valid URL', () => {
+    const res = runMiddleware(createAuthMiddleware(token, corsOrigins), {
+      method: 'POST',
+      headers: {
+        cookie: `${API_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
+        referer: 'not-a-valid-url',
+      },
+    } as Partial<Request>);
+    expect(res.nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'CSRF validation failed' });
   });
 });
