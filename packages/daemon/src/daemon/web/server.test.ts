@@ -24,28 +24,38 @@ import { API_TOKEN_COOKIE, CSRF_COOKIE } from './http-security.js';
 
 const TEST_TOKEN = 'unit-test-web-api-token';
 
-const { tmpConfigDir, configOverrides } = vi.hoisted(() => {
-  const nodeFs = require('node:fs') as typeof import('node:fs');
-  const nodeOs = require('node:os') as typeof import('node:os');
-  const nodePath = require('node:path') as typeof import('node:path');
-  return {
-    tmpConfigDir: nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'abbenay-server-unit-config-')),
-    configOverrides: { userConfigPath: null as string | null },
-  };
-});
+const hoisted = vi.hoisted(() => ({
+  configOverrides: { userConfigPath: null as string | null },
+  tmpConfigDir: undefined as string | undefined,
+}));
 
 vi.mock('../../core/paths.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../core/paths.js')>();
+  const nodePath = await import('node:path');
+  const nodeFs = await import('node:fs');
+  const nodeOs = await import('node:os');
+
+  const ensureConfigDir = () => {
+    if (!hoisted.tmpConfigDir) {
+      hoisted.tmpConfigDir = nodeFs.mkdtempSync(
+        nodePath.join(nodeOs.tmpdir(), 'abbenay-server-unit-config-'),
+      );
+    }
+    return hoisted.tmpConfigDir;
+  };
+
   return {
     ...actual,
-    getUserConfigPath: () => configOverrides.userConfigPath ?? path.join(tmpConfigDir, 'config.yaml'),
-    getWorkspaceConfigPath: (wsPath: string) => path.join(wsPath, '.config', 'abbenay', 'config.yaml'),
-    getConfigDir: () => tmpConfigDir,
+    getUserConfigPath: () => hoisted.configOverrides.userConfigPath ?? nodePath.join(ensureConfigDir(), 'config.yaml'),
+    getWorkspaceConfigPath: (wsPath: string) => nodePath.join(wsPath, '.config', 'abbenay', 'config.yaml'),
+    getConfigDir: () => ensureConfigDir(),
   };
 });
 
 afterAll(() => {
-  fs.rmSync(tmpConfigDir, { recursive: true, force: true });
+  if (hoisted.tmpConfigDir) {
+    fs.rmSync(hoisted.tmpConfigDir, { recursive: true, force: true });
+  }
 });
 
 function getEphemeralPort(host = '127.0.0.1'): Promise<number> {
@@ -845,7 +855,7 @@ describe('createWebApp routes', () => {
     const isolatedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-mcp-servers-config-'));
     const configPath = path.join(isolatedConfigDir, 'config.yaml');
     fs.writeFileSync(configPath, 'mcp_servers:\n  myserver:\n    transport: stdio\n    enabled: true\n');
-    configOverrides.userConfigPath = configPath;
+    hoisted.configOverrides.userConfigPath = configPath;
     const mcpState = createMockState({
       sessionsDir,
       mcpPoolStatuses: [{
@@ -865,7 +875,7 @@ describe('createWebApp routes', () => {
       expect(servers.some((s) => s.id === 'orphan')).toBe(true);
     } finally {
       await stopTestApp(mcpServer);
-      configOverrides.userConfigPath = null;
+      hoisted.configOverrides.userConfigPath = null;
       fs.rmSync(isolatedConfigDir, { recursive: true, force: true });
     }
   });
