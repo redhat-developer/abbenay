@@ -47,6 +47,13 @@ describe('createGrpcWebControlClient credentials', () => {
     client.close();
   });
 
+  it('constructs a client with default unix socket when address is omitted', () => {
+    const client = createGrpcWebControlClient();
+    expect(client).toBeDefined();
+    expect(typeof client.close).toBe('function');
+    client.close();
+  });
+
   it('constructs a TLS client for TCP with CA path (not createInsecure-only)', () => {
     const { certPem } = generateSelfSignedPem();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-web-ctl-'));
@@ -59,6 +66,26 @@ describe('createGrpcWebControlClient credentials', () => {
         address: '127.0.0.1:1',
         tls: true,
         caPath,
+      });
+      expect(client).toBeDefined();
+      client.close();
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('constructs a TLS client with custom ssl target name override', () => {
+    const { certPem } = generateSelfSignedPem();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-web-ctl-'));
+    const caPath = path.join(tmp, 'ca.crt');
+    fs.writeFileSync(caPath, certPem);
+
+    try {
+      const client = createGrpcWebControlClient({
+        address: '127.0.0.1:1',
+        tls: true,
+        caPath,
+        sslTargetNameOverride: 'custom-grpc-host',
       });
       expect(client).toBeDefined();
       client.close();
