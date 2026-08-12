@@ -83,7 +83,8 @@ export class KeychainSecretStore implements SecretStore {
     if (!kt) return null;
     
     try {
-      return await kt.getPassword(SERVICE_NAME, key);
+      // keytar returns undefined for missing entries; SecretStore requires null.
+      return (await kt.getPassword(SERVICE_NAME, key)) ?? null;
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`[Secrets] Failed to get key '${key}':`, msg);
