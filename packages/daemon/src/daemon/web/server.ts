@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
 import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, providerSecretName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
-import { isDualSecretStore, parseSecretStoreChoice } from '../secrets/dual.js';
+import { isSecretStoreRegistry, parseSecretStoreChoice } from '../secrets/registry.js';
 import {
   auditProviderEndpointChange,
   auditProviderEndpointConfigDiff,
@@ -1024,21 +1024,27 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   app.get('/api/secrets', async (req, res) => {
     try {
       const engines = getEngines();
-      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
-      const secrets = await Promise.all(
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const groups = await Promise.all(
         engines.filter(e => e.requiresKey).map(async (e) => {
           const key = e.defaultEnvVar || `${e.id.toUpperCase()}_API_KEY`;
+          if (registry) {
+            const backends = await registry.locateAll(key);
+            if (backends.length === 0) {
+              return [{ key, engine: e.id, hasValue: false }];
+            }
+            return backends.map((store) => ({
+              key,
+              engine: e.id,
+              hasValue: true,
+              store,
+            }));
+          }
           const hasValue = await state.secretStore.has(key);
-          const store = dual && hasValue ? await dual.locate(key) : null;
-          return {
-            key,
-            engine: e.id,
-            hasValue,
-            ...(store ? { store } : {}),
-          };
+          return [{ key, engine: e.id, hasValue }];
         })
       );
-      res.json({ secrets });
+      res.json({ secrets: groups.flat() });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[Web] /api/secrets error:', msg);
@@ -1065,9 +1071,9 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, storeChoice.error);
         return;
       }
-      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
-      if (dual) {
-        await dual.setIn(storeChoice.backend, key, parsed.data.value);
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      if (registry) {
+        await registry.setIn(storeChoice.backend, key, parsed.data.value);
       } else {
         await state.secretStore.set(key, parsed.data.value);
       }
@@ -1101,9 +1107,9 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, storeChoice.error);
         return;
       }
-      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
-      if (dual) {
-        await dual.setIn(storeChoice.backend, parsed.data.key, parsed.data.value);
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      if (registry) {
+        await registry.setIn(storeChoice.backend, parsed.data.key, parsed.data.value);
       } else {
         await state.secretStore.set(parsed.data.key, parsed.data.value);
       }
@@ -1121,6 +1127,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
   /**
    * DELETE /api/secrets/:key - Delete a secret
+   * Query: secret_store=memory|keychain (default keychain)
    */
   app.delete('/api/secrets/:key', async (req, res) => {
     try {
@@ -1129,9 +1136,28 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      await state.secretStore.delete(req.params.key);
-      auditSecretChange({ key: req.params.key, op: 'delete', source: 'http-secrets' });
-      res.json({ success: true });
+      const storeChoice = parseSecretStoreChoice(
+        (req.query.secret_store as string | undefined) ??
+          (req.query.store as string | undefined) ??
+          'keychain',
+      );
+      if (!storeChoice.ok) {
+        sendBadRequest(res, storeChoice.error);
+        return;
+      }
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      if (registry) {
+        await registry.deleteFrom(storeChoice.backend, req.params.key);
+      } else {
+        await state.secretStore.delete(req.params.key);
+      }
+      auditSecretChange({
+        key: req.params.key,
+        op: 'delete',
+        source:
+          storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets',
+      });
+      res.json({ success: true, secret_store: storeChoice.backend });
       state.notifyModelsChanged('secret_deleted');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1155,8 +1181,13 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       }
       
       let exists = false;
-      if (source === 'keychain') {
-        exists = await state.secretStore.has(name);
+      if (source === 'keychain' || source === 'memory') {
+        const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+        exists = registry
+          ? await registry.hasIn(source, name)
+          : source === 'keychain'
+            ? await state.secretStore.has(name)
+            : false;
       } else if (source === 'env') {
         exists = !!process.env[name];
       }
@@ -1433,9 +1464,9 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         }
         // Explicit name, or legacy invent from provider id (1:1 shortcut).
         const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
-        const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
-        if (dual) {
-          await dual.setIn(storeChoice.backend, secretName, apiKey);
+        const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+        if (registry) {
+          await registry.setIn(storeChoice.backend, secretName, apiKey);
         } else {
           await state.secretStore.set(secretName, apiKey);
         }
@@ -1454,10 +1485,15 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           config.providers[providerId].api_key_env_var_name = secretNameRef;
           delete config.providers[providerId].api_key_keychain_name;
         } else if (storeRaw === 'memory' || storeRaw === 'keychain') {
-          const exists = await state.secretStore.has(secretNameRef);
+          const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+          const exists = registry
+            ? await registry.hasIn(storeRaw, secretNameRef)
+            : await state.secretStore.has(secretNameRef);
           if (!exists) {
             res.status(400).json({
-              error: `Secret "${secretNameRef}" not found; POST /api/secrets first or pass apiKey`,
+              error:
+                `Secret "${secretNameRef}" not found in ${storeRaw}; ` +
+                `POST /api/secrets first or pass apiKey`,
             });
             return;
           }
@@ -1466,15 +1502,20 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           config.providers[providerId].api_key_keychain_name = secretNameRef;
           delete config.providers[providerId].api_key_env_var_name;
         } else {
-          const exists = await state.secretStore.has(secretNameRef);
+          const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+          const exists = registry
+            ? await registry.hasIn('keychain', secretNameRef)
+            : await state.secretStore.has(secretNameRef);
           if (!exists) {
             res.status(400).json({
-              error: `Secret "${secretNameRef}" not found; POST /api/secrets first or pass apiKey`,
+              error:
+                `Secret "${secretNameRef}" not found in keychain; ` +
+                `POST /api/secrets first, pass apiKey, or set secret_store`,
             });
             return;
           }
           config.providers[providerId].secret_name = secretNameRef;
-          delete config.providers[providerId].secret_store;
+          config.providers[providerId].secret_store = 'keychain';
           config.providers[providerId].api_key_keychain_name = secretNameRef;
           delete config.providers[providerId].api_key_env_var_name;
         }

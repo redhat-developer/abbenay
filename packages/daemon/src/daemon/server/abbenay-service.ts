@@ -27,10 +27,10 @@ import {
 } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
 import {
-  isDualSecretStore,
+  isSecretStoreRegistry,
   parseSecretStoreChoice,
   secretBackendToProto,
-} from '../secrets/dual.js';
+} from '../secrets/registry.js';
 import {
   auditProviderEndpointChange,
   auditProviderEndpointConfigDiff,
@@ -155,6 +155,7 @@ interface ChatRequestProto {
 
 interface GetSecretRequestProto {
   key: string;
+  store?: number | string;
 }
 
 interface SetSecretRequestProto {
@@ -166,6 +167,7 @@ interface SetSecretRequestProto {
 
 interface DeleteSecretRequestProto {
   key: string;
+  store?: number | string;
 }
 
 interface GetProviderStatusRequestProto {
@@ -802,8 +804,21 @@ export function createAbbenayService(
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
       const key = call.request.key;
-      
-      state.secretStore.get(key).then((value) => {
+      const parsed = parseSecretStoreChoice(call.request.store);
+      if (!parsed.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: parsed.error,
+        });
+        return;
+      }
+
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const read = registry
+        ? registry.getFrom(parsed.backend, key)
+        : state.secretStore.get(key);
+
+      read.then((value) => {
         callback(null, {
           value: value || '',
           found: value !== null,
@@ -835,9 +850,9 @@ export function createAbbenayService(
         return;
       }
 
-      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
-      const write = dual
-        ? dual.setIn(parsed.backend, key, value)
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const write = registry
+        ? registry.setIn(parsed.backend, key, value)
         : state.secretStore.set(key, value);
       const auditSource =
         parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets';
@@ -863,8 +878,28 @@ export function createAbbenayService(
       callback: grpc.sendUnaryData<object>
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
-      state.secretStore.delete(call.request.key).then(() => {
-        auditSecretChange({ key: call.request.key, op: 'delete', source: 'grpc-secrets' });
+      const key = call.request.key;
+      const parsed = parseSecretStoreChoice(call.request.store);
+      if (!parsed.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: parsed.error,
+        });
+        return;
+      }
+
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const remove = registry
+        ? registry.deleteFrom(parsed.backend, key)
+        : state.secretStore.delete(key);
+
+      remove.then(() => {
+        auditSecretChange({
+          key,
+          op: 'delete',
+          source:
+            parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets',
+        });
         callback(null, {});
       }).catch((error: unknown) => {
         callback({
@@ -882,23 +917,39 @@ export function createAbbenayService(
       callback: grpc.sendUnaryData<object>
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
-      // Return known key names with availability status
+      // Return known key names with availability status (one row per backend hit).
       const engines = getEngines();
-      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
       const checks = engines.filter(e => e.requiresKey).map(async (e) => {
         const key = e.defaultEnvVar || `${e.id.toUpperCase()}_API_KEY`;
+        if (registry) {
+          const backends = await registry.locateAll(key);
+          if (backends.length === 0) {
+            return [{
+              key,
+              engine: e.id,
+              has_value: false,
+              store: secretBackendToProto(null),
+            }];
+          }
+          return backends.map((backend) => ({
+            key,
+            engine: e.id,
+            has_value: true,
+            store: secretBackendToProto(backend),
+          }));
+        }
         const hasValue = await state.secretStore.has(key);
-        const backend = dual && hasValue ? await dual.locate(key) : null;
-        return {
+        return [{
           key,
           engine: e.id,
           has_value: hasValue,
-          store: secretBackendToProto(backend),
-        };
+          store: secretBackendToProto(null),
+        }];
       });
       
-      Promise.all(checks).then((secrets) => {
-        callback(null, { secrets });
+      Promise.all(checks).then((groups) => {
+        callback(null, { secrets: groups.flat() });
       }).catch((error: unknown) => {
         callback({
           code: grpc.status.INTERNAL,
@@ -1800,9 +1851,9 @@ export function createAbbenayService(
             }
             // Explicit name, or legacy invent from provider id (1:1 shortcut).
             const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
-            const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
-            if (dual) {
-              await dual.setIn(storeChoice.backend, secretName, apiKey);
+            const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+            if (registry) {
+              await registry.setIn(storeChoice.backend, secretName, apiKey);
             } else {
               await state.secretStore.set(secretName, apiKey);
             }
@@ -1839,12 +1890,16 @@ export function createAbbenayService(
                 config.providers[providerId].api_key_env_var_name = secretNameRef;
                 delete config.providers[providerId].api_key_keychain_name;
               } else {
-                const exists = await state.secretStore.has(secretNameRef);
+                const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+                const exists = registry
+                  ? await registry.hasIn(storeChoice.backend, secretNameRef)
+                  : await state.secretStore.has(secretNameRef);
                 if (!exists) {
                   callback({
                     code: grpc.status.INVALID_ARGUMENT,
                     message:
-                      `Secret "${secretNameRef}" not found; SetSecret first or pass api_key`,
+                      `Secret "${secretNameRef}" not found in ${storeChoice.backend}; ` +
+                      `SetSecret first or pass api_key`,
                   });
                   return;
                 }
@@ -1854,18 +1909,22 @@ export function createAbbenayService(
                 delete config.providers[providerId].api_key_env_var_name;
               }
             } else {
-              // No secret_store: reference daemon secret store (memory or keychain).
-              const exists = await state.secretStore.has(secretNameRef);
+              // No secret_store: default namespace is keychain.
+              const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+              const exists = registry
+                ? await registry.hasIn('keychain', secretNameRef)
+                : await state.secretStore.has(secretNameRef);
               if (!exists) {
                 callback({
                   code: grpc.status.INVALID_ARGUMENT,
                   message:
-                    `Secret "${secretNameRef}" not found; SetSecret first or pass api_key`,
+                    `Secret "${secretNameRef}" not found in keychain; ` +
+                    `SetSecret first, pass api_key, or set secret_store`,
                 });
                 return;
               }
               config.providers[providerId].secret_name = secretNameRef;
-              delete config.providers[providerId].secret_store;
+              config.providers[providerId].secret_store = 'keychain';
               config.providers[providerId].api_key_keychain_name = secretNameRef;
               delete config.providers[providerId].api_key_env_var_name;
             }

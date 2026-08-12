@@ -32,7 +32,7 @@ Abbenay is a unified AI daemon and library written in TypeScript/Node.js that pr
 │                                                                          │
 │  ┌─ daemon layer ────────────────────────────────────────────────────┐   │
 │  │  DaemonState        gRPC Server               VS Code Backchannel │   │
-│  │  CLI (Commander)    Web Dashboard (Express)    DualSecretStore     │   │
+│  │  CLI (Commander)    Web Dashboard (Express)    SecretStoreRegistry │   │
 │  └───────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 └──────────────────────────────────────────┬──────────────────────────────┘
@@ -87,8 +87,8 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/web/server.ts` | Express web server + REST API |
 | `daemon/web/openai-compat.ts` | OpenAI-compatible `/v1/*` routes (models, chat completions) |
 | `daemon/web/grpc-web-control.ts` | gRPC client for web server control |
+| `daemon/secrets/registry.ts` | `SecretStoreRegistry` (memory + keychain namespaces) |
 | `daemon/secrets/keychain.ts` | `KeychainSecretStore` (keytar native addon) |
-| `daemon/secrets/dual.ts` | `DualSecretStore` (memory + keychain, move-on-write) |
 
 ## Components
 
@@ -206,9 +206,11 @@ interface SecretStore {
 ```
 
 `CoreState` accepts any `SecretStore` via constructor injection. `DaemonState`
-uses `DualSecretStore` (process-lifetime `MemorySecretStore` + keytar-backed
-`KeychainSecretStore`) by default. Tests and library consumers can use
-`MemorySecretStore` alone.
+uses `SecretStoreRegistry` (discrete process-lifetime `MemorySecretStore` +
+keytar-backed `KeychainSecretStore` namespaces; resolve via
+`(secret_store, secret_name)`) by default. Tests and library consumers can
+use `MemorySecretStore` alone. `NamespacedSecretStore` extends the interface
+for multi-backend `getFrom` / `setIn` / …
 
 ## Configuration
 

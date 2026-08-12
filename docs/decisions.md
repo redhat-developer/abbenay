@@ -834,29 +834,30 @@ Numbered DR-046 because main already shipped VS Code webview UX as DR-045.
 ## DR-047: Process-lifetime in-memory secret store
 
 **Date:** 2026-08-12
-**Decision:** The daemon secret store is a dual backend (`DualSecretStore`):
-OS keychain (persistent) and process-lifetime memory. Clients select the
-backend via gRPC `SetSecretRequest.store` (`SECRET_STORE_MEMORY` /
-`SECRET_STORE_KEYCHAIN`) or HTTP `store: "memory" | "keychain"` (default
-keychain). The same key name lives in exactly one backend: writing to one
-deletes that key from the other (move-on-write). Memory secrets survive
-until consumer delete/set or daemon restart — no TTL and no clear-on-
-disconnect. `SECRET_STORE_ENV` is rejected on write; env credentials remain
-read-only via provider `api_key_env_var_name`. Configure / `addProvider`
-continue to write keychain only. `api_key_keychain_name` remains a logical
-lookup name into the composite store (not “must be OS keychain”).
-Provider config prefers `secret_name` (legacy alias `api_key_keychain_name`).
-`secret_store` is `memory` | `keychain` | `env`: env means resolve
-`secret_name` from `process.env` (configure/reference only — SetSecret still
-rejects ENV writes). `ConfigureProvider` accepts `secret_name` + optional
-`secret_store` to reference an existing secret or env var (N providers → 1
-key). Raw `api_key` alone remains a legacy shortcut that invents
-`${PROVIDER_ID}_API_KEY`. Legacy `api_key_env_var_name` maps to
-`secret_name` + `secret_store: env` on load.
+**Decision:** The daemon exposes discrete secret backends via
+`SecretStoreRegistry` (OS keychain + process-lifetime memory today). Values are
+addressed by `(secret_store, secret_name)` — the same name may exist in more
+than one backend. Clients select the backend on write via gRPC
+`SetSecretRequest.store` (`SECRET_STORE_MEMORY` / `SECRET_STORE_KEYCHAIN`) or
+HTTP `secret_store: "memory" | "keychain"` (default keychain). Get/Delete
+take the same store field (default keychain). Provider config records both
+`secret_name` and `secret_store`; resolve reads only that backend (no
+cross-store overlay). Memory secrets survive until consumer delete/set or
+daemon restart — no TTL and no clear-on-disconnect. `SECRET_STORE_ENV` is
+rejected on write; env credentials are configure/reference only
+(`secret_store: env` → `process.env[secret_name]`). `ConfigureProvider`
+accepts `secret_name` + optional `secret_store` to reference an existing
+secret (N providers → 1 key). Raw `api_key` alone remains a legacy shortcut
+that invents `${PROVIDER_ID}_API_KEY`. Legacy `api_key_env_var_name` maps to
+`secret_name` + `secret_store: env` on load; omitted store for store-backed
+secrets defaults to `keychain`. `SecretStoreRegistry` + `NamespacedSecretStore`
+(`getFrom` / `setIn` / …) is the extension surface for additional backends later.
 **Rationale:** Ephemeral keys for clients that must not persist credentials
 were already sketched (`MemorySecretStore`, proto `SECRET_STORE_MEMORY`) but
-unused by the daemon. Mutual exclusivity avoids overlay/sync/refresh bugs.
-Defaulting unspecified store to keychain preserves existing callers. Keys are
-not 1:1 with providers — configure should pick a secret by name after
-`SetSecret`. `secret_name` / `secret_store` name the real abstraction;
+unused by the daemon. Discrete namespaces (not move-on-write exclusivity)
+match provider config, which already carries `secret_store`, and position
+the daemon for N pluggable backends without renaming. Defaulting unspecified
+store to keychain preserves existing callers. Keys are not 1:1 with
+providers — configure should pick a secret by name after `SetSecret`.
+`secret_name` / `secret_store` name the real abstraction;
 `api_key_keychain_name` was a historical misnomer.

@@ -105,18 +105,23 @@ export function providerSecretName(cfg: ProviderConfig): string | undefined {
 
 /**
  * How to resolve credentials for a provider.
- * `store` → DualSecretStore (memory/keychain); `env` → process.env.
+ * `store` → named backend (memory|keychain) via (secret_store, secret_name);
+ * `env` → process.env[secret_name]. Omitted secret_store defaults to keychain.
  */
 export function providerCredentialSource(
   cfg: ProviderConfig,
-): { kind: 'store' | 'env'; name: string } | null {
+):
+  | { kind: 'store'; name: string; backend: 'memory' | 'keychain' }
+  | { kind: 'env'; name: string }
+  | null {
   if (cfg.secret_store === 'env') {
     const name = cfg.secret_name || cfg.api_key_env_var_name;
     return name ? { kind: 'env', name } : null;
   }
   const storeName = providerSecretName(cfg);
   if (storeName) {
-    return { kind: 'store', name: storeName };
+    const backend = cfg.secret_store === 'memory' ? 'memory' : 'keychain';
+    return { kind: 'store', name: storeName, backend };
   }
   if (cfg.api_key_env_var_name) {
     return { kind: 'env', name: cfg.api_key_env_var_name };
@@ -345,6 +350,11 @@ function migrateProviderConfig(provId: string, cfg: Record<string, unknown>): vo
     if (!cfg.secret_store) cfg.secret_store = 'env';
   } else if (cfg.secret_store === 'env' && cfg.secret_name && !cfg.api_key_env_var_name) {
     cfg.api_key_env_var_name = cfg.secret_name;
+  }
+
+  // Store-backed secrets default to the keychain namespace when store is omitted.
+  if (cfg.secret_name && !cfg.secret_store) {
+    cfg.secret_store = 'keychain';
   }
 
   // If already new format (has engine field), just rename api_base → base_url

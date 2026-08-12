@@ -382,12 +382,15 @@ Legacy sessions without an `owner` field are treated as `local`.
 
 Each provider can specify exactly ONE of these (mutually exclusive):
 
-### Option 1: Secret store (`secret_name` + optional `secret_store`)
+### Option 1: Secret store (`secret_name` + `secret_store`)
 
-- `secret_name` is the logical name
-- `secret_store` is where it lives:
-  - omitted / `keychain` / `memory` → daemon secret store (OS keychain or process memory)
+- `secret_name` is the logical name within a backend
+- `secret_store` selects the namespace:
+  - `keychain` (default when omitted) → OS keychain
+  - `memory` → process-lifetime daemon memory
   - `env` → process environment variable named `secret_name`
+- The same `secret_name` may exist in more than one store; resolve uses only
+  the provider's `secret_store` (no overlay)
 - Legacy aliases: `api_key_keychain_name`, `api_key_env_var_name`
 
 ```yaml
@@ -395,7 +398,7 @@ providers:
   my-openai:
     engine: openai
     secret_name: "OPENAI_API_KEY"
-    # secret_store: keychain   # optional; memory|keychain use the secret store
+    secret_store: keychain   # optional; defaults to keychain
 ```
 
 ```yaml
@@ -408,19 +411,20 @@ providers:
 
 ### Option 1b: In-memory (process-lifetime) via secrets API
 
-- Same `secret_name`; set value with `SetSecret` / `POST /api/secrets` and
-  `secret_store: memory` (SetSecret still cannot write `env`)
+- Same `secret_name` in the `memory` namespace; set value with `SetSecret` /
+  `POST /api/secrets` and `secret_store: memory` (SetSecret still cannot
+  write `env`)
 - Lives only while the daemon process is running
-- Mutually exclusive with keychain for the same key name (DR-047)
+- Independent from keychain — overlapping names are allowed (DR-047)
 
 ### Recommended workflow (keys are N:1 with providers)
 
 1. **Add a secret** (store) — `SetSecret` with `secret_store=memory|keychain`, **or**
    export an env var yourself.
-2. **Configure the provider** — `secret_name=NAME` and optional
+2. **Configure the provider** — `secret_name=NAME` and
    `secret_store=memory|keychain|env`. For `env`, the variable is resolved at
    request time (it need not exist at configure time).
-3. Many providers may share one `secret_name`.
+3. Many providers may share one `(secret_store, secret_name)` pair.
 
 ### Option 2: Environment Variable (legacy `api_key_env_var_name`)
 

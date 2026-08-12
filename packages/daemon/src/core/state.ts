@@ -8,7 +8,7 @@
  * (agent devs, web devs, custom apps).
  */
 
-import type { SecretStore } from './secrets.js';
+import { isNamespacedSecretStore, type SecretStore } from './secrets.js';
 import { debug } from './debug.js';
 import {
   loadConfig,
@@ -365,7 +365,9 @@ export class CoreState {
       const value = process.env[source.name];
       if (value && value.length > 0) return value;
     } else if (source?.kind === 'store') {
-      const value = await this.secretStore.get(source.name);
+      const value = isNamespacedSecretStore(this.secretStore)
+        ? await this.secretStore.getFrom(source.backend, source.name)
+        : await this.secretStore.get(source.name);
       if (value) return value;
     }
 

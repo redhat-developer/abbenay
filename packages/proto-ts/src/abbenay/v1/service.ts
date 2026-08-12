@@ -1343,6 +1343,8 @@ export interface DeletePolicyRequest {
 
 export interface GetSecretRequest {
   key: string;
+  /** Backend namespace (default keychain) */
+  store: SecretStore;
 }
 
 export interface GetSecretResponse {
@@ -1352,12 +1354,14 @@ export interface GetSecretResponse {
 export interface SetSecretRequest {
   key: string;
   value: string;
-  /** Where to store */
+  /** Where to store (default keychain) */
   store: SecretStore;
 }
 
 export interface DeleteSecretRequest {
   key: string;
+  /** Backend namespace (default keychain) */
+  store: SecretStore;
 }
 
 export interface ListSecretsRequest {
@@ -13596,13 +13600,16 @@ export const DeletePolicyRequest: MessageFns<DeletePolicyRequest> = {
 };
 
 function createBaseGetSecretRequest(): GetSecretRequest {
-  return { key: "" };
+  return { key: "", store: 0 };
 }
 
 export const GetSecretRequest: MessageFns<GetSecretRequest> = {
   encode(message: GetSecretRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.key !== "") {
       writer.uint32(10).string(message.key);
+    }
+    if (message.store !== 0) {
+      writer.uint32(16).int32(message.store);
     }
     return writer;
   },
@@ -13622,6 +13629,14 @@ export const GetSecretRequest: MessageFns<GetSecretRequest> = {
           message.key = reader.string();
           continue;
         }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.store = reader.int32() as any;
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -13632,13 +13647,19 @@ export const GetSecretRequest: MessageFns<GetSecretRequest> = {
   },
 
   fromJSON(object: any): GetSecretRequest {
-    return { key: isSet(object.key) ? globalThis.String(object.key) : "" };
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      store: isSet(object.store) ? secretStoreFromJSON(object.store) : 0,
+    };
   },
 
   toJSON(message: GetSecretRequest): unknown {
     const obj: any = {};
     if (message.key !== "") {
       obj.key = message.key;
+    }
+    if (message.store !== 0) {
+      obj.store = secretStoreToJSON(message.store);
     }
     return obj;
   },
@@ -13649,6 +13670,7 @@ export const GetSecretRequest: MessageFns<GetSecretRequest> = {
   fromPartial(object: DeepPartial<GetSecretRequest>): GetSecretRequest {
     const message = createBaseGetSecretRequest();
     message.key = object.key ?? "";
+    message.store = object.store ?? 0;
     return message;
   },
 };
@@ -13804,13 +13826,16 @@ export const SetSecretRequest: MessageFns<SetSecretRequest> = {
 };
 
 function createBaseDeleteSecretRequest(): DeleteSecretRequest {
-  return { key: "" };
+  return { key: "", store: 0 };
 }
 
 export const DeleteSecretRequest: MessageFns<DeleteSecretRequest> = {
   encode(message: DeleteSecretRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.key !== "") {
       writer.uint32(10).string(message.key);
+    }
+    if (message.store !== 0) {
+      writer.uint32(16).int32(message.store);
     }
     return writer;
   },
@@ -13830,6 +13855,14 @@ export const DeleteSecretRequest: MessageFns<DeleteSecretRequest> = {
           message.key = reader.string();
           continue;
         }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.store = reader.int32() as any;
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -13840,13 +13873,19 @@ export const DeleteSecretRequest: MessageFns<DeleteSecretRequest> = {
   },
 
   fromJSON(object: any): DeleteSecretRequest {
-    return { key: isSet(object.key) ? globalThis.String(object.key) : "" };
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      store: isSet(object.store) ? secretStoreFromJSON(object.store) : 0,
+    };
   },
 
   toJSON(message: DeleteSecretRequest): unknown {
     const obj: any = {};
     if (message.key !== "") {
       obj.key = message.key;
+    }
+    if (message.store !== 0) {
+      obj.store = secretStoreToJSON(message.store);
     }
     return obj;
   },
@@ -13857,6 +13896,7 @@ export const DeleteSecretRequest: MessageFns<DeleteSecretRequest> = {
   fromPartial(object: DeepPartial<DeleteSecretRequest>): DeleteSecretRequest {
     const message = createBaseDeleteSecretRequest();
     message.key = object.key ?? "";
+    message.store = object.store ?? 0;
     return message;
   },
 };

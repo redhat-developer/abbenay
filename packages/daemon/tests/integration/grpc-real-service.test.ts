@@ -289,29 +289,43 @@ describe('Real gRPC service: Secrets', () => {
       value: 'ephemeral-value',
       store: 'SECRET_STORE_MEMORY',
     });
-    const got = await callUnary(client, 'GetSecret', { key: 'MEM_ONLY' });
+    const got = await callUnary(client, 'GetSecret', {
+      key: 'MEM_ONLY',
+      store: 'SECRET_STORE_MEMORY',
+    });
     expect(got.value).toBe('ephemeral-value');
-    // DaemonState uses DualSecretStore; mocked KeychainSecretStore is the keychain half.
+    // Default GetSecret (keychain namespace) must not see the memory value.
+    const fromDefault = await callUnary(client, 'GetSecret', { key: 'MEM_ONLY' });
+    expect(fromDefault.value).toBe('');
+    // DaemonState uses SecretStoreRegistry; mocked KeychainSecretStore is the keychain half.
     // Memory-only writes must not land in the keychain Map.
     expect(mockSecretStoreData.has('MEM_ONLY')).toBe(false);
   });
 
-  it('should move a key from keychain to memory on SetSecret MEMORY', async () => {
+  it('should allow the same key name in memory and keychain (discrete namespaces)', async () => {
     await callUnary(client, 'SetSecret', {
-      key: 'MOVE_KEY',
+      key: 'BOTH_KEY',
       value: 'persistent',
       store: 'SECRET_STORE_KEYCHAIN',
     });
-    expect(mockSecretStoreData.get('MOVE_KEY')).toBe('persistent');
+    expect(mockSecretStoreData.get('BOTH_KEY')).toBe('persistent');
 
     await callUnary(client, 'SetSecret', {
-      key: 'MOVE_KEY',
+      key: 'BOTH_KEY',
       value: 'ephemeral',
       store: 'SECRET_STORE_MEMORY',
     });
-    expect(mockSecretStoreData.has('MOVE_KEY')).toBe(false);
-    const got = await callUnary(client, 'GetSecret', { key: 'MOVE_KEY' });
-    expect(got.value).toBe('ephemeral');
+    expect(mockSecretStoreData.get('BOTH_KEY')).toBe('persistent');
+    const mem = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_KEY',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    expect(mem.value).toBe('ephemeral');
+    const kc = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_KEY',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    expect(kc.value).toBe('persistent');
   });
 
   it('should reject SECRET_STORE_ENV on SetSecret', async () => {

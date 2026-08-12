@@ -10,7 +10,7 @@ import { CoreState, type ChatToolOptions } from '../core/state.js';
 import type { ChatChunk, ChatParams, ToolExecutor } from '../core/engines.js';
 import type { PolicyConfig } from '../core/policies.js';
 import { MemorySecretStore } from '../core/secrets.js';
-import { DualSecretStore } from './secrets/dual.js';
+import { SecretStoreRegistry } from './secrets/registry.js';
 import { KeychainSecretStore } from './secrets/keychain.js';
 import { ToolRegistry } from '../core/tool-registry.js';
 import { ToolRouter } from './tool-router.js';
@@ -85,7 +85,7 @@ export class DaemonState extends CoreState {
 
   constructor() {
     super({
-      secretStore: new DualSecretStore(new MemorySecretStore(), new KeychainSecretStore()),
+      secretStore: new SecretStoreRegistry(new MemorySecretStore(), new KeychainSecretStore()),
     });
 
     // Initialize tool registry, router, MCP client pool, and MCP server

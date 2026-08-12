@@ -1248,10 +1248,12 @@ class DeletePolicyRequest(_message.Message):
     def __init__(self, name: _Optional[str] = ...) -> None: ...
 
 class GetSecretRequest(_message.Message):
-    __slots__ = ("key",)
+    __slots__ = ("key", "store")
     KEY_FIELD_NUMBER: _ClassVar[int]
+    STORE_FIELD_NUMBER: _ClassVar[int]
     key: str
-    def __init__(self, key: _Optional[str] = ...) -> None: ...
+    store: SecretStore
+    def __init__(self, key: _Optional[str] = ..., store: _Optional[_Union[SecretStore, str]] = ...) -> None: ...
 
 class GetSecretResponse(_message.Message):
     __slots__ = ("value",)
@@ -1270,10 +1272,12 @@ class SetSecretRequest(_message.Message):
     def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ..., store: _Optional[_Union[SecretStore, str]] = ...) -> None: ...
 
 class DeleteSecretRequest(_message.Message):
-    __slots__ = ("key",)
+    __slots__ = ("key", "store")
     KEY_FIELD_NUMBER: _ClassVar[int]
+    STORE_FIELD_NUMBER: _ClassVar[int]
     key: str
-    def __init__(self, key: _Optional[str] = ...) -> None: ...
+    store: SecretStore
+    def __init__(self, key: _Optional[str] = ..., store: _Optional[_Union[SecretStore, str]] = ...) -> None: ...
 
 class ListSecretsRequest(_message.Message):
     __slots__ = ()
