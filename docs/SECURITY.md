@@ -65,6 +65,10 @@ defaults (or stronger) in place.
 - `--host 0.0.0.0`, `ABBENAY_HTTP_AUTH=0`, and `--insecure` deliberately weaken posture.
 - Cloud providers still receive prompts if you configure them.
 - HTTP on loopback remains plaintext; use a TLS-terminating proxy when exposing beyond the machine.
+- In-memory secrets (DR-047) are not written to disk or the OS keychain, but
+  they remain readable by any authenticated client with the `secrets`
+  capability for the life of the daemon process. Restart clears them; treat
+  RAM and process dumps accordingly.
 
 ---
 

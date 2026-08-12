@@ -282,6 +282,47 @@ describe('Real gRPC service: Secrets', () => {
     expect(res.secrets).toBeDefined();
     expect(Array.isArray(res.secrets)).toBe(true);
   });
+
+  it('should store SECRET_STORE_MEMORY without writing keychain backend', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'MEM_ONLY',
+      value: 'ephemeral-value',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    const got = await callUnary(client, 'GetSecret', { key: 'MEM_ONLY' });
+    expect(got.value).toBe('ephemeral-value');
+    // DaemonState uses DualSecretStore; mocked KeychainSecretStore is the keychain half.
+    // Memory-only writes must not land in the keychain Map.
+    expect(mockSecretStoreData.has('MEM_ONLY')).toBe(false);
+  });
+
+  it('should move a key from keychain to memory on SetSecret MEMORY', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'MOVE_KEY',
+      value: 'persistent',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    expect(mockSecretStoreData.get('MOVE_KEY')).toBe('persistent');
+
+    await callUnary(client, 'SetSecret', {
+      key: 'MOVE_KEY',
+      value: 'ephemeral',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    expect(mockSecretStoreData.has('MOVE_KEY')).toBe(false);
+    const got = await callUnary(client, 'GetSecret', { key: 'MOVE_KEY' });
+    expect(got.value).toBe('ephemeral');
+  });
+
+  it('should reject SECRET_STORE_ENV on SetSecret', async () => {
+    await expect(
+      callUnary(client, 'SetSecret', {
+        key: 'ENV_KEY',
+        value: 'nope',
+        store: 'SECRET_STORE_ENV',
+      }),
+    ).rejects.toMatchObject({ code: grpc.status.INVALID_ARGUMENT });
+  });
 });
 
 describe('Real gRPC service: Chat streaming', () => {

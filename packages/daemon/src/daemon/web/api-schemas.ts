@@ -42,9 +42,13 @@ export const PostConfigBodySchema = z
 
 // ── Secrets ─────────────────────────────────────────────────────────────
 
+const SecretStoreFieldSchema = z.enum(['memory', 'keychain', 'env']).optional();
+
 export const PostSecretByKeyBodySchema = z
   .object({
     value: z.string().min(1),
+    /** Default: keychain (persistent). memory = process-lifetime only. */
+    store: SecretStoreFieldSchema,
   })
   .strict();
 
@@ -52,6 +56,8 @@ export const PostSecretBodySchema = z
   .object({
     key: z.string().min(1),
     value: z.string().min(1),
+    /** Default: keychain (persistent). memory = process-lifetime only. */
+    store: SecretStoreFieldSchema,
   })
   .strict();
 

@@ -828,3 +828,24 @@ matching request tool with `400`. When tools mode is `off`, ignore
 `tool_choice` to force or suppress tool use; dropping it silently made
 passthrough incomplete versus a real OpenAI-compatible endpoint (issue #77).
 Numbered DR-046 because main already shipped VS Code webview UX as DR-045.
+
+---
+
+## DR-047: Process-lifetime in-memory secret store
+
+**Date:** 2026-08-12
+**Decision:** The daemon secret store is a dual backend (`DualSecretStore`):
+OS keychain (persistent) and process-lifetime memory. Clients select the
+backend via gRPC `SetSecretRequest.store` (`SECRET_STORE_MEMORY` /
+`SECRET_STORE_KEYCHAIN`) or HTTP `store: "memory" | "keychain"` (default
+keychain). The same key name lives in exactly one backend: writing to one
+deletes that key from the other (move-on-write). Memory secrets survive
+until consumer delete/set or daemon restart — no TTL and no clear-on-
+disconnect. `SECRET_STORE_ENV` is rejected on write; env credentials remain
+read-only via provider `api_key_env_var_name`. Configure / `addProvider`
+continue to write keychain only. `api_key_keychain_name` remains a logical
+lookup name into the composite store (not “must be OS keychain”).
+**Rationale:** Ephemeral keys for clients that must not persist credentials
+were already sketched (`MemorySecretStore`, proto `SECRET_STORE_MEMORY`) but
+unused by the daemon. Mutual exclusivity avoids overlay/sync/refresh bugs.
+Defaulting unspecified store to keychain preserves existing callers.

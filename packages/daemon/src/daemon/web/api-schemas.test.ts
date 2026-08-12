@@ -124,6 +124,21 @@ describe('secret body schemas', () => {
     expect(PostSecretByKeyBodySchema.safeParse({ value: 'secret' }).success).toBe(true);
     expect(PostSecretByKeyBodySchema.safeParse({ value: '' }).success).toBe(false);
   });
+
+  it('accepts optional store memory|keychain|env', () => {
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'memory' }).success,
+    ).toBe(true);
+    expect(
+      PostSecretByKeyBodySchema.safeParse({ value: 'v', store: 'keychain' }).success,
+    ).toBe(true);
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'env' }).success,
+    ).toBe(true);
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'vault' }).success,
+    ).toBe(false);
+  });
 });
 
 describe('MCP decision schemas', () => {

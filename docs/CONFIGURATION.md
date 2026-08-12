@@ -387,6 +387,8 @@ Each provider can specify exactly ONE of these (mutually exclusive):
 - Key stored in system keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
 - Specify the key name used in keychain
 - Set via web dashboard "API Key" toggle
+- The name is a **logical lookup key** into the daemon secret store (keychain
+  or in-memory backend — see below)
 
 ```yaml
 providers:
@@ -394,6 +396,19 @@ providers:
     engine: openai
     api_key_keychain_name: "OPENAI_API_KEY"
 ```
+
+### Option 1b: In-memory (process-lifetime) via secrets API
+
+- Same logical key name as keychain (`api_key_keychain_name`)
+- Client sets the value with gRPC `SetSecret` (`store=SECRET_STORE_MEMORY`)
+  or HTTP `POST /api/secrets` with `{ "store": "memory" }`
+- Lives only while the daemon process is running; cleared on restart or
+  explicit delete/set by a consumer with the `secrets` capability
+- Mutually exclusive with keychain for the same key name (writing one backend
+  removes the key from the other — DR-047)
+- Default `store` (omitted / unspecified) remains **keychain** for backward
+  compatibility
+- `SECRET_STORE_ENV` / `"store": "env"` is **not** writable via secrets APIs
 
 ### Option 2: Environment Variable (`api_key_env_var_name`)
 
@@ -713,7 +728,8 @@ steal prompts/responses/keys — constrained by the
 | Config files mode `0600` | User-only read/write on disk |
 | HTTP Bearer auth (DR-030) | Unauthenticated callers cannot read/write secrets or configure providers |
 | gRPC consumer capabilities (DR-037) | On non-localhost binds, sensitive RPCs require token + capability (`secrets`, `providers`, `config`, `mcp_register`, …) |
-| Secret API shape | HTTP `GET /api/secrets` returns key names + `hasValue` only — never secret values. gRPC `GetSecret` (value-returning) requires the `secrets` capability |
+| Secret API shape | HTTP `GET /api/secrets` returns key names + `hasValue` (+ `store` when present) only — never secret values. gRPC `GetSecret` (value-returning) requires the `secrets` capability |
+| In-memory secrets (DR-047) | Optional process-lifetime backend; never written to disk/keychain; same auth gates as keychain secrets; vanishes on daemon restart |
 | Secret / endpoint audit logs | `[Audit] secret changed` and `[Audit] provider endpoint changed` (never log secret values) |
 | Provider endpoint policy (DR-040) | Malformed / disallowed `base_url` values are rejected; changes are audited |
 | Localhost bind defaults | HTTP/gRPC default to loopback; non-loopback requires intentional opt-in |

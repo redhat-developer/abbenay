@@ -9,6 +9,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { CoreState, type ChatToolOptions } from '../core/state.js';
 import type { ChatChunk, ChatParams, ToolExecutor } from '../core/engines.js';
 import type { PolicyConfig } from '../core/policies.js';
+import { MemorySecretStore } from '../core/secrets.js';
+import { DualSecretStore } from './secrets/dual.js';
 import { KeychainSecretStore } from './secrets/keychain.js';
 import { ToolRegistry } from '../core/tool-registry.js';
 import { ToolRouter } from './tool-router.js';
@@ -82,7 +84,9 @@ export class DaemonState extends CoreState {
   public readonly sessionStore: SessionStore;
 
   constructor() {
-    super({ secretStore: new KeychainSecretStore() });
+    super({
+      secretStore: new DualSecretStore(new MemorySecretStore(), new KeychainSecretStore()),
+    });
 
     // Initialize tool registry, router, MCP client pool, and MCP server
     this.toolRegistry = new ToolRegistry();

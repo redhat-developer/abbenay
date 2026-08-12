@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
 import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
+import { isDualSecretStore, parseSecretStoreChoice } from '../secrets/dual.js';
 import {
   auditProviderEndpointChange,
   auditProviderEndpointConfigDiff,
@@ -1023,11 +1024,18 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   app.get('/api/secrets', async (req, res) => {
     try {
       const engines = getEngines();
+      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
       const secrets = await Promise.all(
         engines.filter(e => e.requiresKey).map(async (e) => {
           const key = e.defaultEnvVar || `${e.id.toUpperCase()}_API_KEY`;
           const hasValue = await state.secretStore.has(key);
-          return { key, engine: e.id, hasValue };
+          const store = dual && hasValue ? await dual.locate(key) : null;
+          return {
+            key,
+            engine: e.id,
+            hasValue,
+            ...(store ? { store } : {}),
+          };
         })
       );
       res.json({ secrets });
@@ -1040,7 +1048,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   
   /**
    * POST /api/secrets/:key - Set a specific secret (API key)
-   * Body: { value: string }
+   * Body: { value: string, store?: "memory" | "keychain" }
    */
   app.post('/api/secrets/:key', async (req, res) => {
     try {
@@ -1050,9 +1058,21 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      await state.secretStore.set(key, parsed.data.value);
-      auditSecretChange({ key, op: 'set', source: 'http-secrets' });
-      res.json({ success: true });
+      const storeChoice = parseSecretStoreChoice(parsed.data.store ?? 'keychain');
+      if (!storeChoice.ok) {
+        sendBadRequest(res, storeChoice.error);
+        return;
+      }
+      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
+      if (dual) {
+        await dual.setIn(storeChoice.backend, key, parsed.data.value);
+      } else {
+        await state.secretStore.set(key, parsed.data.value);
+      }
+      const auditSource =
+        storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets';
+      auditSecretChange({ key, op: 'set', source: auditSource });
+      res.json({ success: true, store: storeChoice.backend });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1060,10 +1080,10 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       res.status(500).json({ error: msg });
     }
   });
-
+  
   /**
    * POST /api/secrets - Set a secret (API key) — legacy route
-   * Body: { key: string, value: string }
+   * Body: { key: string, value: string, store?: "memory" | "keychain" }
    */
   app.post('/api/secrets', async (req, res) => {
     try {
@@ -1072,9 +1092,21 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      await state.secretStore.set(parsed.data.key, parsed.data.value);
-      auditSecretChange({ key: parsed.data.key, op: 'set', source: 'http-secrets' });
-      res.json({ success: true });
+      const storeChoice = parseSecretStoreChoice(parsed.data.store ?? 'keychain');
+      if (!storeChoice.ok) {
+        sendBadRequest(res, storeChoice.error);
+        return;
+      }
+      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
+      if (dual) {
+        await dual.setIn(storeChoice.backend, parsed.data.key, parsed.data.value);
+      } else {
+        await state.secretStore.set(parsed.data.key, parsed.data.value);
+      }
+      const auditSource =
+        storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets';
+      auditSecretChange({ key: parsed.data.key, op: 'set', source: auditSource });
+      res.json({ success: true, store: storeChoice.backend });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

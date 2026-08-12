@@ -476,6 +476,26 @@ describe('Web API - Secrets Endpoints', () => {
     expect(body.success).toBe(true);
   });
 
+  it('POST /api/secrets/:key should accept store=memory', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/secrets/MEM_KEY`, {
+      value: 'ephemeral',
+      store: 'memory',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.store).toBe('memory');
+  });
+
+  it('POST /api/secrets should reject store=env', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/secrets`, {
+      key: 'ENV_KEY',
+      value: 'nope',
+      store: 'env',
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/ENV/i);
+  });
+
   it('POST /api/secrets/:key should reject missing value', async () => {
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/secrets/TEST_KEY`, {});
     expect(statusCode).toBe(400);

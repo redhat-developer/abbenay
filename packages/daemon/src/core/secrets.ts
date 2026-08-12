@@ -2,7 +2,8 @@
  * Secret store interface and in-memory implementation.
  *
  * Core consumers inject their own SecretStore implementation.
- * The daemon uses KeychainSecretStore (keytar); tests use MemorySecretStore.
+ * The daemon uses DualSecretStore (MemorySecretStore + KeychainSecretStore);
+ * tests/library use MemorySecretStore.
  *
  * Credential aggregation (finding A1): one daemon may hold many provider keys.
  * Mutating APIs must stay auth-gated; use {@link auditSecretChange} so operators
@@ -31,7 +32,7 @@ export interface SecretAuditEvent {
   /** Secret key name only — never the value */
   key: string;
   op: 'set' | 'delete';
-  /** http-secrets | grpc-secrets | http-configure | grpc-configure | core-add */
+  /** http-secrets | http-secrets-memory | grpc-secrets | grpc-secrets-memory | http-configure | grpc-configure | core-add */
   source: string;
   actor?: string;
 }
@@ -39,6 +40,8 @@ export interface SecretAuditEvent {
 /**
  * Emit an audit log line for a secret mutation (A1 accountability).
  * Never logs the secret value.
+ * Sources include: http-secrets | http-secrets-memory | grpc-secrets |
+ * grpc-secrets-memory | http-configure | grpc-configure | core-add
  */
 export function auditSecretChange(event: SecretAuditEvent): void {
   const safeKey = sanitizeForLog(event.key);

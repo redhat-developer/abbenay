@@ -26,6 +26,11 @@ import {
 } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
 import {
+  isDualSecretStore,
+  parseSecretStoreChoice,
+  secretBackendToProto,
+} from '../secrets/dual.js';
+import {
   auditProviderEndpointChange,
   auditProviderEndpointConfigDiff,
   endpointPolicyFromServer,
@@ -154,6 +159,8 @@ interface GetSecretRequestProto {
 interface SetSecretRequestProto {
   key: string;
   value: string;
+  /** Proto SecretStore enum: number or string name depending on codec. */
+  store?: number | string;
 }
 
 interface DeleteSecretRequestProto {
@@ -807,10 +814,26 @@ export function createAbbenayService(
       callback: grpc.sendUnaryData<object>
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
-      const { key, value } = call.request;
-      
-      state.secretStore.set(key, value).then(() => {
-        auditSecretChange({ key, op: 'set', source: 'grpc-secrets' });
+      const { key, value, store } = call.request;
+
+      const parsed = parseSecretStoreChoice(store);
+      if (!parsed.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: parsed.error,
+        });
+        return;
+      }
+
+      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
+      const write = dual
+        ? dual.setIn(parsed.backend, key, value)
+        : state.secretStore.set(key, value);
+      const auditSource =
+        parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets';
+
+      write.then(() => {
+        auditSecretChange({ key, op: 'set', source: auditSource });
         callback(null, {});
         // Notify VS Code that models may have changed (new API key)
         state.notifyModelsChanged('secret_updated');
@@ -851,10 +874,17 @@ export function createAbbenayService(
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
       // Return known key names with availability status
       const engines = getEngines();
+      const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
       const checks = engines.filter(e => e.requiresKey).map(async (e) => {
         const key = e.defaultEnvVar || `${e.id.toUpperCase()}_API_KEY`;
         const hasValue = await state.secretStore.has(key);
-        return { key, engine: e.id, has_value: hasValue };
+        const backend = dual && hasValue ? await dual.locate(key) : null;
+        return {
+          key,
+          engine: e.id,
+          has_value: hasValue,
+          store: secretBackendToProto(backend),
+        };
       });
       
       Promise.all(checks).then((secrets) => {
