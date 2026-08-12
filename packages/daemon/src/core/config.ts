@@ -74,15 +74,23 @@ export interface ProviderConfig {
   /** Actual engine type: "openrouter", "openai", "anthropic", etc. */
   engine: string;
   /**
-   * Logical secret name in the daemon secret store (memory or OS keychain).
-   * Preferred over {@link api_key_keychain_name}.
+   * Logical secret name: secret-store key or env var name.
+   * Preferred over {@link api_key_keychain_name} / {@link api_key_env_var_name}.
    */
   secret_name?: string;
+  /**
+   * Where {@link secret_name} is resolved from.
+   * - `memory` / `keychain` / omitted (with a store name): daemon secret store
+   * - `env`: process environment variable
+   */
+  secret_store?: 'memory' | 'keychain' | 'env';
   /**
    * @deprecated Use {@link secret_name}. Kept for existing YAML configs.
    */
   api_key_keychain_name?: string;
-  /** Environment variable name for API key */
+  /**
+   * @deprecated Use {@link secret_name} + `secret_store: env`.
+   */
   api_key_env_var_name?: string;
   /** Custom API base URL (falls back to engine default) */
   base_url?: string;
@@ -90,9 +98,30 @@ export interface ProviderConfig {
   models?: Record<string, ModelConfig>;
 }
 
-/** Resolve the secret-store lookup name (secret_name preferred). */
+/** Resolve the logical secret / env var name (secret_name preferred). */
 export function providerSecretName(cfg: ProviderConfig): string | undefined {
-  return cfg.secret_name || cfg.api_key_keychain_name;
+  return cfg.secret_name || cfg.api_key_keychain_name || undefined;
+}
+
+/**
+ * How to resolve credentials for a provider.
+ * `store` → DualSecretStore (memory/keychain); `env` → process.env.
+ */
+export function providerCredentialSource(
+  cfg: ProviderConfig,
+): { kind: 'store' | 'env'; name: string } | null {
+  if (cfg.secret_store === 'env') {
+    const name = cfg.secret_name || cfg.api_key_env_var_name;
+    return name ? { kind: 'env', name } : null;
+  }
+  const storeName = providerSecretName(cfg);
+  if (storeName) {
+    return { kind: 'store', name: storeName };
+  }
+  if (cfg.api_key_env_var_name) {
+    return { kind: 'env', name: cfg.api_key_env_var_name };
+  }
+  return null;
 }
 
 /**
@@ -304,10 +333,18 @@ export function loadConfigFromPath(configPath: string): ConfigFile | null {
  */
 function migrateProviderConfig(provId: string, cfg: Record<string, unknown>): void {
   // Prefer secret_name; mirror legacy api_key_keychain_name either direction.
-  if (cfg.secret_name && !cfg.api_key_keychain_name) {
+  if (cfg.secret_name && !cfg.api_key_keychain_name && cfg.secret_store !== 'env') {
     cfg.api_key_keychain_name = cfg.secret_name;
   } else if (cfg.api_key_keychain_name && !cfg.secret_name) {
     cfg.secret_name = cfg.api_key_keychain_name;
+  }
+
+  // Legacy env-only config → secret_name + secret_store: env
+  if (cfg.api_key_env_var_name && !cfg.secret_name && !cfg.api_key_keychain_name) {
+    cfg.secret_name = cfg.api_key_env_var_name;
+    if (!cfg.secret_store) cfg.secret_store = 'env';
+  } else if (cfg.secret_store === 'env' && cfg.secret_name && !cfg.api_key_env_var_name) {
+    cfg.api_key_env_var_name = cfg.secret_name;
   }
 
   // If already new format (has engine field), just rename api_base → base_url

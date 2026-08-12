@@ -855,10 +855,11 @@ message Config {
 message FullProviderConfig {
   string engine = 1;
   optional string api_key_keychain_name = 2;  // deprecated: use secret_name
-  optional string api_key_env_var_name = 3;
+  optional string api_key_env_var_name = 3;   // deprecated: use secret_name + secret_store=env
   optional string base_url = 4;
   map<string, ModelParamConfig> models = 5;
-  optional string secret_name = 6;            // Logical secret store name (preferred)
+  optional string secret_name = 6;            // Logical name (store key or env var)
+  optional SecretStore secret_store = 7;      // MEMORY | KEYCHAIN | ENV
 }
 
 message ModelParamConfig {

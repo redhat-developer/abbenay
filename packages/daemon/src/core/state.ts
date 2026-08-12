@@ -19,7 +19,7 @@ import {
   type ConfigFile,
   type ProviderConfig,
   type ModelConfig,
-  providerSecretName,
+  providerCredentialSource,
 } from './config.js';
 import { resolvePolicy, flattenPolicy, type FlattenedPolicy, type PolicyConfig } from './policies.js';
 import {
@@ -349,7 +349,7 @@ export class CoreState {
   }
 
   /**
-   * Resolve the API key for a virtual provider from config (keychain or env var).
+   * Resolve the API key for a virtual provider from secret store or env var.
    * Falls back to the engine's default env var if no explicit config.
    */
   async resolveApiKey(providerId: string, providerCfg?: ProviderConfig): Promise<string | null> {
@@ -360,17 +360,13 @@ export class CoreState {
 
     if (!providerCfg) return null;
 
-    // Check secret store (memory or keychain) via logical name
-    const secretName = providerSecretName(providerCfg);
-    if (secretName) {
-      const value = await this.secretStore.get(secretName);
-      if (value) return value;
-    }
-
-    // Check env var from config
-    if (providerCfg.api_key_env_var_name) {
-      const value = process.env[providerCfg.api_key_env_var_name];
+    const source = providerCredentialSource(providerCfg);
+    if (source?.kind === 'env') {
+      const value = process.env[source.name];
       if (value && value.length > 0) return value;
+    } else if (source?.kind === 'store') {
+      const value = await this.secretStore.get(source.name);
+      if (value) return value;
     }
 
     // Fall back to engine's default env var

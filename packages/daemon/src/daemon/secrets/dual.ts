@@ -7,8 +7,11 @@
 
 import type { SecretStore } from '../../core/secrets.js';
 
-/** Writable secret backends (ENV is not a write target). */
+/** Writable DualSecretStore backends. */
 export type SecretBackend = 'memory' | 'keychain';
+
+/** Full secret_store vocabulary including env references. */
+export type SecretStoreKind = SecretBackend | 'env';
 
 /**
  * Composite store used by the daemon.
@@ -111,13 +114,14 @@ export function isDualSecretStore(store: SecretStore): store is DualSecretStore 
 }
 
 /**
- * Parse SetSecret / HTTP `store` field.
- * Unspecified / omitted / keychain → keychain (default).
- * ENV is rejected (env refs stay config-only).
+ * Parse SetSecret / ConfigureProvider `store` / `secret_store` field.
+ * Unspecified / omitted / keychain → keychain (default for writes).
+ * ENV rejected for writes unless `allowEnv` (configure/reference only).
  */
 export function parseSecretStoreChoice(
   store: unknown,
-): { ok: true; backend: SecretBackend } | { ok: false; error: string } {
+  opts?: { allowEnv?: boolean },
+): { ok: true; backend: SecretStoreKind } | { ok: false; error: string } {
   if (
     store === undefined ||
     store === null ||
@@ -136,10 +140,14 @@ export function parseSecretStoreChoice(
     return { ok: true, backend: 'memory' };
   }
   if (store === 'env' || store === 'SECRET_STORE_ENV' || store === 2 || store === '2') {
+    if (opts?.allowEnv) {
+      return { ok: true, backend: 'env' };
+    }
     return {
       ok: false,
       error:
-        'SECRET_STORE_ENV is not writable via SetSecret; use api_key_env_var_name in provider config',
+        'SECRET_STORE_ENV is not writable via SetSecret; configure the provider with ' +
+        'secret_name + secret_store=env (or api_key_env_var_name)',
     };
   }
   return { ok: false, error: `Unsupported secret store: ${String(store)}` };

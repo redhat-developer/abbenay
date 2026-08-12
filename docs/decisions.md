@@ -846,11 +846,13 @@ read-only via provider `api_key_env_var_name`. Configure / `addProvider`
 continue to write keychain only. `api_key_keychain_name` remains a logical
 lookup name into the composite store (not “must be OS keychain”).
 Provider config prefers `secret_name` (legacy alias `api_key_keychain_name`).
-`ConfigureProvider` / HTTP configure accept `secret_name` to reference an
-existing named secret (N providers → 1 key), and `secret_store` when writing
-a raw `api_key` (MEMORY or KEYCHAIN). Raw `api_key` alone remains a legacy
-shortcut that invents `${PROVIDER_ID}_API_KEY`. Env credentials stay on
-`api_key_env_var_name` (not the secret store).
+`secret_store` is `memory` | `keychain` | `env`: env means resolve
+`secret_name` from `process.env` (configure/reference only — SetSecret still
+rejects ENV writes). `ConfigureProvider` accepts `secret_name` + optional
+`secret_store` to reference an existing secret or env var (N providers → 1
+key). Raw `api_key` alone remains a legacy shortcut that invents
+`${PROVIDER_ID}_API_KEY`. Legacy `api_key_env_var_name` maps to
+`secret_name` + `secret_store: env` on load.
 **Rationale:** Ephemeral keys for clients that must not persist credentials
 were already sketched (`MemorySecretStore`, proto `SECRET_STORE_MEMORY`) but
 unused by the daemon. Mutual exclusivity avoids overlay/sync/refresh bugs.

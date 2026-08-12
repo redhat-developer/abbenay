@@ -264,6 +264,7 @@ interface FullProviderConfigProto {
   base_url?: string;
   models?: Record<string, ModelParamConfigProto>;
   secret_name?: string;
+  secret_store?: number | string;
 }
 
 interface ModelParamConfigProto {
@@ -1797,11 +1798,18 @@ export function createAbbenayService(
               });
               return;
             }
+            if (storeChoice.backend === 'env') {
+              callback({
+                code: grpc.status.INVALID_ARGUMENT,
+                message: 'Cannot write api_key into env; use secret_store=memory|keychain',
+              });
+              return;
+            }
             // Explicit name, or legacy invent from provider id (1:1 shortcut).
             const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
             const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
             if (dual) {
-              await dual.setIn(storeChoice.backend, secretName, apiKey);
+              await dual.setIn(storeChoice.backend as 'memory' | 'keychain', secretName, apiKey);
             } else {
               await state.secretStore.set(secretName, apiKey);
             }
@@ -1809,25 +1817,70 @@ export function createAbbenayService(
               storeChoice.backend === 'memory' ? 'grpc-configure-memory' : 'grpc-configure';
             auditSecretChange({ key: secretName, op: 'set', source: auditSource });
             config.providers[providerId].secret_name = secretName;
+            config.providers[providerId].secret_store = storeChoice.backend;
             config.providers[providerId].api_key_keychain_name = secretName;
             delete config.providers[providerId].api_key_env_var_name;
           } else if (secretNameRef) {
-            // Reference an existing named secret (N:1 — many providers, one key).
-            const exists = await state.secretStore.has(secretNameRef);
-            if (!exists) {
-              callback({
-                code: grpc.status.INVALID_ARGUMENT,
-                message:
-                  `Secret "${secretNameRef}" not found; SetSecret first or pass api_key`,
-              });
-              return;
+            const storeRaw = secretStoreRaw;
+            const wantsEnv =
+              storeRaw === 'env' ||
+              storeRaw === 'SECRET_STORE_ENV' ||
+              storeRaw === 2 ||
+              storeRaw === '2';
+
+            if (
+              wantsEnv ||
+              (storeRaw !== undefined && storeRaw !== null && storeRaw !== '')
+            ) {
+              const storeChoice = parseSecretStoreChoice(storeRaw, { allowEnv: true });
+              if (!storeChoice.ok) {
+                callback({
+                  code: grpc.status.INVALID_ARGUMENT,
+                  message: storeChoice.error,
+                });
+                return;
+              }
+              if (storeChoice.backend === 'env') {
+                config.providers[providerId].secret_name = secretNameRef;
+                config.providers[providerId].secret_store = 'env';
+                config.providers[providerId].api_key_env_var_name = secretNameRef;
+                delete config.providers[providerId].api_key_keychain_name;
+              } else {
+                const exists = await state.secretStore.has(secretNameRef);
+                if (!exists) {
+                  callback({
+                    code: grpc.status.INVALID_ARGUMENT,
+                    message:
+                      `Secret "${secretNameRef}" not found; SetSecret first or pass api_key`,
+                  });
+                  return;
+                }
+                config.providers[providerId].secret_name = secretNameRef;
+                config.providers[providerId].secret_store = storeChoice.backend;
+                config.providers[providerId].api_key_keychain_name = secretNameRef;
+                delete config.providers[providerId].api_key_env_var_name;
+              }
+            } else {
+              // No secret_store: reference daemon secret store (memory or keychain).
+              const exists = await state.secretStore.has(secretNameRef);
+              if (!exists) {
+                callback({
+                  code: grpc.status.INVALID_ARGUMENT,
+                  message:
+                    `Secret "${secretNameRef}" not found; SetSecret first or pass api_key`,
+                });
+                return;
+              }
+              config.providers[providerId].secret_name = secretNameRef;
+              delete config.providers[providerId].secret_store;
+              config.providers[providerId].api_key_keychain_name = secretNameRef;
+              delete config.providers[providerId].api_key_env_var_name;
             }
-            config.providers[providerId].secret_name = secretNameRef;
-            config.providers[providerId].api_key_keychain_name = secretNameRef;
-            delete config.providers[providerId].api_key_env_var_name;
           } else if (envVarName) {
+            // Legacy shortcut → secret_name + secret_store=env (var need not exist yet).
+            config.providers[providerId].secret_name = envVarName;
+            config.providers[providerId].secret_store = 'env';
             config.providers[providerId].api_key_env_var_name = envVarName;
-            delete config.providers[providerId].secret_name;
             delete config.providers[providerId].api_key_keychain_name;
           }
 
@@ -2197,11 +2250,23 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
           };
         }
       }
+      const secretName = providerSecretName(pcfg);
       providers[pid] = {
         engine: pcfg.engine || pid,
-        secret_name: providerSecretName(pcfg),
-        api_key_keychain_name: providerSecretName(pcfg),
-        api_key_env_var_name: pcfg.api_key_env_var_name,
+        secret_name: secretName,
+        secret_store:
+          pcfg.secret_store === 'env'
+            ? 2
+            : pcfg.secret_store === 'memory'
+              ? 3
+              : secretName
+                ? 1
+                : 0,
+        api_key_keychain_name: pcfg.secret_store === 'env' ? undefined : secretName,
+        api_key_env_var_name:
+          pcfg.secret_store === 'env'
+            ? secretName || pcfg.api_key_env_var_name
+            : pcfg.api_key_env_var_name,
         base_url: pcfg.base_url,
         models,
       };
@@ -2278,11 +2343,26 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
         }
       }
       const secretName = pcfg.secret_name || pcfg.api_key_keychain_name || undefined;
+      let secretStore: 'memory' | 'keychain' | 'env' | undefined;
+      if (pcfg.secret_store === 2 || pcfg.secret_store === 'SECRET_STORE_ENV' || pcfg.secret_store === 'env') {
+        secretStore = 'env';
+      } else if (pcfg.secret_store === 3 || pcfg.secret_store === 'SECRET_STORE_MEMORY' || pcfg.secret_store === 'memory') {
+        secretStore = 'memory';
+      } else if (pcfg.secret_store === 1 || pcfg.secret_store === 'SECRET_STORE_KEYCHAIN' || pcfg.secret_store === 'keychain') {
+        secretStore = 'keychain';
+      } else if (pcfg.api_key_env_var_name && !secretName) {
+        secretStore = 'env';
+      }
+      const envName =
+        secretStore === 'env'
+          ? (secretName || pcfg.api_key_env_var_name || undefined)
+          : (pcfg.api_key_env_var_name || undefined);
       config.providers[pid] = {
         engine: pcfg.engine || pid,
-        secret_name: secretName,
-        api_key_keychain_name: secretName,
-        api_key_env_var_name: pcfg.api_key_env_var_name || undefined,
+        secret_name: secretStore === 'env' ? envName : secretName,
+        secret_store: secretStore,
+        api_key_keychain_name: secretStore === 'env' ? undefined : secretName,
+        api_key_env_var_name: envName,
         base_url: pcfg.base_url || undefined,
         models: Object.keys(models).length > 0 ? models : undefined,
       };

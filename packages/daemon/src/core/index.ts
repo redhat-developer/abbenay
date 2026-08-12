@@ -79,7 +79,7 @@ export type { ConfigFile } from './config.js';
 
 /** Per-provider configuration block */
 export type { ProviderConfig } from './config.js';
-export { providerSecretName } from './config.js';
+export { providerSecretName, providerCredentialSource } from './config.js';
 
 /** Per-model configuration block */
 export type { ModelConfig } from './config.js';

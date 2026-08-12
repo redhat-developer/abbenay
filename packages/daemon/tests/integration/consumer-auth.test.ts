@@ -307,6 +307,49 @@ describe('Consumer auth RPC gating', () => {
     ).rejects.toMatchObject({ code: grpc.status.INVALID_ARGUMENT });
   });
 
+  it('ConfigureProvider references env via secret_store=env', async () => {
+    process.env.ABBENAY_TEST_PROVIDER_ENV = 'sk-from-env';
+    try {
+      const res = await callUnary(client, 'ConfigureProvider', {
+        provider_id: 'env-openai',
+        engine: 'mock',
+        secret_name: 'ABBENAY_TEST_PROVIDER_ENV',
+        secret_store: 'SECRET_STORE_ENV',
+      }, GOOD_TOKEN);
+      expect(res.success).toBe(true);
+
+      const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+        providers: {
+          'env-openai': {
+            secret_name?: string;
+            secret_store?: string;
+            api_key_env_var_name?: string;
+          };
+        };
+      };
+      expect(saved.providers['env-openai'].secret_name).toBe('ABBENAY_TEST_PROVIDER_ENV');
+      expect(saved.providers['env-openai'].secret_store).toBe('env');
+      expect(saved.providers['env-openai'].api_key_env_var_name).toBe('ABBENAY_TEST_PROVIDER_ENV');
+    } finally {
+      delete process.env.ABBENAY_TEST_PROVIDER_ENV;
+    }
+  });
+
+  it('ConfigureProvider rejects secret_store=env is not required when unset', async () => {
+    delete process.env.ABBENAY_TEST_PROVIDER_ENV_MISSING;
+    const res = await callUnary(client, 'ConfigureProvider', {
+      provider_id: 'env-missing',
+      engine: 'mock',
+      secret_name: 'ABBENAY_TEST_PROVIDER_ENV_MISSING',
+      secret_store: 'SECRET_STORE_ENV',
+    }, GOOD_TOKEN);
+    expect(res.success).toBe(true);
+    const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+      providers: { 'env-missing': { secret_store?: string } };
+    };
+    expect(saved.providers['env-missing'].secret_store).toBe('env');
+  });
+
   it('ConfigureProvider stores api_key under an explicit secret_name', async () => {
     const res = await callUnary(client, 'ConfigureProvider', {
       provider_id: 'named-write',

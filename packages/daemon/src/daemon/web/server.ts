@@ -1431,6 +1431,10 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           sendBadRequest(res, storeChoice.error);
           return;
         }
+        if (storeChoice.backend === 'env') {
+          sendBadRequest(res, 'Cannot write apiKey into env; use secretStore=memory|keychain');
+          return;
+        }
         // Explicit name, or legacy invent from provider id (1:1 shortcut).
         const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
         const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
@@ -1443,23 +1447,45 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           storeChoice.backend === 'memory' ? 'http-configure-memory' : 'http-configure';
         auditSecretChange({ key: secretName, op: 'set', source: auditSource });
         config.providers[providerId].secret_name = secretName;
+        config.providers[providerId].secret_store = storeChoice.backend;
         config.providers[providerId].api_key_keychain_name = secretName;
         delete config.providers[providerId].api_key_env_var_name;
       } else if (secretNameRef) {
-        // Reference an existing named secret (N:1 — many providers, one key).
-        const exists = await state.secretStore.has(secretNameRef);
-        if (!exists) {
-          res.status(400).json({
-            error: `Secret "${secretNameRef}" not found; POST /api/secrets first or pass apiKey`,
-          });
-          return;
+        const storeRaw = secretStoreBody;
+        if (storeRaw === 'env') {
+          config.providers[providerId].secret_name = secretNameRef;
+          config.providers[providerId].secret_store = 'env';
+          config.providers[providerId].api_key_env_var_name = secretNameRef;
+          delete config.providers[providerId].api_key_keychain_name;
+        } else if (storeRaw === 'memory' || storeRaw === 'keychain') {
+          const exists = await state.secretStore.has(secretNameRef);
+          if (!exists) {
+            res.status(400).json({
+              error: `Secret "${secretNameRef}" not found; POST /api/secrets first or pass apiKey`,
+            });
+            return;
+          }
+          config.providers[providerId].secret_name = secretNameRef;
+          config.providers[providerId].secret_store = storeRaw;
+          config.providers[providerId].api_key_keychain_name = secretNameRef;
+          delete config.providers[providerId].api_key_env_var_name;
+        } else {
+          const exists = await state.secretStore.has(secretNameRef);
+          if (!exists) {
+            res.status(400).json({
+              error: `Secret "${secretNameRef}" not found; POST /api/secrets first or pass apiKey`,
+            });
+            return;
+          }
+          config.providers[providerId].secret_name = secretNameRef;
+          delete config.providers[providerId].secret_store;
+          config.providers[providerId].api_key_keychain_name = secretNameRef;
+          delete config.providers[providerId].api_key_env_var_name;
         }
-        config.providers[providerId].secret_name = secretNameRef;
-        config.providers[providerId].api_key_keychain_name = secretNameRef;
-        delete config.providers[providerId].api_key_env_var_name;
       } else if (envVarName) {
+        config.providers[providerId].secret_name = envVarName;
+        config.providers[providerId].secret_store = 'env';
         config.providers[providerId].api_key_env_var_name = envVarName;
-        delete config.providers[providerId].secret_name;
         delete config.providers[providerId].api_key_keychain_name;
       }
 

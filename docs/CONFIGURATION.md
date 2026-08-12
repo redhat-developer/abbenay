@@ -382,61 +382,55 @@ Legacy sessions without an `owner` field are treated as `local`.
 
 Each provider can specify exactly ONE of these (mutually exclusive):
 
-### Option 1: Secret store (`secret_name`)
+### Option 1: Secret store (`secret_name` + optional `secret_store`)
 
-- Value lives in the daemon secret store: **OS keychain** or **process-lifetime
-  memory** (see Option 1b)
-- `secret_name` is the logical lookup key (preferred)
-- Legacy alias: `api_key_keychain_name` (still accepted in YAML; mirrored on load)
+- `secret_name` is the logical name
+- `secret_store` is where it lives:
+  - omitted / `keychain` / `memory` → daemon secret store (OS keychain or process memory)
+  - `env` → process environment variable named `secret_name`
+- Legacy aliases: `api_key_keychain_name`, `api_key_env_var_name`
 
 ```yaml
 providers:
   my-openai:
     engine: openai
     secret_name: "OPENAI_API_KEY"
+    # secret_store: keychain   # optional; memory|keychain use the secret store
+```
+
+```yaml
+providers:
+  ci-openai:
+    engine: openai
+    secret_name: "OPENAI_API_KEY"
+    secret_store: env          # already exported in the process environment
 ```
 
 ### Option 1b: In-memory (process-lifetime) via secrets API
 
-- Same logical name as Option 1 (`secret_name`)
-- Client sets the value with gRPC `SetSecret` (`store=SECRET_STORE_MEMORY`)
-  or HTTP `POST /api/secrets` with `{ "secret_store": "memory" }`
-- Lives only while the daemon process is running; cleared on restart or
-  explicit delete/set by a consumer with the `secrets` capability
-- Mutually exclusive with keychain for the same key name (writing one backend
-  removes the key from the other — DR-047)
-- Default `secret_store` / `store` (omitted / unspecified) remains **keychain**
-- `SECRET_STORE_ENV` / `"secret_store": "env"` is **not** writable via secrets APIs
+- Same `secret_name`; set value with `SetSecret` / `POST /api/secrets` and
+  `secret_store: memory` (SetSecret still cannot write `env`)
+- Lives only while the daemon process is running
+- Mutually exclusive with keychain for the same key name (DR-047)
 
 ### Recommended workflow (keys are N:1 with providers)
 
-Secrets and providers are separate. Many providers may share one named key.
+1. **Add a secret** (store) — `SetSecret` with `secret_store=memory|keychain`, **or**
+   export an env var yourself.
+2. **Configure the provider** — `secret_name=NAME` and optional
+   `secret_store=memory|keychain|env`. For `env`, the variable is resolved at
+   request time (it need not exist at configure time).
+3. Many providers may share one `secret_name`.
 
-1. **Add a secret by name** — `SetSecret` / `POST /api/secrets` with optional
-   `secret_store` (`memory` | `keychain`).
-2. **Configure the provider** — `ConfigureProvider` /
-   `POST /api/provider/:id/configure` with `secret_name` / `secretName`
-   pointing at that name (no value). The secret must already exist.
-3. Optionally pass raw `api_key` **with** `secret_name` (and optional
-   `secret_store`) to store the value under an explicit name in one step.
-   Raw `api_key` alone still invents `${PROVIDER_ID}_API_KEY` (legacy).
+### Option 2: Environment Variable (legacy `api_key_env_var_name`)
 
-### Option 2: Environment Variable (`api_key_env_var_name`)
-
-- Key read from environment variable at runtime
-- Specify the env var name to check
-- Set via web dashboard "Env" toggle
-
-```yaml
-providers:
-  anthropic-work:
-    engine: anthropic
-    api_key_env_var_name: "ANTHROPIC_API_KEY"
-```
+Prefer `secret_name` + `secret_store: env`. The legacy field still works and is
+mirrored on load.
 
 ### Fallback
 
-If neither option is set, the engine's default environment variable is checked (e.g., `OPENAI_API_KEY` for the `openai` engine).
+If neither option is set, the engine's default environment variable is checked
+(e.g., `OPENAI_API_KEY` for the `openai` engine).
 
 ## Supported Engines
 

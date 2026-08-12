@@ -990,7 +990,7 @@ class Config(_message.Message):
     def __init__(self, providers: _Optional[_Mapping[str, FullProviderConfig]] = ..., mcp_servers: _Optional[_Mapping[str, McpServerConfigMsg]] = ..., tool_policy: _Optional[_Union[ToolPolicyConfigMsg, _Mapping]] = ..., consumers: _Optional[_Mapping[str, ConsumerConfigMsg]] = ...) -> None: ...
 
 class FullProviderConfig(_message.Message):
-    __slots__ = ("engine", "api_key_keychain_name", "api_key_env_var_name", "base_url", "models", "secret_name")
+    __slots__ = ("engine", "api_key_keychain_name", "api_key_env_var_name", "base_url", "models", "secret_name", "secret_store")
     class ModelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -1004,13 +1004,15 @@ class FullProviderConfig(_message.Message):
     BASE_URL_FIELD_NUMBER: _ClassVar[int]
     MODELS_FIELD_NUMBER: _ClassVar[int]
     SECRET_NAME_FIELD_NUMBER: _ClassVar[int]
+    SECRET_STORE_FIELD_NUMBER: _ClassVar[int]
     engine: str
     api_key_keychain_name: str
     api_key_env_var_name: str
     base_url: str
     models: _containers.MessageMap[str, ModelParamConfig]
     secret_name: str
-    def __init__(self, engine: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ..., api_key_env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., models: _Optional[_Mapping[str, ModelParamConfig]] = ..., secret_name: _Optional[str] = ...) -> None: ...
+    secret_store: SecretStore
+    def __init__(self, engine: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ..., api_key_env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., models: _Optional[_Mapping[str, ModelParamConfig]] = ..., secret_name: _Optional[str] = ..., secret_store: _Optional[_Union[SecretStore, str]] = ...) -> None: ...
 
 class ModelParamConfig(_message.Message):
     __slots__ = ("model_id", "policy", "system_prompt", "system_prompt_mode", "temperature", "top_p", "top_k", "max_tokens", "timeout")

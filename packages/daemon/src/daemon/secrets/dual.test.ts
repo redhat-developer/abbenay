@@ -118,6 +118,13 @@ describe('parseSecretStoreChoice', () => {
     }
   });
 
+  it('allows ENV when allowEnv is set (configure/reference)', () => {
+    expect(parseSecretStoreChoice('env', { allowEnv: true })).toEqual({
+      ok: true,
+      backend: 'env',
+    });
+  });
+
   it('rejects unknown stores', () => {
     const result = parseSecretStoreChoice('vault');
     expect(result.ok).toBe(false);

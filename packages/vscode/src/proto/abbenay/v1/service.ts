@@ -1090,12 +1090,19 @@ export interface Config_ConsumersEntry {
 export interface FullProviderConfig {
   engine: string;
   /** deprecated: use secret_name */
-  apiKeyKeychainName?: string | undefined;
+  apiKeyKeychainName?:
+    | string
+    | undefined;
+  /** deprecated: use secret_name + secret_store=env */
   apiKeyEnvVarName?: string | undefined;
   baseUrl?: string | undefined;
   models: { [key: string]: ModelParamConfig };
-  /** Logical secret store name (preferred) */
-  secretName?: string | undefined;
+  /** Logical name (store key or env var) */
+  secretName?:
+    | string
+    | undefined;
+  /** MEMORY | KEYCHAIN | ENV */
+  secretStore?: SecretStore | undefined;
 }
 
 export interface FullProviderConfig_ModelsEntry {
@@ -10913,6 +10920,7 @@ function createBaseFullProviderConfig(): FullProviderConfig {
     baseUrl: undefined,
     models: {},
     secretName: undefined,
+    secretStore: undefined,
   };
 }
 
@@ -10935,6 +10943,9 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
     });
     if (message.secretName !== undefined) {
       writer.uint32(50).string(message.secretName);
+    }
+    if (message.secretStore !== undefined) {
+      writer.uint32(56).int32(message.secretStore);
     }
     return writer;
   },
@@ -10997,6 +11008,14 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
           message.secretName = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.secretStore = reader.int32() as any;
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -11038,6 +11057,11 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
         : isSet(object.secret_name)
         ? globalThis.String(object.secret_name)
         : undefined,
+      secretStore: isSet(object.secretStore)
+        ? secretStoreFromJSON(object.secretStore)
+        : isSet(object.secret_store)
+        ? secretStoreFromJSON(object.secret_store)
+        : undefined,
     };
   },
 
@@ -11067,6 +11091,9 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
     if (message.secretName !== undefined) {
       obj.secretName = message.secretName;
     }
+    if (message.secretStore !== undefined) {
+      obj.secretStore = secretStoreToJSON(message.secretStore);
+    }
     return obj;
   },
 
@@ -11089,6 +11116,7 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
       {},
     );
     message.secretName = object.secretName ?? undefined;
+    message.secretStore = object.secretStore ?? undefined;
     return message;
   },
 };
