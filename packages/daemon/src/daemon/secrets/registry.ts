@@ -156,7 +156,7 @@ export function parseSecretStoreChoice(
     return {
       ok: false,
       error:
-        'SECRET_STORE_ENV is not writable via SetSecret; configure the provider with ' +
+        'SECRET_STORE_ENV is not writable via the secrets API; configure the provider with ' +
         'secret_name + secret_store=env (or api_key_env_var_name)',
     };
   }

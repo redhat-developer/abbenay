@@ -103,7 +103,7 @@ describe('parseSecretStoreChoice', () => {
     const result = parseSecretStoreChoice('SECRET_STORE_ENV');
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/ENV/i);
+      expect(result.error).toMatch(/ENV|not writable|secrets API/i);
     }
   });
 

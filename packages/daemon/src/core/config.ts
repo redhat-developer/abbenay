@@ -104,6 +104,17 @@ export function providerSecretName(cfg: ProviderConfig): string | undefined {
 }
 
 /**
+ * True when `secretName` was invented for this provider (legacy 1:1 configure).
+ * Shared / explicitly picked names must not be deleted with the provider.
+ */
+export function isProviderOwnedSecretName(providerId: string, secretName: string): boolean {
+  return (
+    secretName === `${providerId.toUpperCase()}_API_KEY` ||
+    secretName === `abbenay.${providerId}`
+  );
+}
+
+/**
  * How to resolve credentials for a provider.
  * `store` → named backend (memory|keychain) via (secret_store, secret_name);
  * `env` → process.env[secret_name]. Omitted secret_store defaults to keychain.

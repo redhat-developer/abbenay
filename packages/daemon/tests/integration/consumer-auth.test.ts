@@ -283,15 +283,21 @@ describe('Consumer auth RPC gating', () => {
       provider_id: 'work-openai',
       engine: 'mock',
       secret_name: 'SHARED_OPENAI',
+      secret_store: 'SECRET_STORE_MEMORY',
     }, GOOD_TOKEN);
     expect(res.success).toBe(true);
 
     const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
       providers: {
-        'work-openai': { secret_name?: string; api_key_keychain_name?: string };
+        'work-openai': {
+          secret_name?: string;
+          secret_store?: string;
+          api_key_keychain_name?: string;
+        };
       };
     };
     expect(saved.providers['work-openai'].secret_name).toBe('SHARED_OPENAI');
+    expect(saved.providers['work-openai'].secret_store).toBe('memory');
     expect(saved.providers['work-openai'].api_key_keychain_name).toBe('SHARED_OPENAI');
     // Reference path must not invent a provider-scoped key name or rewrite the secret.
     expect(mockSecretStoreData.has('WORK-OPENAI_API_KEY')).toBe(false);

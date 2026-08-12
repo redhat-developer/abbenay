@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
-import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, providerSecretName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
+import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, providerSecretName, isProviderOwnedSecretName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
 import { isSecretStoreRegistry, parseSecretStoreChoice } from '../secrets/registry.js';
 import {
@@ -1588,10 +1588,24 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         : loadConfig()) || { providers: {} };
 
       if (config.providers && config.providers[providerId]) {
-        const secretName = providerSecretName(config.providers[providerId]);
-        if (secretName) {
+        const providerCfg = config.providers[providerId];
+        const secretName = providerSecretName(providerCfg);
+        // Env-backed names are not store keys; shared picks must outlive the provider.
+        if (
+          secretName &&
+          providerCfg.secret_store !== 'env' &&
+          isProviderOwnedSecretName(providerId, secretName)
+        ) {
           try {
-            await state.secretStore.delete(secretName);
+            const registry = isSecretStoreRegistry(state.secretStore)
+              ? state.secretStore
+              : null;
+            const backend = providerCfg.secret_store === 'memory' ? 'memory' : 'keychain';
+            if (registry) {
+              await registry.deleteFrom(backend, secretName);
+            } else {
+              await state.secretStore.delete(secretName);
+            }
             auditSecretChange({ key: secretName, op: 'delete', source: 'http-configure' });
           } catch { /* ignore */ }
         }
