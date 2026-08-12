@@ -1798,18 +1798,11 @@ export function createAbbenayService(
               });
               return;
             }
-            if (storeChoice.backend === 'env') {
-              callback({
-                code: grpc.status.INVALID_ARGUMENT,
-                message: 'Cannot write api_key into env; use secret_store=memory|keychain',
-              });
-              return;
-            }
             // Explicit name, or legacy invent from provider id (1:1 shortcut).
             const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
             const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
             if (dual) {
-              await dual.setIn(storeChoice.backend as 'memory' | 'keychain', secretName, apiKey);
+              await dual.setIn(storeChoice.backend, secretName, apiKey);
             } else {
               await state.secretStore.set(secretName, apiKey);
             }

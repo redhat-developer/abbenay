@@ -120,6 +120,14 @@ export function isDualSecretStore(store: SecretStore): store is DualSecretStore 
  */
 export function parseSecretStoreChoice(
   store: unknown,
+  opts: { allowEnv: true },
+): { ok: true; backend: SecretStoreKind } | { ok: false; error: string };
+export function parseSecretStoreChoice(
+  store: unknown,
+  opts?: { allowEnv?: false | undefined },
+): { ok: true; backend: SecretBackend } | { ok: false; error: string };
+export function parseSecretStoreChoice(
+  store: unknown,
   opts?: { allowEnv?: boolean },
 ): { ok: true; backend: SecretStoreKind } | { ok: false; error: string } {
   if (

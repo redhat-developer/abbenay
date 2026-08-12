@@ -1431,10 +1431,6 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           sendBadRequest(res, storeChoice.error);
           return;
         }
-        if (storeChoice.backend === 'env') {
-          sendBadRequest(res, 'Cannot write apiKey into env; use secretStore=memory|keychain');
-          return;
-        }
         // Explicit name, or legacy invent from provider id (1:1 shortcut).
         const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
         const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
