@@ -382,46 +382,44 @@ Legacy sessions without an `owner` field are treated as `local`.
 
 Each provider can specify exactly ONE of these (mutually exclusive):
 
-### Option 1: Keychain Storage (`api_key_keychain_name`)
+### Option 1: Secret store (`secret_name`)
 
-- Key stored in system keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-- Specify the key name used in keychain
-- Set via web dashboard "API Key" toggle
-- The name is a **logical lookup key** into the daemon secret store (keychain
-  or in-memory backend — see below)
+- Value lives in the daemon secret store: **OS keychain** or **process-lifetime
+  memory** (see Option 1b)
+- `secret_name` is the logical lookup key (preferred)
+- Legacy alias: `api_key_keychain_name` (still accepted in YAML; mirrored on load)
 
 ```yaml
 providers:
   my-openai:
     engine: openai
-    api_key_keychain_name: "OPENAI_API_KEY"
+    secret_name: "OPENAI_API_KEY"
 ```
 
 ### Option 1b: In-memory (process-lifetime) via secrets API
 
-- Same logical key name as keychain (`api_key_keychain_name`)
+- Same logical name as Option 1 (`secret_name`)
 - Client sets the value with gRPC `SetSecret` (`store=SECRET_STORE_MEMORY`)
-  or HTTP `POST /api/secrets` with `{ "store": "memory" }`
+  or HTTP `POST /api/secrets` with `{ "secret_store": "memory" }`
 - Lives only while the daemon process is running; cleared on restart or
   explicit delete/set by a consumer with the `secrets` capability
 - Mutually exclusive with keychain for the same key name (writing one backend
   removes the key from the other — DR-047)
-- Default `store` (omitted / unspecified) remains **keychain** for backward
-  compatibility
-- `SECRET_STORE_ENV` / `"store": "env"` is **not** writable via secrets APIs
+- Default `secret_store` / `store` (omitted / unspecified) remains **keychain**
+- `SECRET_STORE_ENV` / `"secret_store": "env"` is **not** writable via secrets APIs
 
 ### Recommended workflow (keys are N:1 with providers)
 
 Secrets and providers are separate. Many providers may share one named key.
 
-1. **Add a secret by name** — `SetSecret` / `POST /api/secrets` (optionally
-   `store=memory`).
-2. **Configure the provider** — `ConfigureProvider` / `POST /api/provider/:id/configure`
-   with `api_key_keychain_name` / `apiKeyKeychainName` pointing at that name
-   (no value). The secret must already exist.
-3. Optionally pass raw `api_key` **with** `api_key_keychain_name` to store the
-   value under an explicit name in one step. Raw `api_key` alone still invents
-   `${PROVIDER_ID}_API_KEY` (legacy 1:1 shortcut).
+1. **Add a secret by name** — `SetSecret` / `POST /api/secrets` with optional
+   `secret_store` (`memory` | `keychain`).
+2. **Configure the provider** — `ConfigureProvider` /
+   `POST /api/provider/:id/configure` with `secret_name` / `secretName`
+   pointing at that name (no value). The secret must already exist.
+3. Optionally pass raw `api_key` **with** `secret_name` (and optional
+   `secret_store`) to store the value under an explicit name in one step.
+   Raw `api_key` alone still invents `${PROVIDER_ID}_API_KEY` (legacy).
 
 ### Option 2: Environment Variable (`api_key_env_var_name`)
 

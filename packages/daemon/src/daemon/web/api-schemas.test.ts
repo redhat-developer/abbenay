@@ -65,20 +65,20 @@ describe('PostProviderConfigureBodySchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts apiKeyKeychainName to pick an existing secret', () => {
+  it('accepts secretName to pick an existing secret', () => {
     expect(
       PostProviderConfigureBodySchema.safeParse({
         engine: 'openai',
-        apiKeyKeychainName: 'SHARED_OPENAI',
+        secretName: 'SHARED_OPENAI',
       }).success,
     ).toBe(true);
   });
 
-  it('rejects apiKeyKeychainName together with envVarName', () => {
+  it('rejects secretName together with envVarName', () => {
     expect(
       PostProviderConfigureBodySchema.safeParse({
         engine: 'openai',
-        apiKeyKeychainName: 'SHARED',
+        secretName: 'SHARED',
         envVarName: 'OPENAI_API_KEY',
       }).success,
     ).toBe(false);
@@ -144,15 +144,15 @@ describe('secret body schemas', () => {
     expect(PostSecretByKeyBodySchema.safeParse({ value: '' }).success).toBe(false);
   });
 
-  it('accepts optional store memory|keychain|env', () => {
+  it('accepts optional secret_store memory|keychain|env (and legacy store)', () => {
     expect(
-      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'memory' }).success,
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secret_store: 'memory' }).success,
     ).toBe(true);
     expect(
       PostSecretByKeyBodySchema.safeParse({ value: 'v', store: 'keychain' }).success,
     ).toBe(true);
     expect(
-      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'env' }).success,
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secret_store: 'env' }).success,
     ).toBe(true);
     expect(
       PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'vault' }).success,

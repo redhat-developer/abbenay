@@ -19,6 +19,7 @@ import {
   type ConfigFile,
   type ProviderConfig,
   type ModelConfig,
+  providerSecretName,
 } from './config.js';
 import { resolvePolicy, flattenPolicy, type FlattenedPolicy, type PolicyConfig } from './policies.js';
 import {
@@ -238,6 +239,7 @@ export class CoreState {
     if (options.apiKey) {
       const keychainName = `abbenay.${providerId}`;
       await this.secretStore.set(keychainName, options.apiKey);
+      providerCfg.secret_name = keychainName;
       providerCfg.api_key_keychain_name = keychainName;
       auditSecretChange({ key: keychainName, op: 'set', source: 'core-add' });
     } else if (options.apiKeyEnvVar) {
@@ -358,9 +360,10 @@ export class CoreState {
 
     if (!providerCfg) return null;
 
-    // Check keychain
-    if (providerCfg.api_key_keychain_name) {
-      const value = await this.secretStore.get(providerCfg.api_key_keychain_name);
+    // Check secret store (memory or keychain) via logical name
+    const secretName = providerSecretName(providerCfg);
+    if (secretName) {
+      const value = await this.secretStore.get(secretName);
       if (value) return value;
     }
 

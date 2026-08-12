@@ -22,6 +22,7 @@ import { maybeSummarize, generateSessionSummary } from '../../core/session-summa
 import {
   loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig,
   getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName,
+  providerSecretName,
   type ConfigFile, type ProviderConfig as DaemonProviderConfig, type McpServerConfig,
 } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
@@ -262,6 +263,7 @@ interface FullProviderConfigProto {
   api_key_env_var_name?: string;
   base_url?: string;
   models?: Record<string, ModelParamConfigProto>;
+  secret_name?: string;
 }
 
 interface ModelParamConfigProto {
@@ -322,8 +324,13 @@ interface ConfigureProviderRequestProto {
   target?: string;
   workspace_path?: string;
   workspacePath?: string;
+  secret_name?: string;
+  secretName?: string;
+  /** @deprecated Alias for secret_name (PR transition). */
   api_key_keychain_name?: string;
   apiKeyKeychainName?: string;
+  secret_store?: number | string;
+  secretStore?: number | string;
 }
 
 interface RemoveProviderRequestProto {
@@ -1710,8 +1717,12 @@ export function createAbbenayService(
           const engine = call.request.engine;
           const apiKey = call.request.api_key || call.request.apiKey;
           const envVarName = call.request.env_var_name || call.request.envVarName;
-          const keychainNameRef =
-            call.request.api_key_keychain_name || call.request.apiKeyKeychainName;
+          const secretNameRef =
+            call.request.secret_name ||
+            call.request.secretName ||
+            call.request.api_key_keychain_name ||
+            call.request.apiKeyKeychainName;
+          const secretStoreRaw = call.request.secret_store ?? call.request.secretStore;
           const baseUrl = call.request.base_url || call.request.baseUrl;
           const target = call.request.target || 'user';
           const workspacePath = call.request.workspace_path || call.request.workspacePath;
@@ -1769,36 +1780,54 @@ export function createAbbenayService(
             });
             return;
           }
-          if (keychainNameRef && envVarName) {
+          if (secretNameRef && envVarName) {
             callback({
               code: grpc.status.INVALID_ARGUMENT,
-              message: 'Provide only one of api_key_keychain_name or env_var_name',
+              message: 'Provide only one of secret_name or env_var_name',
             });
             return;
           }
 
           if (apiKey) {
+            const storeChoice = parseSecretStoreChoice(secretStoreRaw);
+            if (!storeChoice.ok) {
+              callback({
+                code: grpc.status.INVALID_ARGUMENT,
+                message: storeChoice.error,
+              });
+              return;
+            }
             // Explicit name, or legacy invent from provider id (1:1 shortcut).
-            const keychainName = keychainNameRef || `${providerId.toUpperCase()}_API_KEY`;
-            await state.secretStore.set(keychainName, apiKey);
-            auditSecretChange({ key: keychainName, op: 'set', source: 'grpc-configure' });
-            config.providers[providerId].api_key_keychain_name = keychainName;
+            const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
+            const dual = isDualSecretStore(state.secretStore) ? state.secretStore : null;
+            if (dual) {
+              await dual.setIn(storeChoice.backend, secretName, apiKey);
+            } else {
+              await state.secretStore.set(secretName, apiKey);
+            }
+            const auditSource =
+              storeChoice.backend === 'memory' ? 'grpc-configure-memory' : 'grpc-configure';
+            auditSecretChange({ key: secretName, op: 'set', source: auditSource });
+            config.providers[providerId].secret_name = secretName;
+            config.providers[providerId].api_key_keychain_name = secretName;
             delete config.providers[providerId].api_key_env_var_name;
-          } else if (keychainNameRef) {
+          } else if (secretNameRef) {
             // Reference an existing named secret (N:1 — many providers, one key).
-            const exists = await state.secretStore.has(keychainNameRef);
+            const exists = await state.secretStore.has(secretNameRef);
             if (!exists) {
               callback({
                 code: grpc.status.INVALID_ARGUMENT,
                 message:
-                  `Secret "${keychainNameRef}" not found; SetSecret first or pass api_key`,
+                  `Secret "${secretNameRef}" not found; SetSecret first or pass api_key`,
               });
               return;
             }
-            config.providers[providerId].api_key_keychain_name = keychainNameRef;
+            config.providers[providerId].secret_name = secretNameRef;
+            config.providers[providerId].api_key_keychain_name = secretNameRef;
             delete config.providers[providerId].api_key_env_var_name;
           } else if (envVarName) {
             config.providers[providerId].api_key_env_var_name = envVarName;
+            delete config.providers[providerId].secret_name;
             delete config.providers[providerId].api_key_keychain_name;
           }
 
@@ -1858,11 +1887,11 @@ export function createAbbenayService(
             : loadConfig()) || { providers: {} };
 
           if (config.providers && config.providers[providerId]) {
-            const keychainName = config.providers[providerId].api_key_keychain_name;
-            if (keychainName) {
+            const secretName = providerSecretName(config.providers[providerId]);
+            if (secretName) {
               try {
-                await state.secretStore.delete(keychainName);
-                auditSecretChange({ key: keychainName, op: 'delete', source: 'grpc-configure' });
+                await state.secretStore.delete(secretName);
+                auditSecretChange({ key: secretName, op: 'delete', source: 'grpc-configure' });
               } catch { /* ignore */ }
             }
             delete config.providers[providerId];
@@ -2170,7 +2199,8 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
       }
       providers[pid] = {
         engine: pcfg.engine || pid,
-        api_key_keychain_name: pcfg.api_key_keychain_name,
+        secret_name: providerSecretName(pcfg),
+        api_key_keychain_name: providerSecretName(pcfg),
         api_key_env_var_name: pcfg.api_key_env_var_name,
         base_url: pcfg.base_url,
         models,
@@ -2247,9 +2277,11 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
           };
         }
       }
+      const secretName = pcfg.secret_name || pcfg.api_key_keychain_name || undefined;
       config.providers[pid] = {
         engine: pcfg.engine || pid,
-        api_key_keychain_name: pcfg.api_key_keychain_name || undefined,
+        secret_name: secretName,
+        api_key_keychain_name: secretName,
         api_key_env_var_name: pcfg.api_key_env_var_name || undefined,
         base_url: pcfg.base_url || undefined,
         models: Object.keys(models).length > 0 ? models : undefined,

@@ -185,7 +185,8 @@ Secrets are managed explicitly per-provider with two options:
   - macOS: Keychain
   - Linux: libsecret (GNOME Keyring / KDE Wallet)
   - Windows: Credential Vault
-- Config references key by name: `api_key_keychain_name: "OPENAI_API_KEY"`
+- Config references secret by name: `secret_name: "OPENAI_API_KEY"`
+  (legacy: `api_key_keychain_name`)
 
 ### Option 2: Environment Variable Reference
 - Config specifies env var name: `api_key_env_var_name: "OPENAI_API_KEY"`

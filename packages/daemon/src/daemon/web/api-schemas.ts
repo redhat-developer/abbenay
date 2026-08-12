@@ -48,6 +48,8 @@ export const PostSecretByKeyBodySchema = z
   .object({
     value: z.string().min(1),
     /** Default: keychain (persistent). memory = process-lifetime only. */
+    secret_store: SecretStoreFieldSchema,
+    /** @deprecated Use secret_store. */
     store: SecretStoreFieldSchema,
   })
   .strict();
@@ -57,6 +59,8 @@ export const PostSecretBodySchema = z
     key: z.string().min(1),
     value: z.string().min(1),
     /** Default: keychain (persistent). memory = process-lifetime only. */
+    secret_store: SecretStoreFieldSchema,
+    /** @deprecated Use secret_store. */
     store: SecretStoreFieldSchema,
   })
   .strict();
@@ -109,6 +113,10 @@ export const PostProviderConfigureBodySchema = z
     engine: z.string().min(1).optional(),
     apiKey: z.string().min(1).optional(),
     /** Logical secret name (SetSecret key). Prefer over inventing from provider id. */
+    secretName: z.string().min(1).optional(),
+    /** Where to write apiKey: memory | keychain (default keychain). */
+    secretStore: z.enum(['memory', 'keychain', 'env']).optional(),
+    /** @deprecated Use secretName. */
     apiKeyKeychainName: z.string().min(1).optional(),
     envVarName: z.string().min(1).optional(),
     /** Format-checked here; host policy applied in the route with server config. */
@@ -132,11 +140,12 @@ export const PostProviderConfigureBodySchema = z
         path: ['apiKey'],
       });
     }
-    if (data.apiKeyKeychainName && data.envVarName) {
+    const secretName = data.secretName || data.apiKeyKeychainName;
+    if (secretName && data.envVarName) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Provide only one of apiKeyKeychainName or envVarName',
-        path: ['apiKeyKeychainName'],
+        message: 'Provide only one of secretName or envVarName',
+        path: ['secretName'],
       });
     }
   });

@@ -854,10 +854,11 @@ message Config {
 
 message FullProviderConfig {
   string engine = 1;
-  optional string api_key_keychain_name = 2;
+  optional string api_key_keychain_name = 2;  // deprecated: use secret_name
   optional string api_key_env_var_name = 3;
   optional string base_url = 4;
   map<string, ModelParamConfig> models = 5;
+  optional string secret_name = 6;            // Logical secret store name (preferred)
 }
 
 message ModelParamConfig {
@@ -928,7 +929,7 @@ message UpdateConfigRequest {
 message ConfigureProviderRequest {
   string provider_id = 1;              // Virtual provider name
   optional string engine = 2;          // Engine type (e.g., "openai")
-  optional string api_key = 3;         // Raw API key value (optional with api_key_keychain_name)
+  optional string api_key = 3;         // Raw API key value (optional with secret_name)
   optional string env_var_name = 4;    // Alternative: use env var for API key
   optional string base_url = 5;        // Custom API base URL
   optional string target = 6;          // "user" (default) or "workspace"
@@ -936,7 +937,10 @@ message ConfigureProviderRequest {
   // Logical secret name (SetSecret key). Prefer this over inventing a name from
   // provider_id. With api_key: store the value under this name. Without api_key:
   // reference an existing secret (N providers may share one key).
-  optional string api_key_keychain_name = 8;
+  optional string secret_name = 8;
+  // Where to write api_key when provided (MEMORY or KEYCHAIN). Default KEYCHAIN.
+  // Ignored when only referencing an existing secret_name.
+  optional SecretStore secret_store = 9;
 }
 
 message ConfigureProviderResponse {

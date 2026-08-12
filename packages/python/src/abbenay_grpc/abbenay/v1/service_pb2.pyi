@@ -990,7 +990,7 @@ class Config(_message.Message):
     def __init__(self, providers: _Optional[_Mapping[str, FullProviderConfig]] = ..., mcp_servers: _Optional[_Mapping[str, McpServerConfigMsg]] = ..., tool_policy: _Optional[_Union[ToolPolicyConfigMsg, _Mapping]] = ..., consumers: _Optional[_Mapping[str, ConsumerConfigMsg]] = ...) -> None: ...
 
 class FullProviderConfig(_message.Message):
-    __slots__ = ("engine", "api_key_keychain_name", "api_key_env_var_name", "base_url", "models")
+    __slots__ = ("engine", "api_key_keychain_name", "api_key_env_var_name", "base_url", "models", "secret_name")
     class ModelsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -1003,12 +1003,14 @@ class FullProviderConfig(_message.Message):
     API_KEY_ENV_VAR_NAME_FIELD_NUMBER: _ClassVar[int]
     BASE_URL_FIELD_NUMBER: _ClassVar[int]
     MODELS_FIELD_NUMBER: _ClassVar[int]
+    SECRET_NAME_FIELD_NUMBER: _ClassVar[int]
     engine: str
     api_key_keychain_name: str
     api_key_env_var_name: str
     base_url: str
     models: _containers.MessageMap[str, ModelParamConfig]
-    def __init__(self, engine: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ..., api_key_env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., models: _Optional[_Mapping[str, ModelParamConfig]] = ...) -> None: ...
+    secret_name: str
+    def __init__(self, engine: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ..., api_key_env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., models: _Optional[_Mapping[str, ModelParamConfig]] = ..., secret_name: _Optional[str] = ...) -> None: ...
 
 class ModelParamConfig(_message.Message):
     __slots__ = ("model_id", "policy", "system_prompt", "system_prompt_mode", "temperature", "top_p", "top_k", "max_tokens", "timeout")
@@ -1124,7 +1126,7 @@ class UpdateConfigRequest(_message.Message):
     def __init__(self, config: _Optional[_Union[Config, _Mapping]] = ..., location: _Optional[str] = ...) -> None: ...
 
 class ConfigureProviderRequest(_message.Message):
-    __slots__ = ("provider_id", "engine", "api_key", "env_var_name", "base_url", "target", "workspace_path", "api_key_keychain_name")
+    __slots__ = ("provider_id", "engine", "api_key", "env_var_name", "base_url", "target", "workspace_path", "secret_name", "secret_store")
     PROVIDER_ID_FIELD_NUMBER: _ClassVar[int]
     ENGINE_FIELD_NUMBER: _ClassVar[int]
     API_KEY_FIELD_NUMBER: _ClassVar[int]
@@ -1132,7 +1134,8 @@ class ConfigureProviderRequest(_message.Message):
     BASE_URL_FIELD_NUMBER: _ClassVar[int]
     TARGET_FIELD_NUMBER: _ClassVar[int]
     WORKSPACE_PATH_FIELD_NUMBER: _ClassVar[int]
-    API_KEY_KEYCHAIN_NAME_FIELD_NUMBER: _ClassVar[int]
+    SECRET_NAME_FIELD_NUMBER: _ClassVar[int]
+    SECRET_STORE_FIELD_NUMBER: _ClassVar[int]
     provider_id: str
     engine: str
     api_key: str
@@ -1140,8 +1143,9 @@ class ConfigureProviderRequest(_message.Message):
     base_url: str
     target: str
     workspace_path: str
-    api_key_keychain_name: str
-    def __init__(self, provider_id: _Optional[str] = ..., engine: _Optional[str] = ..., api_key: _Optional[str] = ..., env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., target: _Optional[str] = ..., workspace_path: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ...) -> None: ...
+    secret_name: str
+    secret_store: SecretStore
+    def __init__(self, provider_id: _Optional[str] = ..., engine: _Optional[str] = ..., api_key: _Optional[str] = ..., env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., target: _Optional[str] = ..., workspace_path: _Optional[str] = ..., secret_name: _Optional[str] = ..., secret_store: _Optional[_Union[SecretStore, str]] = ...) -> None: ...
 
 class ConfigureProviderResponse(_message.Message):
     __slots__ = ("success",)

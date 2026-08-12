@@ -83,6 +83,9 @@ export const ModelConfigSchema = z
 export const ProviderConfigSchema = z
   .object({
     engine: z.string().min(1),
+    /** Logical secret name (memory or OS keychain). Preferred. */
+    secret_name: z.string().min(1).optional(),
+    /** @deprecated Use secret_name. */
     api_key_keychain_name: z.string().min(1).optional(),
     api_key_env_var_name: z.string().min(1).optional(),
     base_url: ProviderBaseUrlSchema.optional(),

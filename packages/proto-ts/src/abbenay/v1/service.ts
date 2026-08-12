@@ -1089,10 +1089,13 @@ export interface Config_ConsumersEntry {
 
 export interface FullProviderConfig {
   engine: string;
+  /** deprecated: use secret_name */
   apiKeyKeychainName?: string | undefined;
   apiKeyEnvVarName?: string | undefined;
   baseUrl?: string | undefined;
   models: { [key: string]: ModelParamConfig };
+  /** Logical secret store name (preferred) */
+  secretName?: string | undefined;
 }
 
 export interface FullProviderConfig_ModelsEntry {
@@ -1227,7 +1230,7 @@ export interface ConfigureProviderRequest {
   engine?:
     | string
     | undefined;
-  /** Raw API key value (optional with api_key_keychain_name) */
+  /** Raw API key value (optional with secret_name) */
   apiKey?:
     | string
     | undefined;
@@ -1252,7 +1255,14 @@ export interface ConfigureProviderRequest {
    * provider_id. With api_key: store the value under this name. Without api_key:
    * reference an existing secret (N providers may share one key).
    */
-  apiKeyKeychainName?: string | undefined;
+  secretName?:
+    | string
+    | undefined;
+  /**
+   * Where to write api_key when provided (MEMORY or KEYCHAIN). Default KEYCHAIN.
+   * Ignored when only referencing an existing secret_name.
+   */
+  secretStore?: SecretStore | undefined;
 }
 
 export interface ConfigureProviderResponse {
@@ -10896,7 +10906,14 @@ export const Config_ConsumersEntry: MessageFns<Config_ConsumersEntry> = {
 };
 
 function createBaseFullProviderConfig(): FullProviderConfig {
-  return { engine: "", apiKeyKeychainName: undefined, apiKeyEnvVarName: undefined, baseUrl: undefined, models: {} };
+  return {
+    engine: "",
+    apiKeyKeychainName: undefined,
+    apiKeyEnvVarName: undefined,
+    baseUrl: undefined,
+    models: {},
+    secretName: undefined,
+  };
 }
 
 export const FullProviderConfig: MessageFns<FullProviderConfig> = {
@@ -10916,6 +10933,9 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
     globalThis.Object.entries(message.models).forEach(([key, value]: [string, ModelParamConfig]) => {
       FullProviderConfig_ModelsEntry.encode({ key: key as any, value }, writer.uint32(42).fork()).join();
     });
+    if (message.secretName !== undefined) {
+      writer.uint32(50).string(message.secretName);
+    }
     return writer;
   },
 
@@ -10969,6 +10989,14 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
           }
           continue;
         }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.secretName = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -11005,6 +11033,11 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
           {},
         )
         : {},
+      secretName: isSet(object.secretName)
+        ? globalThis.String(object.secretName)
+        : isSet(object.secret_name)
+        ? globalThis.String(object.secret_name)
+        : undefined,
     };
   },
 
@@ -11031,6 +11064,9 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
         });
       }
     }
+    if (message.secretName !== undefined) {
+      obj.secretName = message.secretName;
+    }
     return obj;
   },
 
@@ -11052,6 +11088,7 @@ export const FullProviderConfig: MessageFns<FullProviderConfig> = {
       },
       {},
     );
+    message.secretName = object.secretName ?? undefined;
     return message;
   },
 };
@@ -12345,7 +12382,8 @@ function createBaseConfigureProviderRequest(): ConfigureProviderRequest {
     baseUrl: undefined,
     target: undefined,
     workspacePath: undefined,
-    apiKeyKeychainName: undefined,
+    secretName: undefined,
+    secretStore: undefined,
   };
 }
 
@@ -12372,8 +12410,11 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
     if (message.workspacePath !== undefined) {
       writer.uint32(58).string(message.workspacePath);
     }
-    if (message.apiKeyKeychainName !== undefined) {
-      writer.uint32(66).string(message.apiKeyKeychainName);
+    if (message.secretName !== undefined) {
+      writer.uint32(66).string(message.secretName);
+    }
+    if (message.secretStore !== undefined) {
+      writer.uint32(72).int32(message.secretStore);
     }
     return writer;
   },
@@ -12446,7 +12487,15 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
             break;
           }
 
-          message.apiKeyKeychainName = reader.string();
+          message.secretName = reader.string();
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.secretStore = reader.int32() as any;
           continue;
         }
       }
@@ -12487,10 +12536,15 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
         : isSet(object.workspace_path)
         ? globalThis.String(object.workspace_path)
         : undefined,
-      apiKeyKeychainName: isSet(object.apiKeyKeychainName)
-        ? globalThis.String(object.apiKeyKeychainName)
-        : isSet(object.api_key_keychain_name)
-        ? globalThis.String(object.api_key_keychain_name)
+      secretName: isSet(object.secretName)
+        ? globalThis.String(object.secretName)
+        : isSet(object.secret_name)
+        ? globalThis.String(object.secret_name)
+        : undefined,
+      secretStore: isSet(object.secretStore)
+        ? secretStoreFromJSON(object.secretStore)
+        : isSet(object.secret_store)
+        ? secretStoreFromJSON(object.secret_store)
         : undefined,
     };
   },
@@ -12518,8 +12572,11 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
     if (message.workspacePath !== undefined) {
       obj.workspacePath = message.workspacePath;
     }
-    if (message.apiKeyKeychainName !== undefined) {
-      obj.apiKeyKeychainName = message.apiKeyKeychainName;
+    if (message.secretName !== undefined) {
+      obj.secretName = message.secretName;
+    }
+    if (message.secretStore !== undefined) {
+      obj.secretStore = secretStoreToJSON(message.secretStore);
     }
     return obj;
   },
@@ -12536,7 +12593,8 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
     message.baseUrl = object.baseUrl ?? undefined;
     message.target = object.target ?? undefined;
     message.workspacePath = object.workspacePath ?? undefined;
-    message.apiKeyKeychainName = object.apiKeyKeychainName ?? undefined;
+    message.secretName = object.secretName ?? undefined;
+    message.secretStore = object.secretStore ?? undefined;
     return message;
   },
 };

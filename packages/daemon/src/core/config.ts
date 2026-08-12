@@ -73,7 +73,14 @@ export interface ModelConfig {
 export interface ProviderConfig {
   /** Actual engine type: "openrouter", "openai", "anthropic", etc. */
   engine: string;
-  /** Keychain key name for API key */
+  /**
+   * Logical secret name in the daemon secret store (memory or OS keychain).
+   * Preferred over {@link api_key_keychain_name}.
+   */
+  secret_name?: string;
+  /**
+   * @deprecated Use {@link secret_name}. Kept for existing YAML configs.
+   */
   api_key_keychain_name?: string;
   /** Environment variable name for API key */
   api_key_env_var_name?: string;
@@ -81,6 +88,11 @@ export interface ProviderConfig {
   base_url?: string;
   /** Enabled models: key = virtual model name, value = model config */
   models?: Record<string, ModelConfig>;
+}
+
+/** Resolve the secret-store lookup name (secret_name preferred). */
+export function providerSecretName(cfg: ProviderConfig): string | undefined {
+  return cfg.secret_name || cfg.api_key_keychain_name;
 }
 
 /**
@@ -291,6 +303,13 @@ export function loadConfigFromPath(configPath: string): ConfigFile | null {
  * (backward compat with the old 1:1 mapping).
  */
 function migrateProviderConfig(provId: string, cfg: Record<string, unknown>): void {
+  // Prefer secret_name; mirror legacy api_key_keychain_name either direction.
+  if (cfg.secret_name && !cfg.api_key_keychain_name) {
+    cfg.api_key_keychain_name = cfg.secret_name;
+  } else if (cfg.api_key_keychain_name && !cfg.secret_name) {
+    cfg.secret_name = cfg.api_key_keychain_name;
+  }
+
   // If already new format (has engine field), just rename api_base → base_url
   if (cfg.engine) {
     if (cfg.api_base && !cfg.base_url) {
