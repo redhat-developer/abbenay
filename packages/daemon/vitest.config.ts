@@ -4,6 +4,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    server: {
+      deps: {
+        inline: ['keytar'],
+      },
+    },
     testTimeout: 30000,
     hookTimeout: 15000,
     include: [
