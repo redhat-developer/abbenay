@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   deletePassword: vi.fn(),
 }));
 
-vi.mock('keytar', () => {
+function createDefaultKeytarMock() {
   const api = {
     getPassword: mocks.getPassword,
     setPassword: mocks.setPassword,
@@ -22,7 +22,13 @@ vi.mock('keytar', () => {
   };
 
   return { default: api, ...api };
-});
+}
+
+vi.mock('keytar', () => createDefaultKeytarMock());
+
+function registerDefaultKeytarMock(): void {
+  vi.doMock('keytar', () => createDefaultKeytarMock());
+}
 
 type KeychainInternals = {
   keytar: {
@@ -62,6 +68,7 @@ describe('KeychainSecretStore', () => {
 
   beforeEach(() => {
     vi.doUnmock('keytar');
+    registerDefaultKeytarMock();
     vi.resetModules();
     mocks.getPassword.mockReset();
     mocks.setPassword.mockReset();
@@ -80,7 +87,7 @@ describe('KeychainSecretStore', () => {
     }));
     const { KeychainSecretStore } = await import('./keychain.js');
     const store = new KeychainSecretStore();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.dynamicImportSettled();
     return store;
   }
 
@@ -94,7 +101,7 @@ describe('KeychainSecretStore', () => {
   async function loadStore(setup?: (internals: KeychainInternals) => void) {
     const { KeychainSecretStore } = await import('./keychain.js');
     const store = new KeychainSecretStore();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.dynamicImportSettled();
     const internals = store as unknown as KeychainInternals;
     internals.keytar = null;
     internals.loadError = null;
