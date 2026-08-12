@@ -18,6 +18,7 @@ import {
   type ConsumerCapability,
 } from './consumer-auth.js';
 import type { ConfigFile } from '../../core/config.js';
+import { withEnv } from './test-env.js';
 
 function mockGrpcCall(token?: string): { metadata: grpc.Metadata } {
   const metadata = new grpc.Metadata();
@@ -36,17 +37,6 @@ const ALL_CAPS: Record<ConsumerCapability, boolean> = {
   shutdown: true,
   chat: true,
 };
-
-function withEnv(key: string, value: string, fn: () => void): void {
-  const prev = process.env[key];
-  process.env[key] = value;
-  try {
-    fn();
-  } finally {
-    if (prev === undefined) delete process.env[key];
-    else process.env[key] = prev;
-  }
-}
 
 describe('timingSafeEqualString', () => {
   it('returns true for equal strings', () => {
@@ -90,7 +80,7 @@ describe('hasConfiguredConsumers / resolveAllowOpenAuth / buildConsumerAuthConte
   });
 
   it('builds loopback-only context without TCP port', () => {
-    expect(buildConsumerAuthContext({})).toEqual({
+    expect(buildConsumerAuthContext({ env: {} })).toEqual({
       loopbackOnly: true,
       allowOpenAuth: false,
     });
@@ -100,16 +90,18 @@ describe('hasConfiguredConsumers / resolveAllowOpenAuth / buildConsumerAuthConte
     expect(buildConsumerAuthContext({
       grpcPort: 50051,
       grpcHost: '0.0.0.0',
+      env: {},
     })).toEqual({ loopbackOnly: false, allowOpenAuth: false });
 
     expect(buildConsumerAuthContext({
       grpcPort: 50051,
       grpcHost: '127.0.0.1',
+      env: {},
     })).toEqual({ loopbackOnly: true, allowOpenAuth: false });
   });
 
   it('defaults grpcHost to loopback when grpcPort set without host', () => {
-    expect(buildConsumerAuthContext({ grpcPort: 50051 })).toEqual({
+    expect(buildConsumerAuthContext({ grpcPort: 50051, env: {} })).toEqual({
       loopbackOnly: true,
       allowOpenAuth: false,
     });
@@ -157,18 +149,20 @@ describe('assertConsumersConfiguredForBind', () => {
 describe('matchConsumerByToken', () => {
   afterEach(() => {
     delete process.env.TEST_CONSUMER_TOKEN;
+    delete process.env.NOT_SET_ENV;
+    delete process.env.ABBENAY_ALLOW_OPEN_AUTH;
   });
 
   it('matches with timing-safe compare', () => {
-    process.env.TEST_CONSUMER_TOKEN = 'tok-abc';
     const config: ConfigFile = {
       consumers: {
         apme: { token_env: 'TEST_CONSUMER_TOKEN', capabilities: { chat: true } },
       },
     };
-    expect(matchConsumerByToken(config, 'tok-abc')).toBe('apme');
-    expect(matchConsumerByToken(config, 'wrong')).toBeUndefined();
-    expect(matchConsumerByToken(config, undefined)).toBeUndefined();
+    const env = { TEST_CONSUMER_TOKEN: 'tok-abc' };
+    expect(matchConsumerByToken(config, 'tok-abc', env)).toBe('apme');
+    expect(matchConsumerByToken(config, 'wrong', env)).toBeUndefined();
+    expect(matchConsumerByToken(config, undefined, env)).toBeUndefined();
   });
 
   it('skips consumers with missing token env values', () => {
@@ -178,9 +172,8 @@ describe('matchConsumerByToken', () => {
         apme: { token_env: 'TEST_CONSUMER_TOKEN', capabilities: { chat: true } },
       },
     };
-    withEnv('TEST_CONSUMER_TOKEN', 'tok-abc', () => {
-      expect(matchConsumerByToken(config, 'tok-abc')).toBe('apme');
-    });
+    const env = { TEST_CONSUMER_TOKEN: 'tok-abc' };
+    expect(matchConsumerByToken(config, 'tok-abc', env)).toBe('apme');
   });
 
   // Config file order — not a security tie-breaker.
@@ -242,8 +235,8 @@ describe('authorizeConsumer', () => {
     expect(result.allowed).toBe(true);
   });
 
-  it('rejects when consumers configured but no token provided', () => {
-    withEnv('TEST_TOKEN', 'secret123', () => {
+  it('rejects when consumers configured but no token provided', async () => {
+    await withEnv('TEST_TOKEN', 'secret123', () => {
       const result = authorizeConsumer(mockGrpcCall(), {
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { inline_policy: true } },
@@ -254,8 +247,8 @@ describe('authorizeConsumer', () => {
     });
   });
 
-  it('rejects wrong token', () => {
-    withEnv('TEST_TOKEN', 'secret123', () => {
+  it('rejects wrong token', async () => {
+    await withEnv('TEST_TOKEN', 'secret123', () => {
       const result = authorizeConsumer(mockGrpcCall('wrong-token'), {
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { secrets: true } },
@@ -266,8 +259,8 @@ describe('authorizeConsumer', () => {
     });
   });
 
-  it('allows when token matches with required capability', () => {
-    withEnv('TEST_TOKEN', 'secret123', () => {
+  it('allows when token matches with required capability', async () => {
+    await withEnv('TEST_TOKEN', 'secret123', () => {
       const result = authorizeConsumer(mockGrpcCall('secret123'), {
         consumers: {
           apme: { token_env: 'TEST_TOKEN', capabilities: { secrets: true } },
@@ -278,8 +271,8 @@ describe('authorizeConsumer', () => {
     });
   });
 
-  it('capability matrix: deny when capability missing', () => {
-    withEnv('TEST_TOKEN', 'secret123', () => {
+  it('capability matrix: deny when capability missing', async () => {
+    await withEnv('TEST_TOKEN', 'secret123', () => {
       const cases: ConsumerCapability[] = [
         'secrets', 'config', 'providers', 'shutdown', 'chat', 'mcp_register', 'inline_policy',
       ];
@@ -294,8 +287,8 @@ describe('authorizeConsumer', () => {
     });
   });
 
-  it('capability matrix: allow each capability independently', () => {
-    withEnv('TEST_TOKEN', 'secret123', () => {
+  it('capability matrix: allow each capability independently', async () => {
+    await withEnv('TEST_TOKEN', 'secret123', () => {
       const cases: ConsumerCapability[] = [
         'secrets', 'config', 'providers', 'shutdown', 'chat', 'mcp_register', 'inline_policy',
       ];
@@ -314,8 +307,8 @@ describe('authorizeConsumer', () => {
     });
   });
 
-  it('allows full-capability consumer for all gated ops', () => {
-    withEnv('TEST_TOKEN', 'full-token', () => {
+  it('allows full-capability consumer for all gated ops', async () => {
+    await withEnv('TEST_TOKEN', 'full-token', () => {
       for (const capability of Object.keys(ALL_CAPS) as ConsumerCapability[]) {
         const result = authorizeConsumer(mockGrpcCall('full-token'), {
           consumers: {
@@ -327,8 +320,8 @@ describe('authorizeConsumer', () => {
     });
   });
 
-  it('rejects secrets when consumer only has chat', () => {
-    withEnv('TEST_TOKEN', 't', () => {
+  it('rejects secrets when consumer only has chat', async () => {
+    await withEnv('TEST_TOKEN', 't', () => {
       const result = authorizeConsumer(mockGrpcCall('t'), {
         consumers: {
           chatter: { token_env: 'TEST_TOKEN', capabilities: { chat: true } },
@@ -338,8 +331,8 @@ describe('authorizeConsumer', () => {
     });
   });
 
-  it('rejects shutdown when consumer only has config', () => {
-    withEnv('TEST_TOKEN', 't', () => {
+  it('rejects shutdown when consumer only has config', async () => {
+    await withEnv('TEST_TOKEN', 't', () => {
       const result = authorizeConsumer(mockGrpcCall('t'), {
         consumers: {
           cfg: { token_env: 'TEST_TOKEN', capabilities: { config: true } },

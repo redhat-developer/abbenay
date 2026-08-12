@@ -117,17 +117,7 @@ import {
   authorizeInlinePolicy,
   DEFAULT_CONSUMER_AUTH_CONTEXT,
 } from './abbenay-service.js';
-
-async function withEnv(key: string, value: string, fn: () => void | Promise<void>): Promise<void> {
-  const prev = process.env[key];
-  process.env[key] = value;
-  try {
-    await fn();
-  } finally {
-    if (prev === undefined) delete process.env[key];
-    else process.env[key] = prev;
-  }
-}
+import { withEnv } from './test-env.js';
 
 describe('configFileToProto', () => {
   it('converts an empty config', () => {
@@ -871,16 +861,18 @@ describe('createAbbenayService handlers', () => {
   it('Shutdown acknowledges and schedules SIGTERM', async () => {
     vi.useFakeTimers();
     const emitSpy = vi.spyOn(process, 'emit').mockReturnValue(true as never);
-    const state = createMockState();
-    const service = createServiceHandlers(state);
+    try {
+      const state = createMockState();
+      const service = createServiceHandlers(state);
 
-    const { error } = await invokeUnary(service.Shutdown, {});
-    expect(error).toBeNull();
-    vi.advanceTimersByTime(150);
-    expect(emitSpy).toHaveBeenCalledWith('SIGTERM', 'SIGTERM');
-
-    emitSpy.mockRestore();
-    vi.useRealTimers();
+      const { error } = await invokeUnary(service.Shutdown, {});
+      expect(error).toBeNull();
+      vi.advanceTimersByTime(150);
+      expect(emitSpy).toHaveBeenCalledWith('SIGTERM', 'SIGTERM');
+    } finally {
+      emitSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('Session RPCs validate required fields', async () => {
@@ -1381,36 +1373,39 @@ describe('createAbbenayService handlers', () => {
 
   it('VSCodeStream registers connection and handles register_tools notification', async () => {
     vi.useFakeTimers();
-    const state = createMockState();
-    const service = createAbbenayService(state);
-    const handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
-    const call = {
-      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        handlers[event] = handlers[event] || [];
-        handlers[event].push(handler);
-      }),
-      end: vi.fn(),
-      write: vi.fn(),
-    };
+    try {
+      const state = createMockState();
+      const service = createAbbenayService(state);
+      const handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
+      const call = {
+        on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+          handlers[event] = handlers[event] || [];
+          handlers[event].push(handler);
+        }),
+        end: vi.fn(),
+        write: vi.fn(),
+      };
 
-    service.VSCodeStream(call as never);
-    expect(state.registerVSCodeConnection).toHaveBeenCalled();
+      service.VSCodeStream(call as never);
+      expect(state.registerVSCodeConnection).toHaveBeenCalled();
 
-    handlers.data?.[0]?.({ register_tools: { tools: [{ name: 't1' }] } });
-    expect(state.handleRegisterToolsNotification).toHaveBeenCalledWith(
-      'vscode-conn-1',
-      { tools: [{ name: 't1' }] },
-    );
+      handlers.data?.[0]?.({ register_tools: { tools: [{ name: 't1' }] } });
+      expect(state.handleRegisterToolsNotification).toHaveBeenCalledWith(
+        'vscode-conn-1',
+        { tools: [{ name: 't1' }] },
+      );
 
-    handlers.end?.[0]?.();
-    expect(state.unregisterVSCodeConnection).toHaveBeenCalledWith('vscode-conn-1');
-    expect(call.end).toHaveBeenCalled();
+      handlers.end?.[0]?.();
+      expect(state.unregisterVSCodeConnection).toHaveBeenCalledWith('vscode-conn-1');
+      expect(call.end).toHaveBeenCalled();
 
-    handlers.error?.[0]?.(new Error('stream failed'));
-    expect(state.unregisterVSCodeConnection).toHaveBeenCalledTimes(2);
+      handlers.error?.[0]?.(new Error('stream failed'));
+      expect(state.unregisterVSCodeConnection).toHaveBeenCalledTimes(2);
 
-    await vi.advanceTimersByTimeAsync(150);
-    vi.useRealTimers();
+      await vi.advanceTimersByTimeAsync(150);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('ListEngines returns engine metadata', async () => {
@@ -2165,9 +2160,16 @@ describe('createAbbenayService handlers', () => {
     });
     const service = createServiceHandlers(state);
 
-    await invokeUnary(service.Register, { client_type: 'CLIENT_TYPE_CLI', is_spawner: true });
-    await invokeUnary(service.Register, { client_type: 'CLIENT_TYPE_NODEJS', is_spawner: false });
-    await invokeUnary(service.ListModels, { workspacePaths: ['/ws'] });
+    const cliReg = await invokeUnary(service.Register, { client_type: 'CLIENT_TYPE_CLI', is_spawner: true });
+    const nodeReg = await invokeUnary(service.Register, { client_type: 'CLIENT_TYPE_NODEJS', is_spawner: false });
+    expect(cliReg.error).toBeNull();
+    expect(nodeReg.error).toBeNull();
+    expect(state.registerClient).toHaveBeenCalledTimes(2);
+
+    const models = await invokeUnary(service.ListModels, { workspacePaths: ['/ws'] });
+    expect(models.error).toBeNull();
+    expect(state.listModels).toHaveBeenCalledWith(['/ws']);
+
     const status = await invokeUnary(service.GetStatus, {});
     expect(rpcArray<{ client_type: number }>(status.response, 'clients').map((c) => c.client_type)).toEqual([1, 0]);
 
@@ -2192,12 +2194,34 @@ describe('createAbbenayService handlers', () => {
     await vi.waitFor(() => expect(chatCall.call.end).toHaveBeenCalled());
 
     mockGenerateSessionSummary.mockResolvedValueOnce('generated');
-    await invokeUnary(service.SummarizeSession, { sessionId: 'sess-1', summarizeModel: 'mock/fast' });
-    await invokeUnary(service.GetSession, { sessionId: 'sess-1', includeMessages: false });
-    await invokeUnary(service.ListSessions, { modelFilter: 'mock/echo' });
-    await invokeUnary(service.DeleteSession, { sessionId: 'sess-1' });
-    await invokeUnary(service.ReconnectMcpServer, { serverId: 'dyn-ok' });
-    await invokeUnary(service.ConfigureProvider, {
+    const summarize = await invokeUnary(service.SummarizeSession, {
+      sessionId: 'sess-1',
+      summarizeModel: 'mock/fast',
+    });
+    expect(summarize.error).toBeNull();
+    expect(mockGenerateSessionSummary).toHaveBeenCalled();
+    expect(state.sessionStore.updateSummary).toHaveBeenCalledWith('sess-1', 'generated', expect.any(Number));
+
+    const getSession = await invokeUnary(service.GetSession, {
+      sessionId: 'sess-1',
+      includeMessages: false,
+    });
+    expect(getSession.error).toBeNull();
+    expect(state.sessionStore.getOwned).toHaveBeenCalledWith('sess-1', expect.any(String), false);
+
+    const listSessions = await invokeUnary(service.ListSessions, { modelFilter: 'mock/echo' });
+    expect(listSessions.error).toBeNull();
+    expect(state.sessionStore.list).toHaveBeenCalledWith(expect.objectContaining({ model: 'mock/echo' }));
+
+    const deleteSession = await invokeUnary(service.DeleteSession, { sessionId: 'sess-1' });
+    expect(deleteSession.error).toBeNull();
+    expect(state.sessionStore.deleteOwned).toHaveBeenCalledWith('sess-1', expect.any(String));
+
+    const reconnect = await invokeUnary(service.ReconnectMcpServer, { serverId: 'dyn-ok' });
+    expect(reconnect.error).toBeNull();
+    expect(state.mcpClientPool.reconnect).toHaveBeenCalledWith('dyn-ok');
+
+    const configure = await invokeUnary(service.ConfigureProvider, {
       providerId: 'my-mock',
       engine: 'mock',
       apiKey: 'k',
@@ -2205,11 +2229,16 @@ describe('createAbbenayService handlers', () => {
       target: 'workspace',
       workspacePath: '/tmp/project',
     });
-    await invokeUnary(service.RemoveProvider, {
+    expect(configure.error).toBeNull();
+    expect(mockSaveWorkspaceConfig).toHaveBeenCalled();
+
+    const remove = await invokeUnary(service.RemoveProvider, {
       providerId: 'my-mock',
       target: 'workspace',
       workspacePath: '/tmp/project',
     });
+    expect(remove.error).toBeNull();
+    expect(mockSaveWorkspaceConfig).toHaveBeenCalledWith('/tmp/project', expect.any(Object));
 
     const mcp = await invokeUnary(service.ListMcpServerConfigs, {});
     const byId = Object.fromEntries(rpcArray<{ id: string; status: string }>(mcp.response, 'mcp_servers').map((s) => [s.id, s]));
@@ -2287,38 +2316,40 @@ describe('createAbbenayService handlers', () => {
 
   it('VSCodeStream requests workspace/tools and routes generic responses', async () => {
     vi.useFakeTimers();
-    const requestWorkspace = vi.fn()
-      .mockRejectedValueOnce(new Error('workspace failed'))
-      .mockResolvedValue({ workspacePath: '/ws', workspaceFolders: ['/ws'] });
-    const requestVSCodeTools = vi.fn().mockRejectedValue(new Error('tools failed'));
-    const state = createMockState({ requestWorkspace, requestVSCodeTools });
-    const service = createAbbenayService(state);
-    const handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
-    const call = {
-      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        handlers[event] = handlers[event] || [];
-        handlers[event].push(handler);
-      }),
-      end: vi.fn(),
-      write: vi.fn(),
-    };
-
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    service.VSCodeStream(call as never);
+    try {
+      const requestWorkspace = vi.fn()
+        .mockRejectedValueOnce(new Error('workspace failed'))
+        .mockResolvedValue({ workspacePath: '/ws', workspaceFolders: ['/ws'] });
+      const requestVSCodeTools = vi.fn().mockRejectedValue(new Error('tools failed'));
+      const state = createMockState({ requestWorkspace, requestVSCodeTools });
+      const service = createAbbenayService(state);
+      const handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
+      const call = {
+        on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+          handlers[event] = handlers[event] || [];
+          handlers[event].push(handler);
+        }),
+        end: vi.fn(),
+        write: vi.fn(),
+      };
 
-    handlers.data?.[0]?.({ ping: true });
-    expect(state.handleVSCodeResponse).toHaveBeenCalledWith('vscode-conn-1', { ping: true });
+      service.VSCodeStream(call as never);
 
-    await vi.advanceTimersByTimeAsync(100);
-    expect(errorSpy).toHaveBeenCalledWith('[gRPC] Failed to get workspace from VS Code: workspace failed');
+      handlers.data?.[0]?.({ ping: true });
+      expect(state.handleVSCodeResponse).toHaveBeenCalledWith('vscode-conn-1', { ping: true });
 
-    service.VSCodeStream(call as never);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(warnSpy).toHaveBeenCalledWith('[gRPC] Failed to get VS Code tools: tools failed');
+      await vi.advanceTimersByTimeAsync(100);
+      expect(errorSpy).toHaveBeenCalledWith('[gRPC] Failed to get workspace from VS Code: workspace failed');
 
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
-    vi.useRealTimers();
+      service.VSCodeStream(call as never);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(warnSpy).toHaveBeenCalledWith('[gRPC] Failed to get VS Code tools: tools failed');
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
