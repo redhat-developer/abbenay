@@ -845,7 +845,12 @@ disconnect. `SECRET_STORE_ENV` is rejected on write; env credentials remain
 read-only via provider `api_key_env_var_name`. Configure / `addProvider`
 continue to write keychain only. `api_key_keychain_name` remains a logical
 lookup name into the composite store (not “must be OS keychain”).
+`ConfigureProvider` / HTTP configure accept `api_key_keychain_name` to
+reference an existing named secret (N providers → 1 key). Raw `api_key`
+alone remains a legacy shortcut that invents `${PROVIDER_ID}_API_KEY`.
 **Rationale:** Ephemeral keys for clients that must not persist credentials
 were already sketched (`MemorySecretStore`, proto `SECRET_STORE_MEMORY`) but
 unused by the daemon. Mutual exclusivity avoids overlay/sync/refresh bugs.
-Defaulting unspecified store to keychain preserves existing callers.
+Defaulting unspecified store to keychain preserves existing callers. Keys are
+not 1:1 with providers — configure should pick a secret by name after
+`SetSecret`, not invent a private key name per provider.

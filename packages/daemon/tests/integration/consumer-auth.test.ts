@@ -270,6 +270,54 @@ describe('Consumer auth RPC gating', () => {
     expect(res.success).toBe(true);
   });
 
+  it('ConfigureProvider references an existing named secret (N:1)', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'SHARED_OPENAI',
+      value: 'sk-shared',
+      store: 'SECRET_STORE_MEMORY',
+    }, GOOD_TOKEN);
+
+    const res = await callUnary(client, 'ConfigureProvider', {
+      provider_id: 'work-openai',
+      engine: 'mock',
+      api_key_keychain_name: 'SHARED_OPENAI',
+    }, GOOD_TOKEN);
+    expect(res.success).toBe(true);
+
+    const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+      providers: { 'work-openai': { api_key_keychain_name?: string } };
+    };
+    expect(saved.providers['work-openai'].api_key_keychain_name).toBe('SHARED_OPENAI');
+    // Reference path must not invent a provider-scoped key name or rewrite the secret.
+    expect(mockSecretStoreData.has('WORK-OPENAI_API_KEY')).toBe(false);
+  });
+
+  it('ConfigureProvider rejects missing api_key_keychain_name', async () => {
+    await expect(
+      callUnary(client, 'ConfigureProvider', {
+        provider_id: 'missing-key-provider',
+        engine: 'mock',
+        api_key_keychain_name: 'DOES_NOT_EXIST',
+      }, GOOD_TOKEN),
+    ).rejects.toMatchObject({ code: grpc.status.INVALID_ARGUMENT });
+  });
+
+  it('ConfigureProvider stores api_key under an explicit keychain name', async () => {
+    const res = await callUnary(client, 'ConfigureProvider', {
+      provider_id: 'named-write',
+      engine: 'mock',
+      api_key: 'sk-explicit',
+      api_key_keychain_name: 'MY_EXPLICIT_KEY',
+    }, GOOD_TOKEN);
+    expect(res.success).toBe(true);
+    expect(mockSecretStoreData.get('MY_EXPLICIT_KEY')).toBe('sk-explicit');
+
+    const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+      providers: { 'named-write': { api_key_keychain_name?: string } };
+    };
+    expect(saved.providers['named-write'].api_key_keychain_name).toBe('MY_EXPLICIT_KEY');
+  });
+
   it('denies Shutdown without shutdown capability', async () => {
     await expectPermissionDenied(callUnary(client, 'Shutdown', {}, 'chat-only'));
   });

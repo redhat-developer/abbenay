@@ -322,6 +322,8 @@ interface ConfigureProviderRequestProto {
   target?: string;
   workspace_path?: string;
   workspacePath?: string;
+  api_key_keychain_name?: string;
+  apiKeyKeychainName?: string;
 }
 
 interface RemoveProviderRequestProto {
@@ -1708,6 +1710,8 @@ export function createAbbenayService(
           const engine = call.request.engine;
           const apiKey = call.request.api_key || call.request.apiKey;
           const envVarName = call.request.env_var_name || call.request.envVarName;
+          const keychainNameRef =
+            call.request.api_key_keychain_name || call.request.apiKeyKeychainName;
           const baseUrl = call.request.base_url || call.request.baseUrl;
           const target = call.request.target || 'user';
           const workspacePath = call.request.workspace_path || call.request.workspacePath;
@@ -1758,11 +1762,40 @@ export function createAbbenayService(
 
           config.providers[providerId] = existing as DaemonProviderConfig;
 
+          if (apiKey && envVarName) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: 'Provide only one of api_key or env_var_name',
+            });
+            return;
+          }
+          if (keychainNameRef && envVarName) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: 'Provide only one of api_key_keychain_name or env_var_name',
+            });
+            return;
+          }
+
           if (apiKey) {
-            const keychainName = `${providerId.toUpperCase()}_API_KEY`;
+            // Explicit name, or legacy invent from provider id (1:1 shortcut).
+            const keychainName = keychainNameRef || `${providerId.toUpperCase()}_API_KEY`;
             await state.secretStore.set(keychainName, apiKey);
             auditSecretChange({ key: keychainName, op: 'set', source: 'grpc-configure' });
             config.providers[providerId].api_key_keychain_name = keychainName;
+            delete config.providers[providerId].api_key_env_var_name;
+          } else if (keychainNameRef) {
+            // Reference an existing named secret (N:1 — many providers, one key).
+            const exists = await state.secretStore.has(keychainNameRef);
+            if (!exists) {
+              callback({
+                code: grpc.status.INVALID_ARGUMENT,
+                message:
+                  `Secret "${keychainNameRef}" not found; SetSecret first or pass api_key`,
+              });
+              return;
+            }
+            config.providers[providerId].api_key_keychain_name = keychainNameRef;
             delete config.providers[providerId].api_key_env_var_name;
           } else if (envVarName) {
             config.providers[providerId].api_key_env_var_name = envVarName;

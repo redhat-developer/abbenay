@@ -1098,12 +1098,22 @@ class ConsumerConfigMsg(_message.Message):
     def __init__(self, token_env: _Optional[str] = ..., token_keychain: _Optional[str] = ..., capabilities: _Optional[_Union[ConsumerCapabilitiesMsg, _Mapping]] = ...) -> None: ...
 
 class ConsumerCapabilitiesMsg(_message.Message):
-    __slots__ = ("inline_policy", "mcp_register")
+    __slots__ = ("inline_policy", "mcp_register", "secrets", "config", "providers", "shutdown", "chat")
     INLINE_POLICY_FIELD_NUMBER: _ClassVar[int]
     MCP_REGISTER_FIELD_NUMBER: _ClassVar[int]
+    SECRETS_FIELD_NUMBER: _ClassVar[int]
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
+    PROVIDERS_FIELD_NUMBER: _ClassVar[int]
+    SHUTDOWN_FIELD_NUMBER: _ClassVar[int]
+    CHAT_FIELD_NUMBER: _ClassVar[int]
     inline_policy: bool
     mcp_register: bool
-    def __init__(self, inline_policy: bool = ..., mcp_register: bool = ...) -> None: ...
+    secrets: bool
+    config: bool
+    providers: bool
+    shutdown: bool
+    chat: bool
+    def __init__(self, inline_policy: bool = ..., mcp_register: bool = ..., secrets: bool = ..., config: bool = ..., providers: bool = ..., shutdown: bool = ..., chat: bool = ...) -> None: ...
 
 class UpdateConfigRequest(_message.Message):
     __slots__ = ("config", "location")
@@ -1114,7 +1124,7 @@ class UpdateConfigRequest(_message.Message):
     def __init__(self, config: _Optional[_Union[Config, _Mapping]] = ..., location: _Optional[str] = ...) -> None: ...
 
 class ConfigureProviderRequest(_message.Message):
-    __slots__ = ("provider_id", "engine", "api_key", "env_var_name", "base_url", "target", "workspace_path")
+    __slots__ = ("provider_id", "engine", "api_key", "env_var_name", "base_url", "target", "workspace_path", "api_key_keychain_name")
     PROVIDER_ID_FIELD_NUMBER: _ClassVar[int]
     ENGINE_FIELD_NUMBER: _ClassVar[int]
     API_KEY_FIELD_NUMBER: _ClassVar[int]
@@ -1122,6 +1132,7 @@ class ConfigureProviderRequest(_message.Message):
     BASE_URL_FIELD_NUMBER: _ClassVar[int]
     TARGET_FIELD_NUMBER: _ClassVar[int]
     WORKSPACE_PATH_FIELD_NUMBER: _ClassVar[int]
+    API_KEY_KEYCHAIN_NAME_FIELD_NUMBER: _ClassVar[int]
     provider_id: str
     engine: str
     api_key: str
@@ -1129,7 +1140,8 @@ class ConfigureProviderRequest(_message.Message):
     base_url: str
     target: str
     workspace_path: str
-    def __init__(self, provider_id: _Optional[str] = ..., engine: _Optional[str] = ..., api_key: _Optional[str] = ..., env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., target: _Optional[str] = ..., workspace_path: _Optional[str] = ...) -> None: ...
+    api_key_keychain_name: str
+    def __init__(self, provider_id: _Optional[str] = ..., engine: _Optional[str] = ..., api_key: _Optional[str] = ..., env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., target: _Optional[str] = ..., workspace_path: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ...) -> None: ...
 
 class ConfigureProviderResponse(_message.Message):
     __slots__ = ("success",)

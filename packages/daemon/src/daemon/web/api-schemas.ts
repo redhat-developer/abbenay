@@ -108,6 +108,8 @@ export const PostProviderConfigureBodySchema = z
   .object({
     engine: z.string().min(1).optional(),
     apiKey: z.string().min(1).optional(),
+    /** Logical secret name (SetSecret key). Prefer over inventing from provider id. */
+    apiKeyKeychainName: z.string().min(1).optional(),
     envVarName: z.string().min(1).optional(),
     /** Format-checked here; host policy applied in the route with server config. */
     baseUrl: ProviderBaseUrlSchema.optional(),
@@ -121,6 +123,20 @@ export const PostProviderConfigureBodySchema = z
         code: z.ZodIssueCode.custom,
         message: 'workspacePath is required when target is "workspace"',
         path: ['workspacePath'],
+      });
+    }
+    if (data.apiKey && data.envVarName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide only one of apiKey or envVarName',
+        path: ['apiKey'],
+      });
+    }
+    if (data.apiKeyKeychainName && data.envVarName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide only one of apiKeyKeychainName or envVarName',
+        path: ['apiKeyKeychainName'],
       });
     }
   });

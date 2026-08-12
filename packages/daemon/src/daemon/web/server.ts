@@ -1360,7 +1360,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      const { engine, apiKey, envVarName, baseUrl, target, workspacePath } = parsed.data;
+      const { engine, apiKey, apiKeyKeychainName, envVarName, baseUrl, target, workspacePath } =
+        parsed.data;
 
       let resolvedWorkspace: string | undefined;
       if (target === 'workspace' && workspacePath) {
@@ -1411,10 +1412,22 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       config.providers[providerId] = existing as ProviderConfig;
 
       if (apiKey) {
-        const keychainName = `${providerId.toUpperCase()}_API_KEY`;
+        // Explicit name, or legacy invent from provider id (1:1 shortcut).
+        const keychainName = apiKeyKeychainName || `${providerId.toUpperCase()}_API_KEY`;
         await state.secretStore.set(keychainName, apiKey);
         auditSecretChange({ key: keychainName, op: 'set', source: 'http-configure' });
         config.providers[providerId].api_key_keychain_name = keychainName;
+        delete config.providers[providerId].api_key_env_var_name;
+      } else if (apiKeyKeychainName) {
+        // Reference an existing named secret (N:1 — many providers, one key).
+        const exists = await state.secretStore.has(apiKeyKeychainName);
+        if (!exists) {
+          res.status(400).json({
+            error: `Secret "${apiKeyKeychainName}" not found; POST /api/secrets first or pass apiKey`,
+          });
+          return;
+        }
+        config.providers[providerId].api_key_keychain_name = apiKeyKeychainName;
         delete config.providers[providerId].api_key_env_var_name;
       } else if (envVarName) {
         config.providers[providerId].api_key_env_var_name = envVarName;

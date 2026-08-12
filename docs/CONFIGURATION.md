@@ -410,6 +410,19 @@ providers:
   compatibility
 - `SECRET_STORE_ENV` / `"store": "env"` is **not** writable via secrets APIs
 
+### Recommended workflow (keys are N:1 with providers)
+
+Secrets and providers are separate. Many providers may share one named key.
+
+1. **Add a secret by name** — `SetSecret` / `POST /api/secrets` (optionally
+   `store=memory`).
+2. **Configure the provider** — `ConfigureProvider` / `POST /api/provider/:id/configure`
+   with `api_key_keychain_name` / `apiKeyKeychainName` pointing at that name
+   (no value). The secret must already exist.
+3. Optionally pass raw `api_key` **with** `api_key_keychain_name` to store the
+   value under an explicit name in one step. Raw `api_key` alone still invents
+   `${PROVIDER_ID}_API_KEY` (legacy 1:1 shortcut).
+
 ### Option 2: Environment Variable (`api_key_env_var_name`)
 
 - Key read from environment variable at runtime

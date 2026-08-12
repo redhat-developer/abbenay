@@ -928,11 +928,15 @@ message UpdateConfigRequest {
 message ConfigureProviderRequest {
   string provider_id = 1;              // Virtual provider name
   optional string engine = 2;          // Engine type (e.g., "openai")
-  optional string api_key = 3;         // Raw API key (daemon stores in keychain)
+  optional string api_key = 3;         // Raw API key value (optional with api_key_keychain_name)
   optional string env_var_name = 4;    // Alternative: use env var for API key
   optional string base_url = 5;        // Custom API base URL
   optional string target = 6;          // "user" (default) or "workspace"
   optional string workspace_path = 7;  // Required if target is "workspace"
+  // Logical secret name (SetSecret key). Prefer this over inventing a name from
+  // provider_id. With api_key: store the value under this name. Without api_key:
+  // reference an existing secret (N providers may share one key).
+  optional string api_key_keychain_name = 8;
 }
 
 message ConfigureProviderResponse {

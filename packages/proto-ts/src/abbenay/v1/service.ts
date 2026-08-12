@@ -1189,7 +1189,27 @@ export interface ConsumerCapabilitiesMsg {
     | boolean
     | undefined;
   /** Allow dynamic MCP server registration */
-  mcpRegister?: boolean | undefined;
+  mcpRegister?:
+    | boolean
+    | undefined;
+  /** Allow secret read/write/list RPCs */
+  secrets?:
+    | boolean
+    | undefined;
+  /** Allow GetConfig / UpdateConfig / policy / web control */
+  config?:
+    | boolean
+    | undefined;
+  /** Allow ConfigureProvider / RemoveProvider / DiscoverModels */
+  providers?:
+    | boolean
+    | undefined;
+  /** Allow Shutdown RPC */
+  shutdown?:
+    | boolean
+    | undefined;
+  /** Allow Chat / SessionChat */
+  chat?: boolean | undefined;
 }
 
 export interface UpdateConfigRequest {
@@ -1207,7 +1227,7 @@ export interface ConfigureProviderRequest {
   engine?:
     | string
     | undefined;
-  /** Raw API key (daemon stores in keychain) */
+  /** Raw API key value (optional with api_key_keychain_name) */
   apiKey?:
     | string
     | undefined;
@@ -1224,7 +1244,15 @@ export interface ConfigureProviderRequest {
     | string
     | undefined;
   /** Required if target is "workspace" */
-  workspacePath?: string | undefined;
+  workspacePath?:
+    | string
+    | undefined;
+  /**
+   * Logical secret name (SetSecret key). Prefer this over inventing a name from
+   * provider_id. With api_key: store the value under this name. Without api_key:
+   * reference an existing secret (N providers may share one key).
+   */
+  apiKeyKeychainName?: string | undefined;
 }
 
 export interface ConfigureProviderResponse {
@@ -12059,7 +12087,15 @@ export const ConsumerConfigMsg: MessageFns<ConsumerConfigMsg> = {
 };
 
 function createBaseConsumerCapabilitiesMsg(): ConsumerCapabilitiesMsg {
-  return { inlinePolicy: undefined, mcpRegister: undefined };
+  return {
+    inlinePolicy: undefined,
+    mcpRegister: undefined,
+    secrets: undefined,
+    config: undefined,
+    providers: undefined,
+    shutdown: undefined,
+    chat: undefined,
+  };
 }
 
 export const ConsumerCapabilitiesMsg: MessageFns<ConsumerCapabilitiesMsg> = {
@@ -12069,6 +12105,21 @@ export const ConsumerCapabilitiesMsg: MessageFns<ConsumerCapabilitiesMsg> = {
     }
     if (message.mcpRegister !== undefined) {
       writer.uint32(16).bool(message.mcpRegister);
+    }
+    if (message.secrets !== undefined) {
+      writer.uint32(24).bool(message.secrets);
+    }
+    if (message.config !== undefined) {
+      writer.uint32(32).bool(message.config);
+    }
+    if (message.providers !== undefined) {
+      writer.uint32(40).bool(message.providers);
+    }
+    if (message.shutdown !== undefined) {
+      writer.uint32(48).bool(message.shutdown);
+    }
+    if (message.chat !== undefined) {
+      writer.uint32(56).bool(message.chat);
     }
     return writer;
   },
@@ -12096,6 +12147,46 @@ export const ConsumerCapabilitiesMsg: MessageFns<ConsumerCapabilitiesMsg> = {
           message.mcpRegister = reader.bool();
           continue;
         }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.secrets = reader.bool();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.config = reader.bool();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.providers = reader.bool();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.shutdown = reader.bool();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.chat = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -12117,6 +12208,11 @@ export const ConsumerCapabilitiesMsg: MessageFns<ConsumerCapabilitiesMsg> = {
         : isSet(object.mcp_register)
         ? globalThis.Boolean(object.mcp_register)
         : undefined,
+      secrets: isSet(object.secrets) ? globalThis.Boolean(object.secrets) : undefined,
+      config: isSet(object.config) ? globalThis.Boolean(object.config) : undefined,
+      providers: isSet(object.providers) ? globalThis.Boolean(object.providers) : undefined,
+      shutdown: isSet(object.shutdown) ? globalThis.Boolean(object.shutdown) : undefined,
+      chat: isSet(object.chat) ? globalThis.Boolean(object.chat) : undefined,
     };
   },
 
@@ -12128,6 +12224,21 @@ export const ConsumerCapabilitiesMsg: MessageFns<ConsumerCapabilitiesMsg> = {
     if (message.mcpRegister !== undefined) {
       obj.mcpRegister = message.mcpRegister;
     }
+    if (message.secrets !== undefined) {
+      obj.secrets = message.secrets;
+    }
+    if (message.config !== undefined) {
+      obj.config = message.config;
+    }
+    if (message.providers !== undefined) {
+      obj.providers = message.providers;
+    }
+    if (message.shutdown !== undefined) {
+      obj.shutdown = message.shutdown;
+    }
+    if (message.chat !== undefined) {
+      obj.chat = message.chat;
+    }
     return obj;
   },
 
@@ -12138,6 +12249,11 @@ export const ConsumerCapabilitiesMsg: MessageFns<ConsumerCapabilitiesMsg> = {
     const message = createBaseConsumerCapabilitiesMsg();
     message.inlinePolicy = object.inlinePolicy ?? undefined;
     message.mcpRegister = object.mcpRegister ?? undefined;
+    message.secrets = object.secrets ?? undefined;
+    message.config = object.config ?? undefined;
+    message.providers = object.providers ?? undefined;
+    message.shutdown = object.shutdown ?? undefined;
+    message.chat = object.chat ?? undefined;
     return message;
   },
 };
@@ -12229,6 +12345,7 @@ function createBaseConfigureProviderRequest(): ConfigureProviderRequest {
     baseUrl: undefined,
     target: undefined,
     workspacePath: undefined,
+    apiKeyKeychainName: undefined,
   };
 }
 
@@ -12254,6 +12371,9 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
     }
     if (message.workspacePath !== undefined) {
       writer.uint32(58).string(message.workspacePath);
+    }
+    if (message.apiKeyKeychainName !== undefined) {
+      writer.uint32(66).string(message.apiKeyKeychainName);
     }
     return writer;
   },
@@ -12321,6 +12441,14 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
           message.workspacePath = reader.string();
           continue;
         }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.apiKeyKeychainName = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -12359,6 +12487,11 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
         : isSet(object.workspace_path)
         ? globalThis.String(object.workspace_path)
         : undefined,
+      apiKeyKeychainName: isSet(object.apiKeyKeychainName)
+        ? globalThis.String(object.apiKeyKeychainName)
+        : isSet(object.api_key_keychain_name)
+        ? globalThis.String(object.api_key_keychain_name)
+        : undefined,
     };
   },
 
@@ -12385,6 +12518,9 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
     if (message.workspacePath !== undefined) {
       obj.workspacePath = message.workspacePath;
     }
+    if (message.apiKeyKeychainName !== undefined) {
+      obj.apiKeyKeychainName = message.apiKeyKeychainName;
+    }
     return obj;
   },
 
@@ -12400,6 +12536,7 @@ export const ConfigureProviderRequest: MessageFns<ConfigureProviderRequest> = {
     message.baseUrl = object.baseUrl ?? undefined;
     message.target = object.target ?? undefined;
     message.workspacePath = object.workspacePath ?? undefined;
+    message.apiKeyKeychainName = object.apiKeyKeychainName ?? undefined;
     return message;
   },
 };

@@ -64,6 +64,25 @@ describe('PostProviderConfigureBodySchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('accepts apiKeyKeychainName to pick an existing secret', () => {
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        apiKeyKeychainName: 'SHARED_OPENAI',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects apiKeyKeychainName together with envVarName', () => {
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        apiKeyKeychainName: 'SHARED',
+        envVarName: 'OPENAI_API_KEY',
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('PostPolicyBodySchema', () => {
