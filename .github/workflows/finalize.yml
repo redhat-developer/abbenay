@@ -64,6 +64,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
           REPO: ${{ github.repository }}
           # Trusted GitHub payload — not PR-controlled artifact content
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
@@ -78,12 +80,24 @@ jobs:
           fi
 
           # Fork PR head SHAs are often missing from the commits/{sha}/pulls API
-          # and workflow_run.pull_requests. Match an open PR by head OID instead.
+          # and workflow_run.pull_requests. Resolve via trusted head owner:branch,
+          # then require an exact head OID match (fail if 0 or >1).
           if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
-            PR_NUMBER=$(gh pr list --repo "${REPO}" --state open --limit 100 \
-              --json number,headRefOid \
-              --jq ".[] | select(.headRefOid == \"${HEAD_SHA}\") | .number" \
-              | head -n1)
+            if [[ -z "${HEAD_BRANCH}" || -z "${HEAD_REPOSITORY}" ]]; then
+              echo "::error::Missing workflow_run head_branch/head_repository for SHA ${HEAD_SHA}"
+              exit 1
+            fi
+            HEAD_OWNER="${HEAD_REPOSITORY%%/*}"
+            MATCHES=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPO}/pulls?state=open&head=${HEAD_OWNER}:${HEAD_BRANCH}" \
+              --jq "[.[] | select(.head.sha == \"${HEAD_SHA}\") | .number]")
+            MATCH_COUNT=$(jq 'length' <<< "${MATCHES}")
+            if [[ "${MATCH_COUNT}" -ne 1 ]]; then
+              echo "::error::Expected exactly one open PR for ${HEAD_OWNER}:${HEAD_BRANCH}@${HEAD_SHA}, found ${MATCH_COUNT}: ${MATCHES}"
+              exit 1
+            fi
+            PR_NUMBER=$(jq -r '.[0]' <<< "${MATCHES}")
           fi
 
           if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
