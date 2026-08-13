@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { withEnv } from './test-env.js';
+import { withEnv } from './with-env.js';
 
 describe('withEnv', () => {
   it('restores a previously set env value after the callback', async () => {

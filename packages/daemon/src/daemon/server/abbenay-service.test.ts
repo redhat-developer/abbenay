@@ -121,7 +121,7 @@ import {
   authorizeInlinePolicy,
   DEFAULT_CONSUMER_AUTH_CONTEXT,
 } from './abbenay-service.js';
-import { withEnv } from './test-env.js';
+import { withEnv } from '../../../tests/helpers/with-env.js';
 
 describe('configFileToProto', () => {
   it('converts an empty config', () => {

@@ -77,6 +77,15 @@ jobs:
               --jq '.[0].number // empty')
           fi
 
+          # Fork PR head SHAs are often missing from the commits/{sha}/pulls API
+          # and workflow_run.pull_requests. Match an open PR by head OID instead.
+          if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
+            PR_NUMBER=$(gh pr list --repo "${REPO}" --state open --limit 100 \
+              --json number,headRefOid \
+              --jq ".[] | select(.headRefOid == \"${HEAD_SHA}\") | .number" \
+              | head -n1)
+          fi
+
           if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
             echo "::error::Unable to resolve a trusted PR number for head SHA ${HEAD_SHA}"
             exit 1
