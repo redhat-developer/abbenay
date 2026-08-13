@@ -7,6 +7,7 @@ import { MemorySecretStore } from '../../core/secrets.js';
 import {
   SecretStoreRegistry,
   parseSecretStoreChoice,
+  requireNamespacedMemory,
   secretBackendToProto,
 } from './registry.js';
 
@@ -117,6 +118,24 @@ describe('parseSecretStoreChoice', () => {
   it('rejects unknown stores', () => {
     const result = parseSecretStoreChoice('vault');
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('requireNamespacedMemory', () => {
+  it('allows memory when a registry is present', async () => {
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const registry = new SecretStoreRegistry(new MemorySecretStore(), new MemorySecretStore());
+    expect(requireNamespacedMemory(registry, 'memory')).toEqual({ ok: true });
+    expect(requireNamespacedMemory(registry, 'keychain')).toEqual({ ok: true });
+  });
+
+  it('rejects memory when only a plain secret store is available', () => {
+    const result = requireNamespacedMemory(null, 'memory');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/memory|SecretStoreRegistry/i);
+    }
+    expect(requireNamespacedMemory(null, 'keychain')).toEqual({ ok: true });
   });
 });
 

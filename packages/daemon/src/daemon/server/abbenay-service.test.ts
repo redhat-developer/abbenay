@@ -1072,6 +1072,39 @@ describe('createAbbenayService handlers', () => {
       .toBe(grpc.status.INVALID_ARGUMENT);
   });
 
+  it('Secrets RPCs reject memory when secret store is not a registry', async () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    const state = createMockState({
+      secretStore: {
+        get: vi.fn().mockResolvedValue(null),
+        set,
+        delete: vi.fn().mockResolvedValue(true),
+        has: vi.fn().mockResolvedValue(false),
+      },
+    });
+    const service = createServiceHandlers(state);
+
+    for (const method of ['GetSecret', 'SetSecret', 'DeleteSecret'] as const) {
+      const req =
+        method === 'SetSecret'
+          ? { key: 'K', value: 'v', store: 'SECRET_STORE_MEMORY' }
+          : { key: 'K', store: 'SECRET_STORE_MEMORY' };
+      const { error } = await invokeUnary(service[method], req);
+      expect(error?.code, method).toBe(grpc.status.INVALID_ARGUMENT);
+      expect(error?.message, method).toMatch(/memory|SecretStoreRegistry/i);
+    }
+    expect(set).not.toHaveBeenCalled();
+
+    const configure = await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'plain-mem',
+      engine: 'mock',
+      api_key: 'x',
+      secret_store: 'SECRET_STORE_MEMORY',
+    });
+    expect(configure.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it('ListSecrets returns empty has_value rows when registry backends lack the key', async () => {
     mockGetEngine.mockImplementation((id: string) => (
       id === 'mock' ? { id: 'mock', requiresKey: false, defaultEnvVar: 'MOCK_API_KEY' }

@@ -116,6 +116,26 @@ export function isSecretStoreRegistry(store: SecretStore): store is SecretStoreR
 }
 
 /**
+ * Memory is only meaningful with {@link SecretStoreRegistry}. Reject it when the
+ * daemon is running a plain SecretStore so clients cannot request memory while
+ * the write silently lands in keychain (or another non-ephemeral backend).
+ */
+export function requireNamespacedMemory(
+  registry: SecretStoreRegistry | null,
+  backend: string,
+): { ok: true } | { ok: false; error: string } {
+  if (backend === 'memory' && !registry) {
+    return {
+      ok: false,
+      error:
+        'secret_store=memory requires a namespaced secret store (memory + keychain); ' +
+        'this daemon is not running with SecretStoreRegistry',
+    };
+  }
+  return { ok: true };
+}
+
+/**
  * Parse SetSecret / ConfigureProvider `store` / `secret_store` field.
  * Unspecified / omitted / keychain → keychain (default for writes).
  * ENV rejected for writes unless `allowEnv` (configure/reference only).

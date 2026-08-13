@@ -29,6 +29,7 @@ import { auditSecretChange } from '../../core/secrets.js';
 import {
   isSecretStoreRegistry,
   parseSecretStoreChoice,
+  requireNamespacedMemory,
   secretBackendToProto,
 } from '../secrets/registry.js';
 import {
@@ -814,6 +815,14 @@ export function createAbbenayService(
       }
 
       const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const memoryOk = requireNamespacedMemory(registry, parsed.backend);
+      if (!memoryOk.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: memoryOk.error,
+        });
+        return;
+      }
       const read = registry
         ? registry.getFrom(parsed.backend, key)
         : state.secretStore.get(key);
@@ -851,6 +860,14 @@ export function createAbbenayService(
       }
 
       const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const memoryOk = requireNamespacedMemory(registry, parsed.backend);
+      if (!memoryOk.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: memoryOk.error,
+        });
+        return;
+      }
       const write = registry
         ? registry.setIn(parsed.backend, key, value)
         : state.secretStore.set(key, value);
@@ -889,6 +906,14 @@ export function createAbbenayService(
       }
 
       const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const memoryOk = requireNamespacedMemory(registry, parsed.backend);
+      if (!memoryOk.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: memoryOk.error,
+        });
+        return;
+      }
       const remove = registry
         ? registry.deleteFrom(parsed.backend, key)
         : state.secretStore.delete(key);
@@ -1852,6 +1877,14 @@ export function createAbbenayService(
             // Explicit name, or legacy invent from provider id (1:1 shortcut).
             const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
             const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+            const memoryOk = requireNamespacedMemory(registry, storeChoice.backend);
+            if (!memoryOk.ok) {
+              callback({
+                code: grpc.status.INVALID_ARGUMENT,
+                message: memoryOk.error,
+              });
+              return;
+            }
             if (registry) {
               await registry.setIn(storeChoice.backend, secretName, apiKey);
             } else {
@@ -1891,6 +1924,14 @@ export function createAbbenayService(
                 delete config.providers[providerId].api_key_keychain_name;
               } else {
                 const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+                const memoryOk = requireNamespacedMemory(registry, storeChoice.backend);
+                if (!memoryOk.ok) {
+                  callback({
+                    code: grpc.status.INVALID_ARGUMENT,
+                    message: memoryOk.error,
+                  });
+                  return;
+                }
                 const exists = registry
                   ? await registry.hasIn(storeChoice.backend, secretNameRef)
                   : await state.secretStore.has(secretNameRef);
@@ -2007,7 +2048,8 @@ export function createAbbenayService(
                 const backend = providerCfg.secret_store === 'memory' ? 'memory' : 'keychain';
                 if (registry) {
                   await registry.deleteFrom(backend, secretName);
-                } else {
+                } else if (backend === 'keychain') {
+                  // Memory without a registry was never a valid write target.
                   await state.secretStore.delete(secretName);
                 }
                 auditSecretChange({ key: secretName, op: 'delete', source: 'grpc-configure' });
