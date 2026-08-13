@@ -32,7 +32,7 @@ Abbenay is a unified AI daemon and library written in TypeScript/Node.js that pr
 │                                                                          │
 │  ┌─ daemon layer ────────────────────────────────────────────────────┐   │
 │  │  DaemonState        gRPC Server               VS Code Backchannel │   │
-│  │  CLI (Commander)    Web Dashboard (Express)    KeychainSecretStore │   │
+│  │  CLI (Commander)    Web Dashboard (Express)    SecretStoreRegistry │   │
 │  └───────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 └──────────────────────────────────────────┬──────────────────────────────┘
@@ -87,6 +87,7 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/web/server.ts` | Express web server + REST API |
 | `daemon/web/openai-compat.ts` | OpenAI-compatible `/v1/*` routes (models, chat completions) |
 | `daemon/web/grpc-web-control.ts` | gRPC client for web server control |
+| `daemon/secrets/registry.ts` | `SecretStoreRegistry` (memory + keychain namespaces) |
 | `daemon/secrets/keychain.ts` | `KeychainSecretStore` (keytar native addon) |
 
 ## Components
@@ -184,7 +185,8 @@ Secrets are managed explicitly per-provider with two options:
   - macOS: Keychain
   - Linux: libsecret (GNOME Keyring / KDE Wallet)
   - Windows: Credential Vault
-- Config references key by name: `api_key_keychain_name: "OPENAI_API_KEY"`
+- Config references secret by name: `secret_name: "OPENAI_API_KEY"`
+  (legacy: `api_key_keychain_name`)
 
 ### Option 2: Environment Variable Reference
 - Config specifies env var name: `api_key_env_var_name: "OPENAI_API_KEY"`
@@ -203,7 +205,12 @@ interface SecretStore {
 }
 ```
 
-`CoreState` accepts any `SecretStore` via constructor injection. `DaemonState` uses `KeychainSecretStore` (keytar-backed) by default. Tests and library consumers can use `MemorySecretStore`.
+`CoreState` accepts any `SecretStore` via constructor injection. `DaemonState`
+uses `SecretStoreRegistry` (discrete process-lifetime `MemorySecretStore` +
+keytar-backed `KeychainSecretStore` namespaces; resolve via
+`(secret_store, secret_name)`) by default. Tests and library consumers can
+use `MemorySecretStore` alone. `NamespacedSecretStore` extends the interface
+for multi-backend `getFrom` / `setIn` / …
 
 ## Configuration
 

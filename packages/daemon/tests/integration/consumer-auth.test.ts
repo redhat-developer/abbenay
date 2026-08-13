@@ -43,6 +43,8 @@ vi.mock('../../src/core/config.js', () => ({
   getUserConfigPath: () => '/tmp/abbenay-test-config.yaml',
   getWorkspaceConfigPath: () => '/tmp/abbenay-test-ws-config.yaml',
   isValidVirtualName: (n: string) => /^[a-z0-9][a-z0-9._-]*$/.test(n),
+  providerSecretName: (cfg: { secret_name?: string; api_key_keychain_name?: string }) =>
+    cfg.secret_name || cfg.api_key_keychain_name,
 }));
 
 vi.mock('../../src/core/engines.js', () => ({
@@ -268,6 +270,109 @@ describe('Consumer auth RPC gating', () => {
       engine: 'mock',
     }, 'providers-only');
     expect(res.success).toBe(true);
+  });
+
+  it('ConfigureProvider references an existing named secret (N:1)', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'SHARED_OPENAI',
+      value: 'sk-shared',
+      store: 'SECRET_STORE_MEMORY',
+    }, GOOD_TOKEN);
+
+    const res = await callUnary(client, 'ConfigureProvider', {
+      provider_id: 'work-openai',
+      engine: 'mock',
+      secret_name: 'SHARED_OPENAI',
+      secret_store: 'SECRET_STORE_MEMORY',
+    }, GOOD_TOKEN);
+    expect(res.success).toBe(true);
+
+    const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+      providers: {
+        'work-openai': {
+          secret_name?: string;
+          secret_store?: string;
+          api_key_keychain_name?: string;
+        };
+      };
+    };
+    expect(saved.providers['work-openai'].secret_name).toBe('SHARED_OPENAI');
+    expect(saved.providers['work-openai'].secret_store).toBe('memory');
+    expect(saved.providers['work-openai'].api_key_keychain_name).toBe('SHARED_OPENAI');
+    // Reference path must not invent a provider-scoped key name or rewrite the secret.
+    expect(mockSecretStoreData.has('WORK-OPENAI_API_KEY')).toBe(false);
+  });
+
+  it('ConfigureProvider rejects missing secret_name', async () => {
+    await expect(
+      callUnary(client, 'ConfigureProvider', {
+        provider_id: 'missing-key-provider',
+        engine: 'mock',
+        secret_name: 'DOES_NOT_EXIST',
+      }, GOOD_TOKEN),
+    ).rejects.toMatchObject({ code: grpc.status.INVALID_ARGUMENT });
+  });
+
+  it('ConfigureProvider references env via secret_store=env', async () => {
+    process.env.ABBENAY_TEST_PROVIDER_ENV = 'sk-from-env';
+    try {
+      const res = await callUnary(client, 'ConfigureProvider', {
+        provider_id: 'env-openai',
+        engine: 'mock',
+        secret_name: 'ABBENAY_TEST_PROVIDER_ENV',
+        secret_store: 'SECRET_STORE_ENV',
+      }, GOOD_TOKEN);
+      expect(res.success).toBe(true);
+
+      const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+        providers: {
+          'env-openai': {
+            secret_name?: string;
+            secret_store?: string;
+            api_key_env_var_name?: string;
+          };
+        };
+      };
+      expect(saved.providers['env-openai'].secret_name).toBe('ABBENAY_TEST_PROVIDER_ENV');
+      expect(saved.providers['env-openai'].secret_store).toBe('env');
+      expect(saved.providers['env-openai'].api_key_env_var_name).toBe('ABBENAY_TEST_PROVIDER_ENV');
+    } finally {
+      delete process.env.ABBENAY_TEST_PROVIDER_ENV;
+    }
+  });
+
+  it('ConfigureProvider accepts secret_store=env even when the env var is unset', async () => {
+    delete process.env.ABBENAY_TEST_PROVIDER_ENV_MISSING;
+    const res = await callUnary(client, 'ConfigureProvider', {
+      provider_id: 'env-missing',
+      engine: 'mock',
+      secret_name: 'ABBENAY_TEST_PROVIDER_ENV_MISSING',
+      secret_store: 'SECRET_STORE_ENV',
+    }, GOOD_TOKEN);
+    expect(res.success).toBe(true);
+    const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+      providers: { 'env-missing': { secret_store?: string } };
+    };
+    expect(saved.providers['env-missing'].secret_store).toBe('env');
+  });
+
+  it('ConfigureProvider stores api_key under an explicit secret_name', async () => {
+    const res = await callUnary(client, 'ConfigureProvider', {
+      provider_id: 'named-write',
+      engine: 'mock',
+      api_key: 'sk-explicit',
+      secret_name: 'MY_EXPLICIT_KEY',
+      secret_store: 'SECRET_STORE_KEYCHAIN',
+    }, GOOD_TOKEN);
+    expect(res.success).toBe(true);
+    expect(mockSecretStoreData.get('MY_EXPLICIT_KEY')).toBe('sk-explicit');
+
+    const saved = mockSaveConfig.mock.calls.at(-1)?.[0] as {
+      providers: {
+        'named-write': { secret_name?: string; api_key_keychain_name?: string };
+      };
+    };
+    expect(saved.providers['named-write'].secret_name).toBe('MY_EXPLICIT_KEY');
   });
 
   it('denies Shutdown without shutdown capability', async () => {

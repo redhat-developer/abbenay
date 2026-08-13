@@ -22,9 +22,16 @@ import { maybeSummarize, generateSessionSummary } from '../../core/session-summa
 import {
   loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig,
   getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName,
+  providerSecretName, isProviderOwnedSecretName,
   type ConfigFile, type ProviderConfig as DaemonProviderConfig, type McpServerConfig,
 } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
+import {
+  isSecretStoreRegistry,
+  parseSecretStoreChoice,
+  requireNamespacedMemory,
+  secretBackendToProto,
+} from '../secrets/registry.js';
 import {
   auditProviderEndpointChange,
   auditProviderEndpointConfigDiff,
@@ -149,15 +156,19 @@ interface ChatRequestProto {
 
 interface GetSecretRequestProto {
   key: string;
+  store?: number | string;
 }
 
 interface SetSecretRequestProto {
   key: string;
   value: string;
+  /** Proto SecretStore enum: number or string name depending on codec. */
+  store?: number | string;
 }
 
 interface DeleteSecretRequestProto {
   key: string;
+  store?: number | string;
 }
 
 interface GetProviderStatusRequestProto {
@@ -255,6 +266,8 @@ interface FullProviderConfigProto {
   api_key_env_var_name?: string;
   base_url?: string;
   models?: Record<string, ModelParamConfigProto>;
+  secret_name?: string;
+  secret_store?: number | string;
 }
 
 interface ModelParamConfigProto {
@@ -315,6 +328,13 @@ interface ConfigureProviderRequestProto {
   target?: string;
   workspace_path?: string;
   workspacePath?: string;
+  secret_name?: string;
+  secretName?: string;
+  /** @deprecated Alias for secret_name (PR transition). */
+  api_key_keychain_name?: string;
+  apiKeyKeychainName?: string;
+  secret_store?: number | string;
+  secretStore?: number | string;
 }
 
 interface RemoveProviderRequestProto {
@@ -785,8 +805,29 @@ export function createAbbenayService(
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
       const key = call.request.key;
-      
-      state.secretStore.get(key).then((value) => {
+      const parsed = parseSecretStoreChoice(call.request.store);
+      if (!parsed.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: parsed.error,
+        });
+        return;
+      }
+
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const memoryOk = requireNamespacedMemory(registry, parsed.backend);
+      if (!memoryOk.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: memoryOk.error,
+        });
+        return;
+      }
+      const read = registry
+        ? registry.getFrom(parsed.backend, key)
+        : state.secretStore.get(key);
+
+      read.then((value) => {
         callback(null, {
           value: value || '',
           found: value !== null,
@@ -807,10 +848,34 @@ export function createAbbenayService(
       callback: grpc.sendUnaryData<object>
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
-      const { key, value } = call.request;
-      
-      state.secretStore.set(key, value).then(() => {
-        auditSecretChange({ key, op: 'set', source: 'grpc-secrets' });
+      const { key, value, store } = call.request;
+
+      const parsed = parseSecretStoreChoice(store);
+      if (!parsed.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: parsed.error,
+        });
+        return;
+      }
+
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const memoryOk = requireNamespacedMemory(registry, parsed.backend);
+      if (!memoryOk.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: memoryOk.error,
+        });
+        return;
+      }
+      const write = registry
+        ? registry.setIn(parsed.backend, key, value)
+        : state.secretStore.set(key, value);
+      const auditSource =
+        parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets';
+
+      write.then(() => {
+        auditSecretChange({ key, op: 'set', source: auditSource });
         callback(null, {});
         // Notify VS Code that models may have changed (new API key)
         state.notifyModelsChanged('secret_updated');
@@ -830,8 +895,36 @@ export function createAbbenayService(
       callback: grpc.sendUnaryData<object>
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
-      state.secretStore.delete(call.request.key).then(() => {
-        auditSecretChange({ key: call.request.key, op: 'delete', source: 'grpc-secrets' });
+      const key = call.request.key;
+      const parsed = parseSecretStoreChoice(call.request.store);
+      if (!parsed.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: parsed.error,
+        });
+        return;
+      }
+
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+      const memoryOk = requireNamespacedMemory(registry, parsed.backend);
+      if (!memoryOk.ok) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: memoryOk.error,
+        });
+        return;
+      }
+      const remove = registry
+        ? registry.deleteFrom(parsed.backend, key)
+        : state.secretStore.delete(key);
+
+      remove.then(() => {
+        auditSecretChange({
+          key,
+          op: 'delete',
+          source:
+            parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets',
+        });
         callback(null, {});
       }).catch((error: unknown) => {
         callback({
@@ -849,16 +942,39 @@ export function createAbbenayService(
       callback: grpc.sendUnaryData<object>
     ): void {
       if (!requireCapability(call, 'secrets', authContext, callback)) return;
-      // Return known key names with availability status
+      // Return known key names with availability status (one row per backend hit).
       const engines = getEngines();
+      const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
       const checks = engines.filter(e => e.requiresKey).map(async (e) => {
         const key = e.defaultEnvVar || `${e.id.toUpperCase()}_API_KEY`;
+        if (registry) {
+          const backends = await registry.locateAll(key);
+          if (backends.length === 0) {
+            return [{
+              key,
+              engine: e.id,
+              has_value: false,
+              store: secretBackendToProto(null),
+            }];
+          }
+          return backends.map((backend) => ({
+            key,
+            engine: e.id,
+            has_value: true,
+            store: secretBackendToProto(backend),
+          }));
+        }
         const hasValue = await state.secretStore.has(key);
-        return { key, engine: e.id, has_value: hasValue };
+        return [{
+          key,
+          engine: e.id,
+          has_value: hasValue,
+          store: secretBackendToProto(null),
+        }];
       });
       
-      Promise.all(checks).then((secrets) => {
-        callback(null, { secrets });
+      Promise.all(checks).then((groups) => {
+        callback(null, { secrets: groups.flat() });
       }).catch((error: unknown) => {
         callback({
           code: grpc.status.INTERNAL,
@@ -1678,6 +1794,12 @@ export function createAbbenayService(
           const engine = call.request.engine;
           const apiKey = call.request.api_key || call.request.apiKey;
           const envVarName = call.request.env_var_name || call.request.envVarName;
+          const secretNameRef =
+            call.request.secret_name ||
+            call.request.secretName ||
+            call.request.api_key_keychain_name ||
+            call.request.apiKeyKeychainName;
+          const secretStoreRaw = call.request.secret_store ?? call.request.secretStore;
           const baseUrl = call.request.base_url || call.request.baseUrl;
           const target = call.request.target || 'user';
           const workspacePath = call.request.workspace_path || call.request.workspacePath;
@@ -1728,13 +1850,129 @@ export function createAbbenayService(
 
           config.providers[providerId] = existing as DaemonProviderConfig;
 
+          if (apiKey && envVarName) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: 'Provide only one of api_key or env_var_name',
+            });
+            return;
+          }
+          if (secretNameRef && envVarName) {
+            callback({
+              code: grpc.status.INVALID_ARGUMENT,
+              message: 'Provide only one of secret_name or env_var_name',
+            });
+            return;
+          }
+
           if (apiKey) {
-            const keychainName = `${providerId.toUpperCase()}_API_KEY`;
-            await state.secretStore.set(keychainName, apiKey);
-            auditSecretChange({ key: keychainName, op: 'set', source: 'grpc-configure' });
-            config.providers[providerId].api_key_keychain_name = keychainName;
+            const storeChoice = parseSecretStoreChoice(secretStoreRaw);
+            if (!storeChoice.ok) {
+              callback({
+                code: grpc.status.INVALID_ARGUMENT,
+                message: storeChoice.error,
+              });
+              return;
+            }
+            // Explicit name, or legacy invent from provider id (1:1 shortcut).
+            const secretName = secretNameRef || `${providerId.toUpperCase()}_API_KEY`;
+            const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+            const memoryOk = requireNamespacedMemory(registry, storeChoice.backend);
+            if (!memoryOk.ok) {
+              callback({
+                code: grpc.status.INVALID_ARGUMENT,
+                message: memoryOk.error,
+              });
+              return;
+            }
+            if (registry) {
+              await registry.setIn(storeChoice.backend, secretName, apiKey);
+            } else {
+              await state.secretStore.set(secretName, apiKey);
+            }
+            const auditSource =
+              storeChoice.backend === 'memory' ? 'grpc-configure-memory' : 'grpc-configure';
+            auditSecretChange({ key: secretName, op: 'set', source: auditSource });
+            config.providers[providerId].secret_name = secretName;
+            config.providers[providerId].secret_store = storeChoice.backend;
+            config.providers[providerId].api_key_keychain_name = secretName;
             delete config.providers[providerId].api_key_env_var_name;
+          } else if (secretNameRef) {
+            const storeRaw = secretStoreRaw;
+            const wantsEnv =
+              storeRaw === 'env' ||
+              storeRaw === 'SECRET_STORE_ENV' ||
+              storeRaw === 2 ||
+              storeRaw === '2';
+
+            if (
+              wantsEnv ||
+              (storeRaw !== undefined && storeRaw !== null && storeRaw !== '')
+            ) {
+              const storeChoice = parseSecretStoreChoice(storeRaw, { allowEnv: true });
+              if (!storeChoice.ok) {
+                callback({
+                  code: grpc.status.INVALID_ARGUMENT,
+                  message: storeChoice.error,
+                });
+                return;
+              }
+              if (storeChoice.backend === 'env') {
+                config.providers[providerId].secret_name = secretNameRef;
+                config.providers[providerId].secret_store = 'env';
+                config.providers[providerId].api_key_env_var_name = secretNameRef;
+                delete config.providers[providerId].api_key_keychain_name;
+              } else {
+                const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+                const memoryOk = requireNamespacedMemory(registry, storeChoice.backend);
+                if (!memoryOk.ok) {
+                  callback({
+                    code: grpc.status.INVALID_ARGUMENT,
+                    message: memoryOk.error,
+                  });
+                  return;
+                }
+                const exists = registry
+                  ? await registry.hasIn(storeChoice.backend, secretNameRef)
+                  : await state.secretStore.has(secretNameRef);
+                if (!exists) {
+                  callback({
+                    code: grpc.status.INVALID_ARGUMENT,
+                    message:
+                      `Secret "${secretNameRef}" not found in ${storeChoice.backend}; ` +
+                      `SetSecret first or pass api_key`,
+                  });
+                  return;
+                }
+                config.providers[providerId].secret_name = secretNameRef;
+                config.providers[providerId].secret_store = storeChoice.backend;
+                config.providers[providerId].api_key_keychain_name = secretNameRef;
+                delete config.providers[providerId].api_key_env_var_name;
+              }
+            } else {
+              // No secret_store: default namespace is keychain.
+              const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
+              const exists = registry
+                ? await registry.hasIn('keychain', secretNameRef)
+                : await state.secretStore.has(secretNameRef);
+              if (!exists) {
+                callback({
+                  code: grpc.status.INVALID_ARGUMENT,
+                  message:
+                    `Secret "${secretNameRef}" not found in keychain; ` +
+                    `SetSecret first, pass api_key, or set secret_store`,
+                });
+                return;
+              }
+              config.providers[providerId].secret_name = secretNameRef;
+              config.providers[providerId].secret_store = 'keychain';
+              config.providers[providerId].api_key_keychain_name = secretNameRef;
+              delete config.providers[providerId].api_key_env_var_name;
+            }
           } else if (envVarName) {
+            // Legacy shortcut → secret_name + secret_store=env (var need not exist yet).
+            config.providers[providerId].secret_name = envVarName;
+            config.providers[providerId].secret_store = 'env';
             config.providers[providerId].api_key_env_var_name = envVarName;
             delete config.providers[providerId].api_key_keychain_name;
           }
@@ -1795,11 +2033,26 @@ export function createAbbenayService(
             : loadConfig()) || { providers: {} };
 
           if (config.providers && config.providers[providerId]) {
-            const keychainName = config.providers[providerId].api_key_keychain_name;
-            if (keychainName) {
+            const providerCfg = config.providers[providerId];
+            const secretName = providerSecretName(providerCfg);
+            // Env-backed names are not store keys; shared picks must outlive the provider.
+            if (
+              secretName &&
+              providerCfg.secret_store !== 'env' &&
+              isProviderOwnedSecretName(providerId, secretName)
+            ) {
               try {
-                await state.secretStore.delete(keychainName);
-                auditSecretChange({ key: keychainName, op: 'delete', source: 'grpc-configure' });
+                const registry = isSecretStoreRegistry(state.secretStore)
+                  ? state.secretStore
+                  : null;
+                const backend = providerCfg.secret_store === 'memory' ? 'memory' : 'keychain';
+                if (registry) {
+                  await registry.deleteFrom(backend, secretName);
+                } else if (backend === 'keychain') {
+                  // Memory without a registry was never a valid write target.
+                  await state.secretStore.delete(secretName);
+                }
+                auditSecretChange({ key: secretName, op: 'delete', source: 'grpc-configure' });
               } catch { /* ignore */ }
             }
             delete config.providers[providerId];
@@ -1855,8 +2108,15 @@ export function createAbbenayService(
       (async () => {
         try {
           let exists = false;
-          if (source === 'keychain') {
-            exists = await state.secretStore.has(name);
+          if (source === 'keychain' || source === 'memory') {
+            const registry = isSecretStoreRegistry(state.secretStore)
+              ? state.secretStore
+              : null;
+            exists = registry
+              ? await registry.hasIn(source, name)
+              : source === 'keychain'
+                ? await state.secretStore.has(name)
+                : false;
           } else if (source === 'env') {
             exists = !!process.env[name];
           }
@@ -2105,10 +2365,23 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
           };
         }
       }
+      const secretName = providerSecretName(pcfg);
       providers[pid] = {
         engine: pcfg.engine || pid,
-        api_key_keychain_name: pcfg.api_key_keychain_name,
-        api_key_env_var_name: pcfg.api_key_env_var_name,
+        secret_name: secretName,
+        secret_store:
+          pcfg.secret_store === 'env'
+            ? 2
+            : pcfg.secret_store === 'memory'
+              ? 3
+              : secretName
+                ? 1
+                : 0,
+        api_key_keychain_name: pcfg.secret_store === 'env' ? undefined : secretName,
+        api_key_env_var_name:
+          pcfg.secret_store === 'env'
+            ? secretName || pcfg.api_key_env_var_name
+            : pcfg.api_key_env_var_name,
         base_url: pcfg.base_url,
         models,
       };
@@ -2184,10 +2457,27 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
           };
         }
       }
+      const secretName = pcfg.secret_name || pcfg.api_key_keychain_name || undefined;
+      let secretStore: 'memory' | 'keychain' | 'env' | undefined;
+      if (pcfg.secret_store === 2 || pcfg.secret_store === 'SECRET_STORE_ENV' || pcfg.secret_store === 'env') {
+        secretStore = 'env';
+      } else if (pcfg.secret_store === 3 || pcfg.secret_store === 'SECRET_STORE_MEMORY' || pcfg.secret_store === 'memory') {
+        secretStore = 'memory';
+      } else if (pcfg.secret_store === 1 || pcfg.secret_store === 'SECRET_STORE_KEYCHAIN' || pcfg.secret_store === 'keychain') {
+        secretStore = 'keychain';
+      } else if (pcfg.api_key_env_var_name && !secretName) {
+        secretStore = 'env';
+      }
+      const envName =
+        secretStore === 'env'
+          ? (secretName || pcfg.api_key_env_var_name || undefined)
+          : (pcfg.api_key_env_var_name || undefined);
       config.providers[pid] = {
         engine: pcfg.engine || pid,
-        api_key_keychain_name: pcfg.api_key_keychain_name || undefined,
-        api_key_env_var_name: pcfg.api_key_env_var_name || undefined,
+        secret_name: secretStore === 'env' ? envName : secretName,
+        secret_store: secretStore,
+        api_key_keychain_name: secretStore === 'env' ? undefined : secretName,
+        api_key_env_var_name: envName,
         base_url: pcfg.base_url || undefined,
         models: Object.keys(models).length > 0 ? models : undefined,
       };

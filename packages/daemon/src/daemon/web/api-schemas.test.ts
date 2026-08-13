@@ -64,6 +64,55 @@ describe('PostProviderConfigureBodySchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('accepts secretName to pick an existing secret', () => {
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        secretName: 'SHARED_OPENAI',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts secretStore memory|keychain|env with apiKey or secretName', () => {
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        apiKey: 'sk-test',
+        secretStore: 'memory',
+        secretName: 'MY_KEY',
+      }).success,
+    ).toBe(true);
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        secretName: 'ENV_VAR',
+        secretStore: 'env',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects apiKey together with envVarName', () => {
+    const result = PostProviderConfigureBodySchema.safeParse({
+      engine: 'openai',
+      apiKey: 'sk-test',
+      envVarName: 'OPENAI_API_KEY',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.includes('apiKey'))).toBe(true);
+    }
+  });
+
+  it('rejects secretName together with envVarName', () => {
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        secretName: 'SHARED',
+        envVarName: 'OPENAI_API_KEY',
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('PostPolicyBodySchema', () => {
@@ -123,6 +172,21 @@ describe('secret body schemas', () => {
   it('PostSecretByKeyBodySchema requires non-empty value', () => {
     expect(PostSecretByKeyBodySchema.safeParse({ value: 'secret' }).success).toBe(true);
     expect(PostSecretByKeyBodySchema.safeParse({ value: '' }).success).toBe(false);
+  });
+
+  it('accepts optional secret_store memory|keychain|env (and legacy store)', () => {
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secret_store: 'memory' }).success,
+    ).toBe(true);
+    expect(
+      PostSecretByKeyBodySchema.safeParse({ value: 'v', store: 'keychain' }).success,
+    ).toBe(true);
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secret_store: 'env' }).success,
+    ).toBe(true);
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'vault' }).success,
+    ).toBe(false);
   });
 });
 

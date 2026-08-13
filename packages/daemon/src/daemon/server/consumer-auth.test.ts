@@ -18,7 +18,7 @@ import {
   type ConsumerCapability,
 } from './consumer-auth.js';
 import type { ConfigFile } from '../../core/config.js';
-import { withEnv } from './test-env.js';
+import { withEnv } from '../../../tests/helpers/with-env.js';
 
 function mockGrpcCall(token?: string): { metadata: grpc.Metadata } {
   const metadata = new grpc.Metadata();

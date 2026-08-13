@@ -88,9 +88,13 @@ vi.mock('../../core/session-summarizer.js', () => ({
   generateSessionSummary: (...a: unknown[]) => mockGenerateSessionSummary(...a),
 }));
 
-vi.mock('../../core/secrets.js', () => ({
-  auditSecretChange: (...a: unknown[]) => mockAuditSecretChange(...a),
-}));
+vi.mock('../../core/secrets.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../core/secrets.js')>();
+  return {
+    ...actual,
+    auditSecretChange: (...a: unknown[]) => mockAuditSecretChange(...a),
+  };
+});
 
 vi.mock('../../core/provider-endpoint.js', () => ({
   auditProviderEndpointChange: (...a: unknown[]) => mockAuditProviderEndpointChange(...a),
@@ -117,7 +121,7 @@ import {
   authorizeInlinePolicy,
   DEFAULT_CONSUMER_AUTH_CONTEXT,
 } from './abbenay-service.js';
-import { withEnv } from './test-env.js';
+import { withEnv } from '../../../tests/helpers/with-env.js';
 
 describe('configFileToProto', () => {
   it('converts an empty config', () => {
@@ -396,6 +400,19 @@ describe('protoToConfigFile', () => {
     const config = protoToConfigFile(proto);
     expect(config.providers!['my-provider'].api_key_env_var_name).toBe('MY_KEY');
     expect(config.providers!['my-provider'].api_key_keychain_name).toBeUndefined();
+  });
+
+  it('maps proto secret_store enum values onto provider config', () => {
+    const config = protoToConfigFile({
+      providers: {
+        mem: { engine: 'openai', secret_name: 'M', secret_store: 3 },
+        envp: { engine: 'openai', secret_name: 'E', secret_store: 'SECRET_STORE_ENV' },
+        kc: { engine: 'openai', secret_name: 'K', secret_store: 'SECRET_STORE_KEYCHAIN' },
+      },
+    });
+    expect(config.providers!.mem.secret_store).toBe('memory');
+    expect(config.providers!.envp.secret_store).toBe('env');
+    expect(config.providers!.kc.secret_store).toBe('keychain');
   });
 
   it('provider with no models gets undefined models field', () => {
@@ -978,6 +995,135 @@ describe('createAbbenayService handlers', () => {
     expect(mockAuditSecretChange).toHaveBeenCalled();
   });
 
+  it('ConfigureProvider writes api_key to memory and rejects conflicting credential fields', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const registry = new SecretStoreRegistry(new MemorySecretStore(), new MemorySecretStore());
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    const mem = await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'mem-mock',
+      engine: 'mock',
+      api_key: 'ephemeral',
+      secret_store: 'SECRET_STORE_MEMORY',
+      secret_name: 'MEM_MOCK_API_KEY',
+    });
+    expect(mem.response?.success).toBe(true);
+    expect(await registry.getFrom('memory', 'MEM_MOCK_API_KEY')).toBe('ephemeral');
+    expect(await registry.hasIn('keychain', 'MEM_MOCK_API_KEY')).toBe(false);
+    expect(mockAuditSecretChange).toHaveBeenCalledWith({
+      key: 'MEM_MOCK_API_KEY',
+      op: 'set',
+      source: 'grpc-configure-memory',
+    });
+
+    expect((await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'bad-combo',
+      engine: 'mock',
+      api_key: 'x',
+      env_var_name: 'Y',
+    })).error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+
+    expect((await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'bad-combo-2',
+      engine: 'mock',
+      secret_name: 'X',
+      env_var_name: 'Y',
+    })).error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+
+    expect((await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'bad-store',
+      engine: 'mock',
+      api_key: 'x',
+      secret_store: 'SECRET_STORE_ENV',
+    })).error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+
+    expect((await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'missing-secret',
+      engine: 'mock',
+      secret_name: 'DOES_NOT_EXIST',
+      secret_store: 'SECRET_STORE_MEMORY',
+    })).error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+
+    // secret_name without store defaults to keychain lookup.
+    await registry.setIn('keychain', 'DEFAULT_KC', 'v');
+    const def = await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'default-kc',
+      engine: 'mock',
+      secret_name: 'DEFAULT_KC',
+    });
+    expect(def.response?.success).toBe(true);
+
+    expect((await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'bad-ref-store',
+      engine: 'mock',
+      secret_name: 'X',
+      secret_store: 'vault',
+    })).error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+  });
+
+  it('Secrets RPCs reject unsupported store selections', async () => {
+    const state = createMockState();
+    const service = createServiceHandlers(state);
+    expect((await invokeUnary(service.GetSecret, { key: 'K', store: 'vault' })).error?.code)
+      .toBe(grpc.status.INVALID_ARGUMENT);
+    expect((await invokeUnary(service.DeleteSecret, { key: 'K', store: 'SECRET_STORE_ENV' })).error?.code)
+      .toBe(grpc.status.INVALID_ARGUMENT);
+  });
+
+  it('Secrets RPCs reject memory when secret store is not a registry', async () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    const state = createMockState({
+      secretStore: {
+        get: vi.fn().mockResolvedValue(null),
+        set,
+        delete: vi.fn().mockResolvedValue(true),
+        has: vi.fn().mockResolvedValue(false),
+      },
+    });
+    const service = createServiceHandlers(state);
+
+    for (const method of ['GetSecret', 'SetSecret', 'DeleteSecret'] as const) {
+      const req =
+        method === 'SetSecret'
+          ? { key: 'K', value: 'v', store: 'SECRET_STORE_MEMORY' }
+          : { key: 'K', store: 'SECRET_STORE_MEMORY' };
+      const { error } = await invokeUnary(service[method], req);
+      expect(error?.code, method).toBe(grpc.status.INVALID_ARGUMENT);
+      expect(error?.message, method).toMatch(/memory|SecretStoreRegistry/i);
+    }
+    expect(set).not.toHaveBeenCalled();
+
+    const configure = await invokeUnary(service.ConfigureProvider, {
+      provider_id: 'plain-mem',
+      engine: 'mock',
+      api_key: 'x',
+      secret_store: 'SECRET_STORE_MEMORY',
+    });
+    expect(configure.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it('ListSecrets returns empty has_value rows when registry backends lack the key', async () => {
+    mockGetEngine.mockImplementation((id: string) => (
+      id === 'mock' ? { id: 'mock', requiresKey: false, defaultEnvVar: 'MOCK_API_KEY' }
+        : id === 'secure' ? { id: 'secure', requiresKey: true, defaultEnvVar: 'SECURE_API_KEY' }
+          : undefined
+    ));
+    // getEngines is mocked at module level to return mock+secure
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const registry = new SecretStoreRegistry(new MemorySecretStore(), new MemorySecretStore());
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+    const listed = await invokeUnary(service.ListSecrets, {});
+    const rows = rpcArray<{ key: string; has_value?: boolean }>(listed.response, 'secrets');
+    const secure = rows.filter((r) => r.key === 'SECURE_API_KEY');
+    expect(secure.length).toBeGreaterThanOrEqual(1);
+    expect(secure.every((r) => r.has_value === false)).toBe(true);
+  });
+
   it('RemoveProvider deletes provider and keychain secret', async () => {
     mockLoadConfig.mockReturnValue({
       providers: {
@@ -993,6 +1139,75 @@ describe('createAbbenayService handlers', () => {
     expect(error).toBeNull();
     expect(mockSaveConfig).toHaveBeenCalled();
     expect(state.notifyModelsChanged).toHaveBeenCalledWith('provider_removed');
+  });
+
+  it('RemoveProvider deletes owned memory secret from the memory backend only', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    await memory.set('MYMOCK_API_KEY', 'mem-value');
+    await keychain.set('MYMOCK_API_KEY', 'kc-value');
+    const registry = new SecretStoreRegistry(memory, keychain);
+
+    mockLoadConfig.mockReturnValue({
+      providers: {
+        mymock: {
+          engine: 'mock',
+          secret_name: 'MYMOCK_API_KEY',
+          secret_store: 'memory',
+        },
+      },
+    });
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    const { error } = await invokeUnary(service.RemoveProvider, { provider_id: 'mymock' });
+    expect(error).toBeNull();
+    expect(await memory.has('MYMOCK_API_KEY')).toBe(false);
+    expect(await keychain.has('MYMOCK_API_KEY')).toBe(true);
+    expect(mockAuditSecretChange).toHaveBeenCalledWith({
+      key: 'MYMOCK_API_KEY',
+      op: 'delete',
+      source: 'grpc-configure',
+    });
+  });
+
+  it('RemoveProvider skips env-backed and shared secret names', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    await keychain.set('SHARED_OPENAI', 'shared');
+    await keychain.set('ENV_LOOKALIKE', 'should-remain');
+    const registry = new SecretStoreRegistry(memory, keychain);
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    mockLoadConfig.mockReturnValue({
+      providers: {
+        'env-openai': {
+          engine: 'mock',
+          secret_name: 'ENV_LOOKALIKE',
+          secret_store: 'env',
+        },
+      },
+    });
+    expect((await invokeUnary(service.RemoveProvider, { provider_id: 'env-openai' })).error).toBeNull();
+    expect(await keychain.has('ENV_LOOKALIKE')).toBe(true);
+
+    mockLoadConfig.mockReturnValue({
+      providers: {
+        'shared-openai': {
+          engine: 'mock',
+          secret_name: 'SHARED_OPENAI',
+          secret_store: 'keychain',
+        },
+      },
+    });
+    expect((await invokeUnary(service.RemoveProvider, { provider_id: 'shared-openai' })).error).toBeNull();
+    expect(await keychain.has('SHARED_OPENAI')).toBe(true);
+    expect(mockAuditSecretChange).not.toHaveBeenCalled();
   });
 
   it('GetKeyStatus checks keychain and env sources', async () => {
@@ -1016,6 +1231,22 @@ describe('createAbbenayService handlers', () => {
 
     const missing = await invokeUnary(service.GetKeyStatus, { source: '', name: '' });
     expect(missing.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+  });
+
+  it('GetKeyStatus checks memory independently of keychain', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    await memory.set('MEM_ONLY', 'v');
+    const registry = new SecretStoreRegistry(memory, keychain);
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    const mem = await invokeUnary(service.GetKeyStatus, { source: 'memory', name: 'MEM_ONLY' });
+    expect(mem.response?.exists).toBe(true);
+    const kc = await invokeUnary(service.GetKeyStatus, { source: 'keychain', name: 'MEM_ONLY' });
+    expect(kc.response?.exists).toBe(false);
   });
 
   it('ListMcpServerConfigs merges config and runtime statuses', async () => {

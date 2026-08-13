@@ -8,7 +8,7 @@
  * (agent devs, web devs, custom apps).
  */
 
-import type { SecretStore } from './secrets.js';
+import { isNamespacedSecretStore, type SecretStore } from './secrets.js';
 import { debug } from './debug.js';
 import {
   loadConfig,
@@ -19,6 +19,7 @@ import {
   type ConfigFile,
   type ProviderConfig,
   type ModelConfig,
+  providerCredentialSource,
 } from './config.js';
 import { resolvePolicy, flattenPolicy, type FlattenedPolicy, type PolicyConfig } from './policies.js';
 import {
@@ -238,6 +239,7 @@ export class CoreState {
     if (options.apiKey) {
       const keychainName = `abbenay.${providerId}`;
       await this.secretStore.set(keychainName, options.apiKey);
+      providerCfg.secret_name = keychainName;
       providerCfg.api_key_keychain_name = keychainName;
       auditSecretChange({ key: keychainName, op: 'set', source: 'core-add' });
     } else if (options.apiKeyEnvVar) {
@@ -347,7 +349,7 @@ export class CoreState {
   }
 
   /**
-   * Resolve the API key for a virtual provider from config (keychain or env var).
+   * Resolve the API key for a virtual provider from secret store or env var.
    * Falls back to the engine's default env var if no explicit config.
    */
   async resolveApiKey(providerId: string, providerCfg?: ProviderConfig): Promise<string | null> {
@@ -358,16 +360,15 @@ export class CoreState {
 
     if (!providerCfg) return null;
 
-    // Check keychain
-    if (providerCfg.api_key_keychain_name) {
-      const value = await this.secretStore.get(providerCfg.api_key_keychain_name);
-      if (value) return value;
-    }
-
-    // Check env var from config
-    if (providerCfg.api_key_env_var_name) {
-      const value = process.env[providerCfg.api_key_env_var_name];
+    const source = providerCredentialSource(providerCfg);
+    if (source?.kind === 'env') {
+      const value = process.env[source.name];
       if (value && value.length > 0) return value;
+    } else if (source?.kind === 'store') {
+      const value = isNamespacedSecretStore(this.secretStore)
+        ? await this.secretStore.getFrom(source.backend, source.name)
+        : await this.secretStore.get(source.name);
+      if (value) return value;
     }
 
     // Fall back to engine's default env var

@@ -29,8 +29,8 @@ export { CoreState } from './state.js';
 export type { CoreStateOptions, AddProviderOptions } from './state.js';
 
 /** Secret store — inject your own or use the built-in MemorySecretStore */
-export { MemorySecretStore, auditSecretChange } from './secrets.js';
-export type { SecretStore, SecretAuditEvent } from './secrets.js';
+export { MemorySecretStore, auditSecretChange, isNamespacedSecretStore } from './secrets.js';
+export type { SecretStore, NamespacedSecretStore, SecretAuditEvent } from './secrets.js';
 
 // ─── Types: Providers & Models ──────────────────────────────────────────
 
@@ -79,6 +79,7 @@ export type { ConfigFile } from './config.js';
 
 /** Per-provider configuration block */
 export type { ProviderConfig } from './config.js';
+export { providerSecretName, providerCredentialSource, isProviderOwnedSecretName } from './config.js';
 
 /** Per-model configuration block */
 export type { ModelConfig } from './config.js';

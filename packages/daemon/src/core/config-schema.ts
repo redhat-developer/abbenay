@@ -83,7 +83,13 @@ export const ModelConfigSchema = z
 export const ProviderConfigSchema = z
   .object({
     engine: z.string().min(1),
+    /** Logical secret name (store key or env var). Preferred. */
+    secret_name: z.string().min(1).optional(),
+    /** memory | keychain | env — where secret_name is resolved. */
+    secret_store: z.enum(['memory', 'keychain', 'env']).optional(),
+    /** @deprecated Use secret_name. */
     api_key_keychain_name: z.string().min(1).optional(),
+    /** @deprecated Use secret_name + secret_store: env. */
     api_key_env_var_name: z.string().min(1).optional(),
     base_url: ProviderBaseUrlSchema.optional(),
     models: z.record(z.string(), ModelConfigSchema).optional(),

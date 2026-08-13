@@ -282,6 +282,124 @@ describe('Real gRPC service: Secrets', () => {
     expect(res.secrets).toBeDefined();
     expect(Array.isArray(res.secrets)).toBe(true);
   });
+
+  it('should store SECRET_STORE_MEMORY without writing keychain backend', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'MEM_ONLY',
+      value: 'ephemeral-value',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    const got = await callUnary(client, 'GetSecret', {
+      key: 'MEM_ONLY',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    expect(got.value).toBe('ephemeral-value');
+    // Default GetSecret (keychain namespace) must not see the memory value.
+    const fromDefault = await callUnary(client, 'GetSecret', { key: 'MEM_ONLY' });
+    expect(fromDefault.value).toBe('');
+    // DaemonState uses SecretStoreRegistry; mocked KeychainSecretStore is the keychain half.
+    // Memory-only writes must not land in the keychain Map.
+    expect(mockSecretStoreData.has('MEM_ONLY')).toBe(false);
+  });
+
+  it('should allow the same key name in memory and keychain (discrete namespaces)', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'BOTH_KEY',
+      value: 'persistent',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    expect(mockSecretStoreData.get('BOTH_KEY')).toBe('persistent');
+
+    await callUnary(client, 'SetSecret', {
+      key: 'BOTH_KEY',
+      value: 'ephemeral',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    expect(mockSecretStoreData.get('BOTH_KEY')).toBe('persistent');
+    const mem = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_KEY',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    expect(mem.value).toBe('ephemeral');
+    const kc = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_KEY',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    expect(kc.value).toBe('persistent');
+  });
+
+  it('should reject SECRET_STORE_ENV on SetSecret', async () => {
+    await expect(
+      callUnary(client, 'SetSecret', {
+        key: 'ENV_KEY',
+        value: 'nope',
+        store: 'SECRET_STORE_ENV',
+      }),
+    ).rejects.toMatchObject({ code: grpc.status.INVALID_ARGUMENT });
+  });
+
+  it('should delete SECRET_STORE_MEMORY without touching keychain', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'BOTH_DEL',
+      value: 'persistent',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    await callUnary(client, 'SetSecret', {
+      key: 'BOTH_DEL',
+      value: 'ephemeral',
+      store: 'SECRET_STORE_MEMORY',
+    });
+
+    await callUnary(client, 'DeleteSecret', {
+      key: 'BOTH_DEL',
+      store: 'SECRET_STORE_MEMORY',
+    });
+
+    const mem = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_DEL',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    expect(mem.value).toBe('');
+    const kc = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_DEL',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    expect(kc.value).toBe('persistent');
+    expect(mockSecretStoreData.get('BOTH_DEL')).toBe('persistent');
+  });
+
+  it('ListSecrets emits one row per backend that holds an engine key', async () => {
+    mockGetEngines.mockReturnValueOnce([
+      {
+        id: 'openai',
+        requiresKey: true,
+        defaultEnvVar: 'OPENAI_API_KEY',
+        supportsTools: true,
+        createModel: () => { throw new Error('mock'); },
+      },
+    ]);
+
+    await callUnary(client, 'SetSecret', {
+      key: 'OPENAI_API_KEY',
+      value: 'kc',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    await callUnary(client, 'SetSecret', {
+      key: 'OPENAI_API_KEY',
+      value: 'mem',
+      store: 'SECRET_STORE_MEMORY',
+    });
+
+    const res = await callUnary(client, 'ListSecrets', {});
+    const openaiRows = (res.secrets as Array<{ key: string; store?: string | number }>).filter(
+      (s) => s.key === 'OPENAI_API_KEY' && s.store,
+    );
+    expect(openaiRows.length).toBe(2);
+    const stores = openaiRows.map((r) => String(r.store));
+    expect(stores).toEqual(
+      expect.arrayContaining(['SECRET_STORE_MEMORY', 'SECRET_STORE_KEYCHAIN']),
+    );
+  });
 });
 
 describe('Real gRPC service: Chat streaming', () => {

@@ -73,14 +73,71 @@ export interface ModelConfig {
 export interface ProviderConfig {
   /** Actual engine type: "openrouter", "openai", "anthropic", etc. */
   engine: string;
-  /** Keychain key name for API key */
+  /**
+   * Logical secret name: secret-store key or env var name.
+   * Preferred over {@link api_key_keychain_name} / {@link api_key_env_var_name}.
+   */
+  secret_name?: string;
+  /**
+   * Where {@link secret_name} is resolved from.
+   * - `memory` / `keychain` / omitted (with a store name): daemon secret store
+   * - `env`: process environment variable
+   */
+  secret_store?: 'memory' | 'keychain' | 'env';
+  /**
+   * @deprecated Use {@link secret_name}. Kept for existing YAML configs.
+   */
   api_key_keychain_name?: string;
-  /** Environment variable name for API key */
+  /**
+   * @deprecated Use {@link secret_name} + `secret_store: env`.
+   */
   api_key_env_var_name?: string;
   /** Custom API base URL (falls back to engine default) */
   base_url?: string;
   /** Enabled models: key = virtual model name, value = model config */
   models?: Record<string, ModelConfig>;
+}
+
+/** Resolve the logical secret / env var name (secret_name preferred). */
+export function providerSecretName(cfg: ProviderConfig): string | undefined {
+  return cfg.secret_name || cfg.api_key_keychain_name || undefined;
+}
+
+/**
+ * True when `secretName` was invented for this provider (legacy 1:1 configure).
+ * Shared / explicitly picked names must not be deleted with the provider.
+ */
+export function isProviderOwnedSecretName(providerId: string, secretName: string): boolean {
+  return (
+    secretName === `${providerId.toUpperCase()}_API_KEY` ||
+    secretName === `abbenay.${providerId}`
+  );
+}
+
+/**
+ * How to resolve credentials for a provider.
+ * `store` → named backend (memory|keychain) via (secret_store, secret_name);
+ * `env` → process.env[secret_name]. Omitted secret_store defaults to keychain.
+ */
+export function providerCredentialSource(
+  cfg: ProviderConfig,
+):
+  | { kind: 'store'; name: string; backend: 'memory' | 'keychain' }
+  | { kind: 'env'; name: string }
+  | null {
+  if (cfg.secret_store === 'env') {
+    const name = cfg.secret_name || cfg.api_key_env_var_name;
+    return name ? { kind: 'env', name } : null;
+  }
+  const storeName = providerSecretName(cfg);
+  if (storeName) {
+    const backend = cfg.secret_store === 'memory' ? 'memory' : 'keychain';
+    return { kind: 'store', name: storeName, backend };
+  }
+  if (cfg.api_key_env_var_name) {
+    return { kind: 'env', name: cfg.api_key_env_var_name };
+  }
+  return null;
 }
 
 /**
@@ -291,6 +348,26 @@ export function loadConfigFromPath(configPath: string): ConfigFile | null {
  * (backward compat with the old 1:1 mapping).
  */
 function migrateProviderConfig(provId: string, cfg: Record<string, unknown>): void {
+  // Prefer secret_name; mirror legacy api_key_keychain_name either direction.
+  if (cfg.secret_name && !cfg.api_key_keychain_name && cfg.secret_store !== 'env') {
+    cfg.api_key_keychain_name = cfg.secret_name;
+  } else if (cfg.api_key_keychain_name && !cfg.secret_name) {
+    cfg.secret_name = cfg.api_key_keychain_name;
+  }
+
+  // Legacy env-only config → secret_name + secret_store: env
+  if (cfg.api_key_env_var_name && !cfg.secret_name && !cfg.api_key_keychain_name) {
+    cfg.secret_name = cfg.api_key_env_var_name;
+    if (!cfg.secret_store) cfg.secret_store = 'env';
+  } else if (cfg.secret_store === 'env' && cfg.secret_name && !cfg.api_key_env_var_name) {
+    cfg.api_key_env_var_name = cfg.secret_name;
+  }
+
+  // Store-backed secrets default to the keychain namespace when store is omitted.
+  if (cfg.secret_name && !cfg.secret_store) {
+    cfg.secret_store = 'keychain';
+  }
+
   // If already new format (has engine field), just rename api_base → base_url
   if (cfg.engine) {
     if (cfg.api_base && !cfg.base_url) {

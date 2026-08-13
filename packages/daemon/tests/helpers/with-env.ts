@@ -9,7 +9,10 @@ export async function withEnv(
   try {
     await fn();
   } finally {
-    if (prev === undefined) delete process.env[key];
-    else process.env[key] = prev;
+    if (prev === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = prev;
+    }
   }
 }

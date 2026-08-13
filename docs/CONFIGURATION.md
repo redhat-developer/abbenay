@@ -382,35 +382,59 @@ Legacy sessions without an `owner` field are treated as `local`.
 
 Each provider can specify exactly ONE of these (mutually exclusive):
 
-### Option 1: Keychain Storage (`api_key_keychain_name`)
+### Option 1: Secret store (`secret_name` + `secret_store`)
 
-- Key stored in system keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-- Specify the key name used in keychain
-- Set via web dashboard "API Key" toggle
+- `secret_name` is the logical name within a backend
+- `secret_store` selects the namespace:
+  - `keychain` (default when omitted) → OS keychain
+  - `memory` → process-lifetime daemon memory
+  - `env` → process environment variable named `secret_name`
+- The same `secret_name` may exist in more than one store; resolve uses only
+  the provider's `secret_store` (no overlay)
+- Legacy aliases: `api_key_keychain_name`, `api_key_env_var_name`
 
 ```yaml
 providers:
   my-openai:
     engine: openai
-    api_key_keychain_name: "OPENAI_API_KEY"
+    secret_name: "OPENAI_API_KEY"
+    secret_store: keychain   # optional; defaults to keychain
 ```
-
-### Option 2: Environment Variable (`api_key_env_var_name`)
-
-- Key read from environment variable at runtime
-- Specify the env var name to check
-- Set via web dashboard "Env" toggle
 
 ```yaml
 providers:
-  anthropic-work:
-    engine: anthropic
-    api_key_env_var_name: "ANTHROPIC_API_KEY"
+  ci-openai:
+    engine: openai
+    secret_name: "OPENAI_API_KEY"
+    secret_store: env          # already exported in the process environment
 ```
+
+### Option 1b: In-memory (process-lifetime) via secrets API
+
+- Same `secret_name` in the `memory` namespace; set value with `SetSecret` /
+  `POST /api/secrets` and `secret_store: memory` (SetSecret still cannot
+  write `env`)
+- Lives only while the daemon process is running
+- Independent from keychain — overlapping names are allowed (DR-047)
+
+### Recommended workflow (keys are N:1 with providers)
+
+1. **Add a secret** (store) — `SetSecret` with `secret_store=memory|keychain`, **or**
+   export an env var yourself.
+2. **Configure the provider** — `secret_name=NAME` and
+   `secret_store=memory|keychain|env`. For `env`, the variable is resolved at
+   request time (it need not exist at configure time).
+3. Many providers may share one `(secret_store, secret_name)` pair.
+
+### Option 2: Environment Variable (legacy `api_key_env_var_name`)
+
+Prefer `secret_name` + `secret_store: env`. The legacy field still works and is
+mirrored on load.
 
 ### Fallback
 
-If neither option is set, the engine's default environment variable is checked (e.g., `OPENAI_API_KEY` for the `openai` engine).
+If neither option is set, the engine's default environment variable is checked
+(e.g., `OPENAI_API_KEY` for the `openai` engine).
 
 ## Supported Engines
 
@@ -713,7 +737,8 @@ steal prompts/responses/keys — constrained by the
 | Config files mode `0600` | User-only read/write on disk |
 | HTTP Bearer auth (DR-030) | Unauthenticated callers cannot read/write secrets or configure providers |
 | gRPC consumer capabilities (DR-037) | On non-localhost binds, sensitive RPCs require token + capability (`secrets`, `providers`, `config`, `mcp_register`, …) |
-| Secret API shape | HTTP `GET /api/secrets` returns key names + `hasValue` only — never secret values. gRPC `GetSecret` (value-returning) requires the `secrets` capability |
+| Secret API shape | HTTP `GET /api/secrets` returns key names + `hasValue` (+ `store` when present) only — never secret values. gRPC `GetSecret` (value-returning) requires the `secrets` capability |
+| In-memory secrets (DR-047) | Optional process-lifetime backend; never written to disk/keychain; same auth gates as keychain secrets; vanishes on daemon restart |
 | Secret / endpoint audit logs | `[Audit] secret changed` and `[Audit] provider endpoint changed` (never log secret values) |
 | Provider endpoint policy (DR-040) | Malformed / disallowed `base_url` values are rejected; changes are audited |
 | Localhost bind defaults | HTTP/gRPC default to loopback; non-loopback requires intentional opt-in |

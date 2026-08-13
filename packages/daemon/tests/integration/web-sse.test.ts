@@ -37,7 +37,8 @@ import { createWebApp } from '../../src/daemon/web/server.js';
 import type { DaemonState } from '../../src/daemon/state.js';
 import type { ProviderInfo, ModelInfo } from '../../src/core/state.js';
 import type { ConnectedClient } from '../../src/daemon/state.js';
-import type { SecretStore } from '../../src/core/secrets.js';
+import { MemorySecretStore } from '../../src/core/secrets.js';
+import { SecretStoreRegistry } from '../../src/daemon/secrets/registry.js';
 
 // ─── Mock DaemonState ───────────────────────────────────────────────────
 
@@ -58,13 +59,11 @@ let mockChatConfig: MockChatConfig = {
 
 const chatRequests: Array<{ model: string; messages: any[] }> = [];
 
-/** In-memory secret store for testing */
-const mockSecretStore: SecretStore = {
-  async get(key: string) { return key === 'OPENAI_API_KEY' ? 'sk-test' : null; },
-  async set(_key: string, _value: string) {},
-  async delete(_key: string) { return true; },
-  async has(key: string) { return key === 'OPENAI_API_KEY'; },
-};
+/** Namespaced secret store matching daemon production wiring */
+const mockSecretStore = new SecretStoreRegistry(
+  new MemorySecretStore(),
+  new MemorySecretStore(),
+);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -141,6 +140,7 @@ let httpServer: http.Server;
 let baseUrl: string;
 
 beforeAll(async () => {
+  await mockSecretStore.setIn('keychain', 'OPENAI_API_KEY', 'sk-test');
   const state = createMockState();
   const app = createWebApp(state, { apiToken: 'test-integration-token', skipConfig: true });
   
@@ -474,6 +474,229 @@ describe('Web API - Secrets Endpoints', () => {
     });
     expect(statusCode).toBe(200);
     expect(body.success).toBe(true);
+  });
+
+  it('POST /api/secrets/:key should accept secret_store=memory', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/secrets/MEM_KEY`, {
+      value: 'ephemeral',
+      secret_store: 'memory',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.secret_store).toBe('memory');
+  });
+
+  it('POST /api/secrets should reject secret_store=env', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/secrets`, {
+      key: 'ENV_KEY',
+      value: 'nope',
+      secret_store: 'env',
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/ENV/i);
+  });
+
+  it('DELETE /api/secrets/:key?secret_store=memory clears memory only', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/BOTH_HTTP`, {
+      value: 'persistent',
+      secret_store: 'keychain',
+    });
+    await httpRequest('POST', `${baseUrl}/api/secrets/BOTH_HTTP`, {
+      value: 'ephemeral',
+      secret_store: 'memory',
+    });
+
+    const { statusCode, body } = await httpRequest(
+      'DELETE',
+      `${baseUrl}/api/secrets/BOTH_HTTP?secret_store=memory`,
+    );
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.secret_store).toBe('memory');
+
+    const memStatus = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=memory&name=BOTH_HTTP`,
+    );
+    expect(memStatus.statusCode).toBe(200);
+    expect(memStatus.body.exists).toBe(false);
+
+    const kcStatus = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=keychain&name=BOTH_HTTP`,
+    );
+    expect(kcStatus.statusCode).toBe(200);
+    expect(kcStatus.body.exists).toBe(true);
+  });
+
+  it('GET /api/key-status?source=memory reports memory-only secrets', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/MEM_STATUS`, {
+      value: 'ephemeral',
+      secret_store: 'memory',
+    });
+    const mem = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=memory&name=MEM_STATUS`,
+    );
+    expect(mem.statusCode).toBe(200);
+    expect(mem.body.exists).toBe(true);
+    const kc = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=keychain&name=MEM_STATUS`,
+    );
+    expect(kc.statusCode).toBe(200);
+    expect(kc.body.exists).toBe(false);
+  });
+
+  it('POST /api/provider/:id/configure writes apiKey to memory backend', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/mem-openai/configure`, {
+      engine: 'openai',
+      apiKey: 'sk-mem',
+      secretName: 'MEM_OPENAI_API_KEY',
+      secretStore: 'memory',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(await mockSecretStore.getFrom('memory', 'MEM_OPENAI_API_KEY')).toBe('sk-mem');
+    expect(await mockSecretStore.hasIn('keychain', 'MEM_OPENAI_API_KEY')).toBe(false);
+  });
+
+  it('POST /api/provider/:id/configure picks an existing memory secret', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/SHARED_MEM`, {
+      value: 'shared-value',
+      secret_store: 'memory',
+    });
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/shared-openai/configure`, {
+      engine: 'openai',
+      secretName: 'SHARED_MEM',
+      secretStore: 'memory',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it('POST /api/provider/:id/configure accepts secretStore=env without writing store', async () => {
+    const before = await mockSecretStore.locateAll('ABBENAY_HTTP_ENV');
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/env-openai/configure`, {
+      engine: 'openai',
+      secretName: 'ABBENAY_HTTP_ENV',
+      secretStore: 'env',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(await mockSecretStore.locateAll('ABBENAY_HTTP_ENV')).toEqual(before);
+  });
+
+  it('POST /api/provider/:id/configure rejects missing referenced secret', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/missing-openai/configure`, {
+      engine: 'openai',
+      secretName: 'DOES_NOT_EXIST',
+      secretStore: 'memory',
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/not found/i);
+  });
+
+  it('POST /api/provider/:id/configure defaults omitted secretStore to keychain', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/DEFAULT_KC`, {
+      value: 'kc-value',
+      secret_store: 'keychain',
+    });
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/default-kc/configure`, {
+      engine: 'openai',
+      secretName: 'DEFAULT_KC',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it('POST /api/provider/:id/configure rejects missing keychain secret when store omitted', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/missing-kc/configure`, {
+      engine: 'openai',
+      secretName: 'NO_SUCH_KEYCHAIN_SECRET',
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/not found in keychain/i);
+  });
+
+  it('POST /api/provider/:id/configure accepts envVarName legacy field', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/legacy-env/configure`, {
+      engine: 'openai',
+      envVarName: 'ABBENAY_LEGACY_ENV',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it('POST /api/secrets/:key rejects invalid store and legacy POST accepts memory', async () => {
+    const bad = await httpRequest('POST', `${baseUrl}/api/secrets/BAD_STORE`, {
+      value: 'x',
+      secret_store: 'vault',
+    });
+    expect(bad.statusCode).toBe(400);
+
+    const legacy = await httpRequest('POST', `${baseUrl}/api/secrets`, {
+      key: 'LEGACY_MEM',
+      value: 'v',
+      store: 'memory',
+    });
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.body.secret_store).toBe('memory');
+    expect(await mockSecretStore.getFrom('memory', 'LEGACY_MEM')).toBe('v');
+  });
+
+  it('DELETE /api/secrets/:key rejects invalid store', async () => {
+    const { statusCode } = await httpRequest(
+      'DELETE',
+      `${baseUrl}/api/secrets/ANY?secret_store=vault`,
+    );
+    expect(statusCode).toBe(400);
+  });
+
+  it('POST /api/provider/:id/configure rejects apiKey with secretStore=env', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/bad-openai/configure`, {
+      engine: 'openai',
+      apiKey: 'sk-x',
+      secretStore: 'env',
+    });
+    expect(statusCode).toBe(400);
+    expect(body.error).toMatch(/ENV|not writable|secrets API/i);
+  });
+
+  it('DELETE /api/provider/:id removes owned memory secret only', async () => {
+    await httpRequest('POST', `${baseUrl}/api/provider/owndel/configure`, {
+      engine: 'openai',
+      apiKey: 'sk-owned',
+      secretName: 'OWNDEL_API_KEY',
+      secretStore: 'memory',
+    });
+    await mockSecretStore.setIn('keychain', 'OWNDEL_API_KEY', 'keep-me');
+
+    const { statusCode, body } = await httpRequest('DELETE', `${baseUrl}/api/provider/owndel`);
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(await mockSecretStore.hasIn('memory', 'OWNDEL_API_KEY')).toBe(false);
+    expect(await mockSecretStore.hasIn('keychain', 'OWNDEL_API_KEY')).toBe(true);
+  });
+
+  it('DELETE /api/provider/:id skips shared and env-backed secrets', async () => {
+    await mockSecretStore.setIn('keychain', 'SHARED_KEEP', 'shared');
+    // Seed config with shared + env providers via configure endpoints.
+    await httpRequest('POST', `${baseUrl}/api/provider/shared-keep/configure`, {
+      engine: 'openai',
+      secretName: 'SHARED_KEEP',
+      secretStore: 'keychain',
+    });
+    await httpRequest('POST', `${baseUrl}/api/provider/env-keep/configure`, {
+      engine: 'openai',
+      secretName: 'ENV_KEEP',
+      secretStore: 'env',
+    });
+
+    expect((await httpRequest('DELETE', `${baseUrl}/api/provider/shared-keep`)).statusCode).toBe(200);
+    expect(await mockSecretStore.hasIn('keychain', 'SHARED_KEEP')).toBe(true);
+
+    expect((await httpRequest('DELETE', `${baseUrl}/api/provider/env-keep`)).statusCode).toBe(200);
   });
 
   it('POST /api/secrets/:key should reject missing value', async () => {

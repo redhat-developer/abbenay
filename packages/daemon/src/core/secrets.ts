@@ -2,7 +2,8 @@
  * Secret store interface and in-memory implementation.
  *
  * Core consumers inject their own SecretStore implementation.
- * The daemon uses KeychainSecretStore (keytar); tests use MemorySecretStore.
+ * The daemon uses SecretStoreRegistry (MemorySecretStore + KeychainSecretStore);
+ * tests/library use MemorySecretStore.
  *
  * Credential aggregation (finding A1): one daemon may hold many provider keys.
  * Mutating APIs must stay auth-gated; use {@link auditSecretChange} so operators
@@ -27,11 +28,35 @@ export interface SecretStore {
   has(key: string): Promise<boolean>;
 }
 
+/**
+ * Multi-backend secret store: values are addressed by (backend, key).
+ * Built-ins today are `memory` | `keychain`; custom ids come later.
+ * {@link SecretStore} methods map to the implementation's default backend.
+ */
+export interface NamespacedSecretStore extends SecretStore {
+  getFrom(backend: string, key: string): Promise<string | null>;
+  setIn(backend: string, key: string, value: string): Promise<void>;
+  deleteFrom(backend: string, key: string): Promise<boolean>;
+  hasIn(backend: string, key: string): Promise<boolean>;
+}
+
+export function isNamespacedSecretStore(
+  store: SecretStore,
+): store is NamespacedSecretStore {
+  const candidate = store as NamespacedSecretStore;
+  return (
+    typeof candidate.getFrom === 'function' &&
+    typeof candidate.setIn === 'function' &&
+    typeof candidate.deleteFrom === 'function' &&
+    typeof candidate.hasIn === 'function'
+  );
+}
+
 export interface SecretAuditEvent {
   /** Secret key name only — never the value */
   key: string;
   op: 'set' | 'delete';
-  /** http-secrets | grpc-secrets | http-configure | grpc-configure | core-add */
+  /** http-secrets | http-secrets-memory | grpc-secrets | grpc-secrets-memory | http-configure | grpc-configure | core-add */
   source: string;
   actor?: string;
 }
@@ -39,6 +64,8 @@ export interface SecretAuditEvent {
 /**
  * Emit an audit log line for a secret mutation (A1 accountability).
  * Never logs the secret value.
+ * Sources include: http-secrets | http-secrets-memory | grpc-secrets |
+ * grpc-secrets-memory | http-configure | grpc-configure | core-add
  */
 export function auditSecretChange(event: SecretAuditEvent): void {
   const safeKey = sanitizeForLog(event.key);
