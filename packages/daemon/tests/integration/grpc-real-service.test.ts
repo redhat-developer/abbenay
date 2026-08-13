@@ -337,6 +337,69 @@ describe('Real gRPC service: Secrets', () => {
       }),
     ).rejects.toMatchObject({ code: grpc.status.INVALID_ARGUMENT });
   });
+
+  it('should delete SECRET_STORE_MEMORY without touching keychain', async () => {
+    await callUnary(client, 'SetSecret', {
+      key: 'BOTH_DEL',
+      value: 'persistent',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    await callUnary(client, 'SetSecret', {
+      key: 'BOTH_DEL',
+      value: 'ephemeral',
+      store: 'SECRET_STORE_MEMORY',
+    });
+
+    await callUnary(client, 'DeleteSecret', {
+      key: 'BOTH_DEL',
+      store: 'SECRET_STORE_MEMORY',
+    });
+
+    const mem = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_DEL',
+      store: 'SECRET_STORE_MEMORY',
+    });
+    expect(mem.value).toBe('');
+    const kc = await callUnary(client, 'GetSecret', {
+      key: 'BOTH_DEL',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    expect(kc.value).toBe('persistent');
+    expect(mockSecretStoreData.get('BOTH_DEL')).toBe('persistent');
+  });
+
+  it('ListSecrets emits one row per backend that holds an engine key', async () => {
+    mockGetEngines.mockReturnValueOnce([
+      {
+        id: 'openai',
+        requiresKey: true,
+        defaultEnvVar: 'OPENAI_API_KEY',
+        supportsTools: true,
+        createModel: () => { throw new Error('mock'); },
+      },
+    ]);
+
+    await callUnary(client, 'SetSecret', {
+      key: 'OPENAI_API_KEY',
+      value: 'kc',
+      store: 'SECRET_STORE_KEYCHAIN',
+    });
+    await callUnary(client, 'SetSecret', {
+      key: 'OPENAI_API_KEY',
+      value: 'mem',
+      store: 'SECRET_STORE_MEMORY',
+    });
+
+    const res = await callUnary(client, 'ListSecrets', {});
+    const openaiRows = (res.secrets as Array<{ key: string; store?: string | number }>).filter(
+      (s) => s.key === 'OPENAI_API_KEY' && s.store,
+    );
+    expect(openaiRows.length).toBe(2);
+    const stores = openaiRows.map((r) => String(r.store));
+    expect(stores).toEqual(
+      expect.arrayContaining(['SECRET_STORE_MEMORY', 'SECRET_STORE_KEYCHAIN']),
+    );
+  });
 });
 
 describe('Real gRPC service: Chat streaming', () => {

@@ -7,6 +7,7 @@ import type { ConfigFile } from './config.js';
 import type { DiscoveredModel } from './engines.js';
 import { MemorySecretStore } from './secrets.js';
 import { ToolRegistry } from './tool-registry.js';
+import type { NamespacedSecretStore } from './secrets.js';
 
 // ── Partial engines mock (preserve real getEngine for addProvider policy tests) ──
 
@@ -258,6 +259,68 @@ describe('CoreState.resolveApiKey', () => {
     const core = createCore({ config: mockProviderConfig, secretStore: store });
 
     expect(await core.resolveApiKey('openrouter')).toBe('sk-from-store');
+  });
+
+  it('reads only the configured memory backend from a namespaced store', async () => {
+    const memory = new Map<string, string>([['SHARED', 'from-memory']]);
+    const keychain = new Map<string, string>([['SHARED', 'from-keychain']]);
+    const store: NamespacedSecretStore = {
+      get: async (key) => keychain.get(key) ?? null,
+      set: async (key, value) => { keychain.set(key, value); },
+      delete: async (key) => keychain.delete(key),
+      has: async (key) => keychain.has(key),
+      getFrom: async (backend, key) => (backend === 'memory' ? memory : keychain).get(key) ?? null,
+      setIn: async (backend, key, value) => { (backend === 'memory' ? memory : keychain).set(key, value); },
+      deleteFrom: async (backend, key) => (backend === 'memory' ? memory : keychain).delete(key),
+      hasIn: async (backend, key) => (backend === 'memory' ? memory : keychain).has(key),
+    };
+    const core = createCore({
+      secretStore: store,
+      config: {
+        providers: {
+          mem: {
+            engine: 'openrouter',
+            secret_name: 'SHARED',
+            secret_store: 'memory',
+            models: {},
+          },
+          kc: {
+            engine: 'openrouter',
+            secret_name: 'SHARED',
+            secret_store: 'keychain',
+            models: {},
+          },
+        },
+      },
+    });
+
+    expect(await core.resolveApiKey('mem')).toBe('from-memory');
+    expect(await core.resolveApiKey('kc')).toBe('from-keychain');
+  });
+
+  it('resolves secret_store=env without consulting the secret store', async () => {
+    const store = new MemorySecretStore();
+    await store.set('SHOULD_NOT_USE', 'from-store');
+    const core = createCore({
+      secretStore: store,
+      config: {
+        providers: {
+          envp: {
+            engine: 'openrouter',
+            secret_name: 'ABBENAY_TEST_RESOLVE_ENV',
+            secret_store: 'env',
+            models: {},
+          },
+        },
+      },
+    });
+
+    process.env.ABBENAY_TEST_RESOLVE_ENV = 'from-env';
+    try {
+      expect(await core.resolveApiKey('envp')).toBe('from-env');
+    } finally {
+      delete process.env.ABBENAY_TEST_RESOLVE_ENV;
+    }
   });
 
   it('falls back to configured env var then engine default env var', async () => {

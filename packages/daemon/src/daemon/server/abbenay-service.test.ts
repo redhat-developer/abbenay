@@ -88,9 +88,13 @@ vi.mock('../../core/session-summarizer.js', () => ({
   generateSessionSummary: (...a: unknown[]) => mockGenerateSessionSummary(...a),
 }));
 
-vi.mock('../../core/secrets.js', () => ({
-  auditSecretChange: (...a: unknown[]) => mockAuditSecretChange(...a),
-}));
+vi.mock('../../core/secrets.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../core/secrets.js')>();
+  return {
+    ...actual,
+    auditSecretChange: (...a: unknown[]) => mockAuditSecretChange(...a),
+  };
+});
 
 vi.mock('../../core/provider-endpoint.js', () => ({
   auditProviderEndpointChange: (...a: unknown[]) => mockAuditProviderEndpointChange(...a),
@@ -995,6 +999,75 @@ describe('createAbbenayService handlers', () => {
     expect(state.notifyModelsChanged).toHaveBeenCalledWith('provider_removed');
   });
 
+  it('RemoveProvider deletes owned memory secret from the memory backend only', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    await memory.set('MYMOCK_API_KEY', 'mem-value');
+    await keychain.set('MYMOCK_API_KEY', 'kc-value');
+    const registry = new SecretStoreRegistry(memory, keychain);
+
+    mockLoadConfig.mockReturnValue({
+      providers: {
+        mymock: {
+          engine: 'mock',
+          secret_name: 'MYMOCK_API_KEY',
+          secret_store: 'memory',
+        },
+      },
+    });
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    const { error } = await invokeUnary(service.RemoveProvider, { provider_id: 'mymock' });
+    expect(error).toBeNull();
+    expect(await memory.has('MYMOCK_API_KEY')).toBe(false);
+    expect(await keychain.has('MYMOCK_API_KEY')).toBe(true);
+    expect(mockAuditSecretChange).toHaveBeenCalledWith({
+      key: 'MYMOCK_API_KEY',
+      op: 'delete',
+      source: 'grpc-configure',
+    });
+  });
+
+  it('RemoveProvider skips env-backed and shared secret names', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    await keychain.set('SHARED_OPENAI', 'shared');
+    await keychain.set('ENV_LOOKALIKE', 'should-remain');
+    const registry = new SecretStoreRegistry(memory, keychain);
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    mockLoadConfig.mockReturnValue({
+      providers: {
+        'env-openai': {
+          engine: 'mock',
+          secret_name: 'ENV_LOOKALIKE',
+          secret_store: 'env',
+        },
+      },
+    });
+    expect((await invokeUnary(service.RemoveProvider, { provider_id: 'env-openai' })).error).toBeNull();
+    expect(await keychain.has('ENV_LOOKALIKE')).toBe(true);
+
+    mockLoadConfig.mockReturnValue({
+      providers: {
+        'shared-openai': {
+          engine: 'mock',
+          secret_name: 'SHARED_OPENAI',
+          secret_store: 'keychain',
+        },
+      },
+    });
+    expect((await invokeUnary(service.RemoveProvider, { provider_id: 'shared-openai' })).error).toBeNull();
+    expect(await keychain.has('SHARED_OPENAI')).toBe(true);
+    expect(mockAuditSecretChange).not.toHaveBeenCalled();
+  });
+
   it('GetKeyStatus checks keychain and env sources', async () => {
     const state = createMockState({
       secretStore: { has: vi.fn().mockResolvedValue(true) },
@@ -1016,6 +1089,22 @@ describe('createAbbenayService handlers', () => {
 
     const missing = await invokeUnary(service.GetKeyStatus, { source: '', name: '' });
     expect(missing.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+  });
+
+  it('GetKeyStatus checks memory independently of keychain', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    await memory.set('MEM_ONLY', 'v');
+    const registry = new SecretStoreRegistry(memory, keychain);
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    const mem = await invokeUnary(service.GetKeyStatus, { source: 'memory', name: 'MEM_ONLY' });
+    expect(mem.response?.exists).toBe(true);
+    const kc = await invokeUnary(service.GetKeyStatus, { source: 'keychain', name: 'MEM_ONLY' });
+    expect(kc.response?.exists).toBe(false);
   });
 
   it('ListMcpServerConfigs merges config and runtime statuses', async () => {

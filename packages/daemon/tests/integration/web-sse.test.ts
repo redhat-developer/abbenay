@@ -37,7 +37,8 @@ import { createWebApp } from '../../src/daemon/web/server.js';
 import type { DaemonState } from '../../src/daemon/state.js';
 import type { ProviderInfo, ModelInfo } from '../../src/core/state.js';
 import type { ConnectedClient } from '../../src/daemon/state.js';
-import type { SecretStore } from '../../src/core/secrets.js';
+import { MemorySecretStore } from '../../src/core/secrets.js';
+import { SecretStoreRegistry } from '../../src/daemon/secrets/registry.js';
 
 // ─── Mock DaemonState ───────────────────────────────────────────────────
 
@@ -58,13 +59,11 @@ let mockChatConfig: MockChatConfig = {
 
 const chatRequests: Array<{ model: string; messages: any[] }> = [];
 
-/** In-memory secret store for testing */
-const mockSecretStore: SecretStore = {
-  async get(key: string) { return key === 'OPENAI_API_KEY' ? 'sk-test' : null; },
-  async set(_key: string, _value: string) {},
-  async delete(_key: string) { return true; },
-  async has(key: string) { return key === 'OPENAI_API_KEY'; },
-};
+/** Namespaced secret store matching daemon production wiring */
+const mockSecretStore = new SecretStoreRegistry(
+  new MemorySecretStore(),
+  new MemorySecretStore(),
+);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -141,6 +140,7 @@ let httpServer: http.Server;
 let baseUrl: string;
 
 beforeAll(async () => {
+  await mockSecretStore.setIn('keychain', 'OPENAI_API_KEY', 'sk-test');
   const state = createMockState();
   const app = createWebApp(state, { apiToken: 'test-integration-token', skipConfig: true });
   
@@ -494,6 +494,58 @@ describe('Web API - Secrets Endpoints', () => {
     });
     expect(statusCode).toBe(400);
     expect(body.error).toMatch(/ENV/i);
+  });
+
+  it('DELETE /api/secrets/:key?secret_store=memory clears memory only', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/BOTH_HTTP`, {
+      value: 'persistent',
+      secret_store: 'keychain',
+    });
+    await httpRequest('POST', `${baseUrl}/api/secrets/BOTH_HTTP`, {
+      value: 'ephemeral',
+      secret_store: 'memory',
+    });
+
+    const { statusCode, body } = await httpRequest(
+      'DELETE',
+      `${baseUrl}/api/secrets/BOTH_HTTP?secret_store=memory`,
+    );
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.secret_store).toBe('memory');
+
+    const memStatus = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=memory&name=BOTH_HTTP`,
+    );
+    expect(memStatus.statusCode).toBe(200);
+    expect(memStatus.body.exists).toBe(false);
+
+    const kcStatus = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=keychain&name=BOTH_HTTP`,
+    );
+    expect(kcStatus.statusCode).toBe(200);
+    expect(kcStatus.body.exists).toBe(true);
+  });
+
+  it('GET /api/key-status?source=memory reports memory-only secrets', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/MEM_STATUS`, {
+      value: 'ephemeral',
+      secret_store: 'memory',
+    });
+    const mem = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=memory&name=MEM_STATUS`,
+    );
+    expect(mem.statusCode).toBe(200);
+    expect(mem.body.exists).toBe(true);
+    const kc = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=keychain&name=MEM_STATUS`,
+    );
+    expect(kc.statusCode).toBe(200);
+    expect(kc.body.exists).toBe(false);
   });
 
   it('POST /api/secrets/:key should reject missing value', async () => {

@@ -341,7 +341,7 @@ describe('Consumer auth RPC gating', () => {
     }
   });
 
-  it('ConfigureProvider rejects secret_store=env is not required when unset', async () => {
+  it('ConfigureProvider accepts secret_store=env even when the env var is unset', async () => {
     delete process.env.ABBENAY_TEST_PROVIDER_ENV_MISSING;
     const res = await callUnary(client, 'ConfigureProvider', {
       provider_id: 'env-missing',

@@ -31,6 +31,9 @@ import {
   getEnabledModelNames,
   isValidVirtualName,
   resolveEngineModelId,
+  providerSecretName,
+  isProviderOwnedSecretName,
+  providerCredentialSource,
   type ConfigFile,
 } from './config.js';
 
@@ -64,6 +67,73 @@ function createWorkspace(name: string, data: Record<string, unknown>): string {
 }
 
 // ── isValidVirtualName ────────────────────────────────────────────────────────
+
+describe('providerSecretName / isProviderOwnedSecretName / providerCredentialSource', () => {
+  it('prefers secret_name over legacy api_key_keychain_name', () => {
+    expect(providerSecretName({ engine: 'openai', secret_name: 'SHARED' })).toBe('SHARED');
+    expect(providerSecretName({
+      engine: 'openai',
+      secret_name: 'SHARED',
+      api_key_keychain_name: 'LEGACY',
+    })).toBe('SHARED');
+    expect(providerSecretName({
+      engine: 'openai',
+      api_key_keychain_name: 'LEGACY',
+    })).toBe('LEGACY');
+    expect(providerSecretName({ engine: 'openai' })).toBeUndefined();
+  });
+
+  it('recognizes only invented provider-owned secret names', () => {
+    expect(isProviderOwnedSecretName('work-openai', 'WORK-OPENAI_API_KEY')).toBe(true);
+    expect(isProviderOwnedSecretName('work-openai', 'abbenay.work-openai')).toBe(true);
+    expect(isProviderOwnedSecretName('work-openai', 'SHARED_OPENAI')).toBe(false);
+    expect(isProviderOwnedSecretName('work-openai', 'OPENAI_API_KEY')).toBe(false);
+  });
+
+  it('resolves store backends with keychain default and memory override', () => {
+    expect(providerCredentialSource({
+      engine: 'openai',
+      secret_name: 'K',
+    })).toEqual({ kind: 'store', name: 'K', backend: 'keychain' });
+
+    expect(providerCredentialSource({
+      engine: 'openai',
+      secret_name: 'K',
+      secret_store: 'memory',
+    })).toEqual({ kind: 'store', name: 'K', backend: 'memory' });
+
+    expect(providerCredentialSource({
+      engine: 'openai',
+      secret_name: 'K',
+      secret_store: 'keychain',
+    })).toEqual({ kind: 'store', name: 'K', backend: 'keychain' });
+  });
+
+  it('resolves env via secret_store=env or legacy api_key_env_var_name', () => {
+    expect(providerCredentialSource({
+      engine: 'openai',
+      secret_name: 'MY_ENV',
+      secret_store: 'env',
+    })).toEqual({ kind: 'env', name: 'MY_ENV' });
+
+    expect(providerCredentialSource({
+      engine: 'openai',
+      secret_store: 'env',
+      api_key_env_var_name: 'LEGACY_ENV',
+    })).toEqual({ kind: 'env', name: 'LEGACY_ENV' });
+
+    expect(providerCredentialSource({
+      engine: 'openai',
+      api_key_env_var_name: 'ONLY_ENV',
+    })).toEqual({ kind: 'env', name: 'ONLY_ENV' });
+
+    expect(providerCredentialSource({ engine: 'openai' })).toBeNull();
+    expect(providerCredentialSource({
+      engine: 'openai',
+      secret_store: 'env',
+    })).toBeNull();
+  });
+});
 
 describe('isValidVirtualName', () => {
   it('should accept simple lowercase names', () => {
