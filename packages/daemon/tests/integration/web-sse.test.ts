@@ -476,43 +476,43 @@ describe('Web API - Secrets Endpoints', () => {
     expect(body.success).toBe(true);
   });
 
-  it('POST /api/secrets/:key should accept secret_store=memory', async () => {
+  it('POST /api/secrets/:key should accept secretStore=memory', async () => {
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/secrets/MEM_KEY`, {
       value: 'ephemeral',
-      secret_store: 'memory',
+      secretStore: 'memory',
     });
     expect(statusCode).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.secret_store).toBe('memory');
+    expect(body.secretStore).toBe('memory');
   });
 
-  it('POST /api/secrets should reject secret_store=env', async () => {
+  it('POST /api/secrets should reject secretStore=env', async () => {
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/secrets`, {
       key: 'ENV_KEY',
       value: 'nope',
-      secret_store: 'env',
+      secretStore: 'env',
     });
     expect(statusCode).toBe(400);
     expect(body.error).toMatch(/ENV/i);
   });
 
-  it('DELETE /api/secrets/:key?secret_store=memory clears memory only', async () => {
+  it('DELETE /api/secrets/:key?secretStore=memory clears memory only', async () => {
     await httpRequest('POST', `${baseUrl}/api/secrets/BOTH_HTTP`, {
       value: 'persistent',
-      secret_store: 'keychain',
+      secretStore: 'keychain',
     });
     await httpRequest('POST', `${baseUrl}/api/secrets/BOTH_HTTP`, {
       value: 'ephemeral',
-      secret_store: 'memory',
+      secretStore: 'memory',
     });
 
     const { statusCode, body } = await httpRequest(
       'DELETE',
-      `${baseUrl}/api/secrets/BOTH_HTTP?secret_store=memory`,
+      `${baseUrl}/api/secrets/BOTH_HTTP?secretStore=memory`,
     );
     expect(statusCode).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.secret_store).toBe('memory');
+    expect(body.secretStore).toBe('memory');
 
     const memStatus = await httpRequest(
       'GET',
@@ -532,7 +532,7 @@ describe('Web API - Secrets Endpoints', () => {
   it('GET /api/key-status?source=memory reports memory-only secrets', async () => {
     await httpRequest('POST', `${baseUrl}/api/secrets/MEM_STATUS`, {
       value: 'ephemeral',
-      secret_store: 'memory',
+      secretStore: 'memory',
     });
     const mem = await httpRequest(
       'GET',
@@ -564,7 +564,7 @@ describe('Web API - Secrets Endpoints', () => {
   it('POST /api/provider/:id/configure picks an existing memory secret', async () => {
     await httpRequest('POST', `${baseUrl}/api/secrets/SHARED_MEM`, {
       value: 'shared-value',
-      secret_store: 'memory',
+      secretStore: 'memory',
     });
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/shared-openai/configure`, {
       engine: 'openai',
@@ -600,7 +600,7 @@ describe('Web API - Secrets Endpoints', () => {
   it('POST /api/provider/:id/configure defaults omitted secretStore to keychain', async () => {
     await httpRequest('POST', `${baseUrl}/api/secrets/DEFAULT_KC`, {
       value: 'kc-value',
-      secret_store: 'keychain',
+      secretStore: 'keychain',
     });
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/default-kc/configure`, {
       engine: 'openai',
@@ -631,7 +631,7 @@ describe('Web API - Secrets Endpoints', () => {
   it('POST /api/secrets/:key rejects invalid store and legacy POST accepts memory', async () => {
     const bad = await httpRequest('POST', `${baseUrl}/api/secrets/BAD_STORE`, {
       value: 'x',
-      secret_store: 'vault',
+      secretStore: 'vault',
     });
     expect(bad.statusCode).toBe(400);
 
@@ -641,14 +641,14 @@ describe('Web API - Secrets Endpoints', () => {
       store: 'memory',
     });
     expect(legacy.statusCode).toBe(200);
-    expect(legacy.body.secret_store).toBe('memory');
+    expect(legacy.body.secretStore).toBe('memory');
     expect(await mockSecretStore.getFrom('memory', 'LEGACY_MEM')).toBe('v');
   });
 
   it('DELETE /api/secrets/:key rejects invalid store', async () => {
     const { statusCode } = await httpRequest(
       'DELETE',
-      `${baseUrl}/api/secrets/ANY?secret_store=vault`,
+      `${baseUrl}/api/secrets/ANY?secretStore=vault`,
     );
     expect(statusCode).toBe(400);
   });

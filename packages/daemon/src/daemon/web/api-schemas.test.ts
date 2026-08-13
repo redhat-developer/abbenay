@@ -174,9 +174,9 @@ describe('secret body schemas', () => {
     expect(PostSecretByKeyBodySchema.safeParse({ value: '' }).success).toBe(false);
   });
 
-  it('accepts optional secret_store memory|keychain|env (and legacy store)', () => {
+  it('accepts optional secretStore memory|keychain|env (and legacy aliases)', () => {
     expect(
-      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secret_store: 'memory' }).success,
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'memory' }).success,
     ).toBe(true);
     expect(
       PostSecretByKeyBodySchema.safeParse({ value: 'v', store: 'keychain' }).success,

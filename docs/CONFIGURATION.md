@@ -412,17 +412,18 @@ providers:
 ### Option 1b: In-memory (process-lifetime) via secrets API
 
 - Same `secret_name` in the `memory` namespace; set value with `SetSecret` /
-  `POST /api/secrets` and `secret_store: memory` (SetSecret still cannot
+  `POST /api/secrets` and HTTP `secretStore: memory` (SetSecret still cannot
   write `env`)
 - Lives only while the daemon process is running
 - Independent from keychain — overlapping names are allowed (DR-047)
 
 ### Recommended workflow (keys are N:1 with providers)
 
-1. **Add a secret** (store) — `SetSecret` with `secret_store=memory|keychain`, **or**
-   export an env var yourself.
+1. **Add a secret** (store) — `SetSecret` with store `memory|keychain`, HTTP
+   `secretStore`, **or** export an env var yourself.
 2. **Configure the provider** — `secret_name=NAME` and
-   `secret_store=memory|keychain|env`. For `env`, the variable is resolved at
+   `secret_store=memory|keychain|env` (YAML/config; HTTP configure uses
+   camelCase `secretName` / `secretStore`). For `env`, the variable is resolved at
    request time (it need not exist at configure time).
 3. Many providers may share one `(secret_store, secret_name)` pair.
 

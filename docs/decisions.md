@@ -839,7 +839,7 @@ Numbered DR-046 because main already shipped VS Code webview UX as DR-045.
 addressed by `(secret_store, secret_name)` — the same name may exist in more
 than one backend. Clients select the backend on write via gRPC
 `SetSecretRequest.store` (`SECRET_STORE_MEMORY` / `SECRET_STORE_KEYCHAIN`) or
-HTTP `secret_store: "memory" | "keychain"` (default keychain). Get/Delete
+HTTP `secretStore: "memory" | "keychain"` (default keychain). Get/Delete
 take the same store field (default keychain). Provider config records both
 `secret_name` and `secret_store`; resolve reads only that backend (no
 cross-store overlay). Memory secrets survive until consumer delete/set or
