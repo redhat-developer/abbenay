@@ -272,10 +272,17 @@ describe('KeychainSecretStore', () => {
 
   it('short-circuits further loads after keytar import failure', async () => {
     const store = await loadStoreWithFailingKeytarImport();
+    const internals = store as unknown as KeychainInternals;
 
     await expect(store.get('ONE')).resolves.toBeNull();
+    expect(internals.keytar).toBeNull();
+    expect(internals.loadError).toMatch(/keytar missing/);
+    const cachedError = internals.loadError;
+
     await expect(store.get('TWO')).resolves.toBeNull();
-    expect(warnSpy).toHaveBeenCalledTimes(1);
+    // Failure is sticky — no second import attempt / error rewrite.
+    expect(internals.loadError).toBe(cachedError);
+    expect(internals.keytar).toBeNull();
   });
 
   it('loads keytar from named export when default export lacks getPassword', async () => {
