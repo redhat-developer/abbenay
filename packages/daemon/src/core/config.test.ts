@@ -229,6 +229,39 @@ describe('loadConfigFromPath (new schema)', () => {
     });
     expect(loadConfigFromPath(filePath)).toEqual({ providers: {} });
   });
+
+  it('mirrors secret_name / env aliases and defaults secret_store', () => {
+    const filePath = writeYaml(path.join(tmpDir, 'secrets.yaml'), {
+      providers: {
+        named: {
+          engine: 'openai',
+          secret_name: 'SHARED_KEY',
+          models: {},
+        },
+        envlegacy: {
+          engine: 'openai',
+          api_key_env_var_name: 'ONLY_ENV',
+          models: {},
+        },
+        envin: {
+          engine: 'openai',
+          secret_name: 'MY_ENV',
+          secret_store: 'env',
+          models: {},
+        },
+      },
+    });
+    const config = loadConfigFromPath(filePath)!;
+    expect(config.providers!.named.secret_name).toBe('SHARED_KEY');
+    expect(config.providers!.named.api_key_keychain_name).toBe('SHARED_KEY');
+    expect(config.providers!.named.secret_store).toBe('keychain');
+
+    expect(config.providers!.envlegacy.secret_name).toBe('ONLY_ENV');
+    expect(config.providers!.envlegacy.secret_store).toBe('env');
+
+    expect(config.providers!.envin.api_key_env_var_name).toBe('MY_ENV');
+    expect(config.providers!.envin.secret_store).toBe('env');
+  });
 });
 
 // ── loadConfigFromPath (old schema migration) ────────────────────────────────

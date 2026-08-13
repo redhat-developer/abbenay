@@ -74,6 +74,36 @@ describe('PostProviderConfigureBodySchema', () => {
     ).toBe(true);
   });
 
+  it('accepts secretStore memory|keychain|env with apiKey or secretName', () => {
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        apiKey: 'sk-test',
+        secretStore: 'memory',
+        secretName: 'MY_KEY',
+      }).success,
+    ).toBe(true);
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        secretName: 'ENV_VAR',
+        secretStore: 'env',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects apiKey together with envVarName', () => {
+    const result = PostProviderConfigureBodySchema.safeParse({
+      engine: 'openai',
+      apiKey: 'sk-test',
+      envVarName: 'OPENAI_API_KEY',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.includes('apiKey'))).toBe(true);
+    }
+  });
+
   it('rejects secretName together with envVarName', () => {
     expect(
       PostProviderConfigureBodySchema.safeParse({
