@@ -1033,11 +1033,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
             if (backends.length === 0) {
               return [{ key, engine: e.id, hasValue: false }];
             }
-            return backends.map((store) => ({
+            return backends.map((backend) => ({
               key,
               engine: e.id,
               hasValue: true,
-              store,
+              secretStore: backend,
             }));
           }
           const hasValue = await state.secretStore.has(key);
@@ -1054,7 +1054,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   
   /**
    * POST /api/secrets/:key - Set a specific secret (API key)
-   * Body: { value: string, store?: "memory" | "keychain" }
+   * Body: { value: string, secretStore?: "memory" | "keychain" }
    */
   app.post('/api/secrets/:key', async (req, res) => {
     try {
@@ -1064,9 +1064,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      const storeChoice = parseSecretStoreChoice(
-        parsed.data.secret_store ?? parsed.data.store ?? 'keychain',
-      );
+      const storeChoice = parseSecretStoreChoice(parsed.data.secretStore ?? 'keychain');
       if (!storeChoice.ok) {
         sendBadRequest(res, storeChoice.error);
         return;
@@ -1085,7 +1083,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       const auditSource =
         storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets';
       auditSecretChange({ key, op: 'set', source: auditSource });
-      res.json({ success: true, secret_store: storeChoice.backend });
+      res.json({ success: true, secretStore: storeChoice.backend });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1096,7 +1094,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   
   /**
    * POST /api/secrets - Set a secret (API key) — legacy route
-   * Body: { key: string, value: string, secret_store?: "memory" | "keychain" }
+   * Body: { key: string, value: string, secretStore?: "memory" | "keychain" }
    */
   app.post('/api/secrets', async (req, res) => {
     try {
@@ -1105,9 +1103,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      const storeChoice = parseSecretStoreChoice(
-        parsed.data.secret_store ?? parsed.data.store ?? 'keychain',
-      );
+      const storeChoice = parseSecretStoreChoice(parsed.data.secretStore ?? 'keychain');
       if (!storeChoice.ok) {
         sendBadRequest(res, storeChoice.error);
         return;
@@ -1126,7 +1122,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       const auditSource =
         storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets';
       auditSecretChange({ key: parsed.data.key, op: 'set', source: auditSource });
-      res.json({ success: true, secret_store: storeChoice.backend });
+      res.json({ success: true, secretStore: storeChoice.backend });
       state.notifyModelsChanged('secret_updated');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1137,7 +1133,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
   /**
    * DELETE /api/secrets/:key - Delete a secret
-   * Query: secret_store=memory|keychain (default keychain)
+   * Query: secretStore=memory|keychain (default keychain)
    */
   app.delete('/api/secrets/:key', async (req, res) => {
     try {
@@ -1146,10 +1142,15 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
+      if (
+        Object.prototype.hasOwnProperty.call(req.query, 'secret_store') ||
+        Object.prototype.hasOwnProperty.call(req.query, 'store')
+      ) {
+        sendBadRequest(res, 'Use secretStore query param (secret_store/store are not accepted)');
+        return;
+      }
       const storeChoice = parseSecretStoreChoice(
-        (req.query.secret_store as string | undefined) ??
-          (req.query.store as string | undefined) ??
-          'keychain',
+        (req.query.secretStore as string | undefined) ?? 'keychain',
       );
       if (!storeChoice.ok) {
         sendBadRequest(res, storeChoice.error);
@@ -1172,7 +1173,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         source:
           storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets',
       });
-      res.json({ success: true, secret_store: storeChoice.backend });
+      res.json({ success: true, secretStore: storeChoice.backend });
       state.notifyModelsChanged('secret_deleted');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1535,7 +1536,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
             res.status(400).json({
               error:
                 `Secret "${secretNameRef}" not found in keychain; ` +
-                `POST /api/secrets first, pass apiKey, or set secret_store`,
+                `POST /api/secrets first, pass apiKey, or set secretStore`,
             });
             return;
           }

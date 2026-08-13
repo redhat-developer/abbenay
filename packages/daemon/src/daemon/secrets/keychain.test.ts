@@ -63,7 +63,6 @@ function patchNodeSeaModule(
 }
 
 describe('KeychainSecretStore', () => {
-  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   beforeEach(() => {
@@ -73,7 +72,6 @@ describe('KeychainSecretStore', () => {
     mocks.getPassword.mockReset();
     mocks.setPassword.mockReset();
     mocks.deletePassword.mockReset();
-    warnSpy.mockClear();
     errorSpy.mockClear();
   });
 
@@ -134,13 +132,14 @@ describe('KeychainSecretStore', () => {
     await expect(store.get('MISSING')).resolves.toBeNull();
   });
 
-  it('warns when keytar import fails', async () => {
+  it('records Error keytar import failures', async () => {
     const store = await loadStoreWithFailingKeytarImport();
+    const internals = store as unknown as KeychainInternals;
 
     await expect(store.get('MISSING')).resolves.toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[Secrets] keytar not available: keytar missing'),
-    );
+    // Prefer sticky loadError over console.warn — parallel suites can clobber spies.
+    expect(internals.keytar).toBeNull();
+    expect(internals.loadError).toMatch(/keytar missing/);
   });
 
   it('get returns null and logs when keytar throws', async () => {
@@ -411,10 +410,11 @@ describe('KeychainSecretStore', () => {
 
   it('records non-Error keytar import failures', async () => {
     const store = await loadStoreWithFailingKeytarImport('native addon missing');
+    const internals = store as unknown as KeychainInternals;
 
     await expect(store.get('KEY')).resolves.toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[Secrets] keytar not available: native addon missing'),
-    );
+    // Prefer sticky loadError over console.warn — parallel suites can clobber spies.
+    expect(internals.keytar).toBeNull();
+    expect(internals.loadError).toBe('native addon missing');
   });
 });
