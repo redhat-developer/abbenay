@@ -456,6 +456,10 @@ describe('Web API - Config Endpoints', () => {
 
 describe('Web API - Secrets Endpoints', () => {
   it('GET /api/secrets should return { secrets: [...] } with hasValue (camelCase)', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/OPENAI_API_KEY`, {
+      value: 'ephemeral',
+      secretStore: 'memory',
+    });
     const { statusCode, body } = await httpRequest('GET', `${baseUrl}/api/secrets`);
     expect(statusCode).toBe(200);
     expect(body).toHaveProperty('secrets');
@@ -465,7 +469,13 @@ describe('Web API - Secrets Endpoints', () => {
       expect(s).toHaveProperty('key');
       expect(s).toHaveProperty('hasValue');
       expect(s).not.toHaveProperty('has_value');
+      expect(s).not.toHaveProperty('store');
     }
+    const listed = body.secrets.filter((s: { key: string }) => s.key === 'OPENAI_API_KEY');
+    expect(listed.length).toBeGreaterThanOrEqual(1);
+    expect(listed.some((s: { secretStore?: string; hasValue?: boolean }) => (
+      s.hasValue === true && s.secretStore === 'memory'
+    ))).toBe(true);
   });
 
   it('POST /api/secrets/:key should set a secret', async () => {
@@ -656,6 +666,22 @@ describe('Web API - Secrets Endpoints', () => {
       `${baseUrl}/api/secrets/ANY?secretStore=vault`,
     );
     expect(statusCode).toBe(400);
+  });
+
+  it('DELETE /api/secrets/:key rejects legacy secret_store/store query params', async () => {
+    const snake = await httpRequest(
+      'DELETE',
+      `${baseUrl}/api/secrets/ANY?secret_store=memory`,
+    );
+    expect(snake.statusCode).toBe(400);
+    expect(snake.body.error).toMatch(/secretStore/i);
+
+    const bare = await httpRequest(
+      'DELETE',
+      `${baseUrl}/api/secrets/ANY?store=memory`,
+    );
+    expect(bare.statusCode).toBe(400);
+    expect(bare.body.error).toMatch(/secretStore/i);
   });
 
   it('POST /api/provider/:id/configure rejects apiKey with secretStore=env', async () => {

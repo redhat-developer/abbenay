@@ -1033,11 +1033,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
             if (backends.length === 0) {
               return [{ key, engine: e.id, hasValue: false }];
             }
-            return backends.map((store) => ({
+            return backends.map((backend) => ({
               key,
               engine: e.id,
               hasValue: true,
-              store,
+              secretStore: backend,
             }));
           }
           const hasValue = await state.secretStore.has(key);
@@ -1140,6 +1140,13 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       const parsed = parseRequestBody(EmptyBodySchema, req.body);
       if (!parsed.success) {
         sendBadRequest(res, parsed.error);
+        return;
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(req.query, 'secret_store') ||
+        Object.prototype.hasOwnProperty.call(req.query, 'store')
+      ) {
+        sendBadRequest(res, 'Use secretStore query param (secret_store/store are not accepted)');
         return;
       }
       const storeChoice = parseSecretStoreChoice(
