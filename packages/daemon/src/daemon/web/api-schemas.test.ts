@@ -174,18 +174,24 @@ describe('secret body schemas', () => {
     expect(PostSecretByKeyBodySchema.safeParse({ value: '' }).success).toBe(false);
   });
 
-  it('accepts optional secretStore memory|keychain|env (and legacy aliases)', () => {
+  it('accepts optional secretStore memory|keychain|env', () => {
     expect(
       PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'memory' }).success,
     ).toBe(true);
     expect(
-      PostSecretByKeyBodySchema.safeParse({ value: 'v', store: 'keychain' }).success,
+      PostSecretByKeyBodySchema.safeParse({ value: 'v', secretStore: 'keychain' }).success,
     ).toBe(true);
     expect(
-      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secret_store: 'env' }).success,
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'env' }).success,
     ).toBe(true);
     expect(
-      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'vault' }).success,
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'vault' }).success,
+    ).toBe(false);
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secret_store: 'memory' }).success,
+    ).toBe(false);
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', store: 'memory' }).success,
     ).toBe(false);
   });
 });

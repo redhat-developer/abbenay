@@ -49,10 +49,6 @@ export const PostSecretByKeyBodySchema = z
     value: z.string().min(1),
     /** Default: keychain (persistent). memory = process-lifetime only. */
     secretStore: SecretStoreFieldSchema,
-    /** @deprecated Use secretStore (HTTP camelCase). */
-    secret_store: SecretStoreFieldSchema,
-    /** @deprecated Use secretStore. */
-    store: SecretStoreFieldSchema,
   })
   .strict();
 
@@ -62,10 +58,6 @@ export const PostSecretBodySchema = z
     value: z.string().min(1),
     /** Default: keychain (persistent). memory = process-lifetime only. */
     secretStore: SecretStoreFieldSchema,
-    /** @deprecated Use secretStore (HTTP camelCase). */
-    secret_store: SecretStoreFieldSchema,
-    /** @deprecated Use secretStore. */
-    store: SecretStoreFieldSchema,
   })
   .strict();
 

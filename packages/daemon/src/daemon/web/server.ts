@@ -1064,9 +1064,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      const storeChoice = parseSecretStoreChoice(
-        parsed.data.secretStore ?? parsed.data.secret_store ?? parsed.data.store ?? 'keychain',
-      );
+      const storeChoice = parseSecretStoreChoice(parsed.data.secretStore ?? 'keychain');
       if (!storeChoice.ok) {
         sendBadRequest(res, storeChoice.error);
         return;
@@ -1105,9 +1103,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         sendBadRequest(res, parsed.error);
         return;
       }
-      const storeChoice = parseSecretStoreChoice(
-        parsed.data.secretStore ?? parsed.data.secret_store ?? parsed.data.store ?? 'keychain',
-      );
+      const storeChoice = parseSecretStoreChoice(parsed.data.secretStore ?? 'keychain');
       if (!storeChoice.ok) {
         sendBadRequest(res, storeChoice.error);
         return;
@@ -1147,10 +1143,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         return;
       }
       const storeChoice = parseSecretStoreChoice(
-        (req.query.secretStore as string | undefined) ??
-          (req.query.secret_store as string | undefined) ??
-          (req.query.store as string | undefined) ??
-          'keychain',
+        (req.query.secretStore as string | undefined) ?? 'keychain',
       );
       if (!storeChoice.ok) {
         sendBadRequest(res, storeChoice.error);

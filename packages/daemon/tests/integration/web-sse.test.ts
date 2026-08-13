@@ -628,21 +628,26 @@ describe('Web API - Secrets Endpoints', () => {
     expect(body.success).toBe(true);
   });
 
-  it('POST /api/secrets/:key rejects invalid store and legacy POST accepts memory', async () => {
+  it('POST /api/secrets/:key rejects invalid store and snake_case aliases', async () => {
     const bad = await httpRequest('POST', `${baseUrl}/api/secrets/BAD_STORE`, {
       value: 'x',
       secretStore: 'vault',
     });
     expect(bad.statusCode).toBe(400);
 
-    const legacy = await httpRequest('POST', `${baseUrl}/api/secrets`, {
+    const snake = await httpRequest('POST', `${baseUrl}/api/secrets`, {
+      key: 'SNAKE_MEM',
+      value: 'v',
+      secret_store: 'memory',
+    });
+    expect(snake.statusCode).toBe(400);
+
+    const legacyStore = await httpRequest('POST', `${baseUrl}/api/secrets`, {
       key: 'LEGACY_MEM',
       value: 'v',
       store: 'memory',
     });
-    expect(legacy.statusCode).toBe(200);
-    expect(legacy.body.secretStore).toBe('memory');
-    expect(await mockSecretStore.getFrom('memory', 'LEGACY_MEM')).toBe('v');
+    expect(legacyStore.statusCode).toBe(400);
   });
 
   it('DELETE /api/secrets/:key rejects invalid store', async () => {
