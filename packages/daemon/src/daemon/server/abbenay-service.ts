@@ -28,8 +28,10 @@ import {
 import { auditSecretChange } from '../../core/secrets.js';
 import {
   isSecretStoreRegistry,
+  isWritableSecretBackend,
   parseSecretStoreChoice,
   requireNamespacedMemory,
+  secretAuditSource,
   secretBackendToProto,
 } from '../secrets/registry.js';
 import {
@@ -871,8 +873,7 @@ export function createAbbenayService(
       const write = registry
         ? registry.setIn(parsed.backend, key, value)
         : state.secretStore.set(key, value);
-      const auditSource =
-        parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets';
+      const auditSource = secretAuditSource('grpc-secrets', parsed.backend);
 
       write.then(() => {
         auditSecretChange({ key, op: 'set', source: auditSource });
@@ -922,8 +923,7 @@ export function createAbbenayService(
         auditSecretChange({
           key,
           op: 'delete',
-          source:
-            parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets',
+          source: secretAuditSource('grpc-secrets', parsed.backend),
         });
         callback(null, {});
       }).catch((error: unknown) => {
@@ -1890,8 +1890,7 @@ export function createAbbenayService(
             } else {
               await state.secretStore.set(secretName, apiKey);
             }
-            const auditSource =
-              storeChoice.backend === 'memory' ? 'grpc-configure-memory' : 'grpc-configure';
+            const auditSource = secretAuditSource('grpc-configure', storeChoice.backend);
             auditSecretChange({ key: secretName, op: 'set', source: auditSource });
             config.providers[providerId].secret_name = secretName;
             config.providers[providerId].secret_store = storeChoice.backend;
@@ -2111,7 +2110,7 @@ export function createAbbenayService(
       (async () => {
         try {
           let exists = false;
-          if (source === 'keychain' || source === 'memory') {
+          if (isWritableSecretBackend(source)) {
             const registry = isSecretStoreRegistry(state.secretStore)
               ? state.secretStore
               : null;

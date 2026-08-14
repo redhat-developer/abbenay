@@ -70,6 +70,10 @@ defaults (or stronger) in place.
   resolve them. Authenticated clients with the `secrets` capability can still
   read them for the life of the daemon process. Restart clears them; treat
   RAM and process dumps accordingly.
+- File-backed secrets (DR-048) persist as plaintext JSON at
+  `<configDir>/secrets.json` (mode `0600`; override with `ABBENAY_SECRETS_FILE`).
+  Providers must set `secret_store: file`. Protect the config volume the same
+  way as `config.yaml`; there is no encryption-at-rest in this revision.
 
 ---
 

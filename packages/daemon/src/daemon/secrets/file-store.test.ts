@@ -50,18 +50,19 @@ describe('FileSecretStore', () => {
     expect(await store.get('missing')).toBeNull();
   });
 
-  it('starts empty when file is corrupt JSON', async () => {
+  it('refuses writes when file is corrupt JSON', async () => {
     await fsp.writeFile(filePath, 'not-json{', 'utf8');
     const reloaded = new FileSecretStore(filePath);
     expect(await reloaded.get('K')).toBeNull();
-    await reloaded.set('K', 'v');
-    expect(await reloaded.get('K')).toBe('v');
+    await expect(reloaded.set('K', 'v')).rejects.toThrow(/unparseable/);
+    expect(await fsp.readFile(filePath, 'utf8')).toBe('not-json{');
   });
 
-  it('starts empty when file is a JSON array', async () => {
+  it('refuses writes when file is a JSON array', async () => {
     await fsp.writeFile(filePath, '[]', 'utf8');
     const reloaded = new FileSecretStore(filePath);
     expect(await reloaded.get('K')).toBeNull();
+    await expect(reloaded.set('K', 'v')).rejects.toThrow(/unparseable/);
   });
 
   it('exposes absolute path', () => {

@@ -1258,6 +1258,23 @@ describe('createAbbenayService handlers', () => {
     expect(kc.response?.exists).toBe(false);
   });
 
+  it('GetKeyStatus checks file independently of keychain', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    const file = new MemorySecretStore();
+    await file.set('FILE_ONLY', 'v');
+    const registry = new SecretStoreRegistry(memory, keychain, file);
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    const fileStatus = await invokeUnary(service.GetKeyStatus, { source: 'file', name: 'FILE_ONLY' });
+    expect(fileStatus.response?.exists).toBe(true);
+    const kc = await invokeUnary(service.GetKeyStatus, { source: 'keychain', name: 'FILE_ONLY' });
+    expect(kc.response?.exists).toBe(false);
+  });
+
   it('ListMcpServerConfigs merges config and runtime statuses', async () => {
     mockLoadConfig.mockReturnValue({
       mcp_servers: {

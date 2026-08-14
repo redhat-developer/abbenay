@@ -432,6 +432,8 @@ providers:
 - Written to `<configDir>/secrets.json` (override path with `ABBENAY_SECRETS_FILE`)
 - Survives daemon restarts when the config directory is on a persistent volume
   (e.g. APME Helm `persistence.abbenay.enabled=true`)
+- If `secrets.json` exists but is not valid JSON object map, reads treat it as
+  empty and **writes are refused** so a later `set` cannot wipe the on-disk file
 
 ### Recommended workflow (keys are N:1 with providers)
 

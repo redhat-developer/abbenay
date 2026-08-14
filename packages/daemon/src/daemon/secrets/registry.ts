@@ -209,3 +209,15 @@ export function secretBackendToProto(backend: SecretBackend | null): number {
   if (backend === 'file') return 4; // SECRET_STORE_FILE
   return 0; // SECRET_STORE_UNSPECIFIED
 }
+
+/**
+ * Audit ``source`` label for a writable backend.
+ * Keychain keeps the unsuffixed base; memory/file append ``-memory`` / ``-file``.
+ */
+export function secretAuditSource(
+  base: 'http-secrets' | 'grpc-secrets' | 'http-configure' | 'grpc-configure',
+  backend: string,
+): string {
+  if (backend === 'memory' || backend === 'file') return `${base}-${backend}`;
+  return base;
+}

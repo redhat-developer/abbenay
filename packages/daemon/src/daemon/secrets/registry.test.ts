@@ -8,6 +8,7 @@ import {
   SecretStoreRegistry,
   parseSecretStoreChoice,
   requireNamespacedMemory,
+  secretAuditSource,
   secretBackendToProto,
 } from './registry.js';
 
@@ -184,5 +185,13 @@ describe('secretBackendToProto', () => {
     expect(secretBackendToProto('memory')).toBe(3);
     expect(secretBackendToProto('file')).toBe(4);
     expect(secretBackendToProto(null)).toBe(0);
+  });
+});
+
+describe('secretAuditSource', () => {
+  it('suffixes memory and file; keychain keeps the base label', () => {
+    expect(secretAuditSource('grpc-secrets', 'keychain')).toBe('grpc-secrets');
+    expect(secretAuditSource('grpc-secrets', 'memory')).toBe('grpc-secrets-memory');
+    expect(secretAuditSource('http-configure', 'file')).toBe('http-configure-file');
   });
 });

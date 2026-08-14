@@ -6,9 +6,12 @@
  * where the OS keychain is unavailable and process-lifetime memory is not
  * durable across restarts.
  *
- * Mutations are serialized per instance so concurrent set/delete calls cannot
- * clobber each other. The in-memory cache is updated only after a successful
- * atomic rename to disk.
+ * Mutations and reads are serialized per instance so concurrent set/delete
+ * cannot clobber each other and get/has observe the latest committed snapshot.
+ * The in-memory cache is updated only after a successful atomic rename to disk.
+ *
+ * If ``secrets.json`` exists but is unparseable, reads treat it as empty and
+ * writes are refused so a later ``set`` cannot wipe recoverable on-disk data.
  *
  * Never logs secret values.
  */
@@ -26,7 +29,11 @@ const DIR_MODE = 0o700;
 export class FileSecretStore implements SecretStore {
   private readonly filePath: string;
   private cache: Map<string, string> | null = null;
-  /** Chains set/delete so concurrent writers apply in order. */
+  /** Shared in-flight disk load so concurrent first readers do not race. */
+  private loadPromise: Promise<Map<string, string>> | null = null;
+  /** True when the file exists but is not a JSON object map. */
+  private unparseable = false;
+  /** Chains get/set/delete so concurrent ops apply in order. */
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(filePath?: string) {
@@ -38,9 +45,7 @@ export class FileSecretStore implements SecretStore {
     return this.filePath;
   }
 
-  private async ensureLoaded(): Promise<Map<string, string>> {
-    if (this.cache) return this.cache;
-
+  private async readFromDisk(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     try {
       const raw = await fsp.readFile(this.filePath, 'utf8');
@@ -52,6 +57,7 @@ export class FileSecretStore implements SecretStore {
           }
         }
       } else {
+        this.unparseable = true;
         console.warn(
           `[Secrets] Ignoring non-object secrets file at ${this.filePath}; starting empty`,
         );
@@ -59,15 +65,37 @@ export class FileSecretStore implements SecretStore {
     } catch (error: unknown) {
       const err = error as NodeJS.ErrnoException;
       if (err?.code !== 'ENOENT') {
+        this.unparseable = true;
         const loadError = error instanceof Error ? error.message : String(error);
         console.warn(
           `[Secrets] Failed to read secrets file ${this.filePath}: ${loadError}; starting empty`,
         );
       }
     }
+    return map;
+  }
 
+  private async ensureLoaded(): Promise<Map<string, string>> {
+    if (this.cache) return this.cache;
+    if (!this.loadPromise) {
+      this.loadPromise = this.readFromDisk().finally(() => {
+        this.loadPromise = null;
+      });
+    }
+    const map = await this.loadPromise;
+    // A concurrent write may have committed a newer snapshot while we loaded.
+    if (this.cache) return this.cache;
     this.cache = map;
     return map;
+  }
+
+  private assertWritable(): void {
+    if (this.unparseable) {
+      throw new Error(
+        `Refusing to overwrite unparseable secrets file at ${this.filePath}; ` +
+          'fix or remove the file, then retry',
+      );
+    }
   }
 
   private async persist(map: Map<string, string>): Promise<void> {
@@ -106,13 +134,16 @@ export class FileSecretStore implements SecretStore {
   }
 
   async get(key: string): Promise<string | null> {
-    const map = await this.ensureLoaded();
-    return map.get(key) ?? null;
+    return this.enqueueWrite(async () => {
+      const map = await this.ensureLoaded();
+      return map.get(key) ?? null;
+    });
   }
 
   async set(key: string, value: string): Promise<void> {
     await this.enqueueWrite(async () => {
       const next = new Map(await this.ensureLoaded());
+      this.assertWritable();
       next.set(key, value);
       await this.persist(next);
       this.cache = next;
@@ -122,6 +153,7 @@ export class FileSecretStore implements SecretStore {
   async delete(key: string): Promise<boolean> {
     return this.enqueueWrite(async () => {
       const next = new Map(await this.ensureLoaded());
+      this.assertWritable();
       const existed = next.delete(key);
       if (existed) {
         await this.persist(next);
@@ -132,7 +164,9 @@ export class FileSecretStore implements SecretStore {
   }
 
   async has(key: string): Promise<boolean> {
-    const map = await this.ensureLoaded();
-    return map.has(key);
+    return this.enqueueWrite(async () => {
+      const map = await this.ensureLoaded();
+      return map.has(key);
+    });
   }
 }
