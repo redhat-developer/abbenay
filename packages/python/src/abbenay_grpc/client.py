@@ -36,6 +36,13 @@ def _to_policy_proto(policy: Union["proto.PolicyConfig", Dict[str, Any]]) -> "pr
     )
 
 
+def _consumer_metadata(token: Optional[str]) -> Optional[List[tuple]]:
+    """Build gRPC metadata for an optional x-abbenay-token."""
+    if token is None:
+        return None
+    return [("x-abbenay-token", token)]
+
+
 class AbbenayError(Exception):
     """Base exception for Abbenay client errors."""
     pass
@@ -372,11 +379,7 @@ class AbbenayClient:
         if policy is not None:
             request.policy.CopyFrom(_to_policy_proto(policy))
         
-        metadata = []
-        if token is not None:
-            metadata.append(("x-abbenay-token", token))
-        
-        async for chunk in self._stub.Chat(request, metadata=metadata or None):
+        async for chunk in self._stub.Chat(request, metadata=_consumer_metadata(token)):
             yield self._parse_chunk(chunk)
     
     async def create_session(
@@ -384,6 +387,8 @@ class AbbenayClient:
         model: str,
         topic: Optional[str] = None,
         metadata: Optional[Dict[str, str]] = None,
+        *,
+        token: Optional[str] = None,
     ) -> Session:
         """Create a new chat session.
         
@@ -391,6 +396,9 @@ class AbbenayClient:
             model: Model ID
             topic: Optional topic/title
             metadata: Optional metadata
+            token: Optional consumer auth token (x-abbenay-token). When
+                consumers are configured, pass the same token used for
+                session_chat so the session is owned by consumer:<name>.
             
         Returns:
             The created Session
@@ -403,14 +411,23 @@ class AbbenayClient:
             metadata=metadata or {},
         )
         
-        response = await self._stub.CreateSession(request)
+        response = await self._stub.CreateSession(
+            request,
+            metadata=_consumer_metadata(token),
+        )
         return self._parse_session(response)
     
-    async def get_session(self, session_id: str) -> Session:
+    async def get_session(
+        self,
+        session_id: str,
+        *,
+        token: Optional[str] = None,
+    ) -> Session:
         """Get a session by ID.
         
         Args:
             session_id: Session ID
+            token: Optional consumer auth token (x-abbenay-token)
             
         Returns:
             The Session
@@ -425,7 +442,8 @@ class AbbenayClient:
                 proto.GetSessionRequest(
                     session_id=session_id,
                     include_messages=True,
-                )
+                ),
+                metadata=_consumer_metadata(token),
             )
             return self._parse_session(response)
         except grpc.aio.AioRpcError as e:
@@ -437,12 +455,15 @@ class AbbenayClient:
         self,
         limit: int = 10,
         offset: int = 0,
+        *,
+        token: Optional[str] = None,
     ) -> List[Session]:
         """List all sessions.
         
         Args:
             limit: Max sessions to return
             offset: Pagination offset
+            token: Optional consumer auth token (x-abbenay-token)
             
         Returns:
             List of Sessions
@@ -453,7 +474,8 @@ class AbbenayClient:
             proto.ListSessionsRequest(
                 limit=limit,
                 offset=offset,
-            )
+            ),
+            metadata=_consumer_metadata(token),
         )
         
         return [
@@ -469,17 +491,24 @@ class AbbenayClient:
             for s in response.sessions
         ]
     
-    async def delete_session(self, session_id: str) -> None:
+    async def delete_session(
+        self,
+        session_id: str,
+        *,
+        token: Optional[str] = None,
+    ) -> None:
         """Delete a session.
         
         Args:
             session_id: Session ID
+            token: Optional consumer auth token (x-abbenay-token)
         """
         self._ensure_connected()
         
         try:
             await self._stub.DeleteSession(
-                proto.DeleteSessionRequest(session_id=session_id)
+                proto.DeleteSessionRequest(session_id=session_id),
+                metadata=_consumer_metadata(token),
             )
         except grpc.aio.AioRpcError as e:
             if e.code() == grpc.StatusCode.NOT_FOUND:
@@ -585,11 +614,7 @@ class AbbenayClient:
         if policy is not None:
             request.policy.CopyFrom(_to_policy_proto(policy))
 
-        metadata = []
-        if token is not None:
-            metadata.append(("x-abbenay-token", token))
-
-        async for chunk in self._stub.SessionChat(request, metadata=metadata or None):
+        async for chunk in self._stub.SessionChat(request, metadata=_consumer_metadata(token)):
             yield self._parse_chunk(chunk)
 
     async def register_mcp_server(

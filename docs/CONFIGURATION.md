@@ -350,8 +350,9 @@ Token comparison uses `crypto.timingSafeEqual` (equal-length buffers). Missing
 or unrecognized tokens receive `UNAUTHENTICATED`. A recognized consumer that
 lacks the required capability receives `PERMISSION_DENIED` (same denial
 message as an unrecognized token so the string does not leak validity).
-Health/status/list discovery RPCs stay ungated so probes and local tooling
-keep working. Session CRUD RPCs (`CreateSession` / `GetSession` /
+`HealthCheck`, `GetStatus`, and `ListModels` stay ungated so probes and local
+tooling keep working (`DiscoverModels` still needs the `providers`
+capability). Session CRUD RPCs (`CreateSession` / `GetSession` /
 `ListSessions` / `DeleteSession`) are not capability-gated: no token still
 maps to the `local` owner, but a presented-but-unrecognized token is
 `UNAUTHENTICATED` (DR-049). `SessionChat` and `SummarizeSession` still
