@@ -5,7 +5,19 @@
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const fsMocks = vi.hoisted(() => ({
+  rename: vi.fn(),
+  actualRename: undefined as typeof import('node:fs/promises').rename | undefined,
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  fsMocks.actualRename = actual.rename.bind(actual);
+  fsMocks.rename.mockImplementation(fsMocks.actualRename);
+  return { ...actual, rename: fsMocks.rename };
+});
 
 import { FileSecretStore } from './file-store.js';
 
@@ -15,6 +27,8 @@ describe('FileSecretStore', () => {
   let store: FileSecretStore;
 
   beforeEach(async () => {
+    fsMocks.rename.mockReset();
+    fsMocks.rename.mockImplementation(fsMocks.actualRename!);
     dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'abbenay-secrets-'));
     filePath = path.join(dir, 'secrets.json');
     store = new FileSecretStore(filePath);
@@ -85,16 +99,12 @@ describe('FileSecretStore', () => {
     expect(await reloaded.get('C')).toBe('3');
   });
 
-  it.skipIf(process.platform === 'win32')('leaves cache consistent with disk when persist fails', async () => {
+  it('leaves cache consistent with disk when persist fails', async () => {
     await store.set('K', 'ok');
-    await fsp.chmod(dir, 0o500);
-    try {
-      await expect(store.set('K', 'bad')).rejects.toThrow(/Failed to persist/);
-      expect(await store.get('K')).toBe('ok');
-      const reloaded = new FileSecretStore(filePath);
-      expect(await reloaded.get('K')).toBe('ok');
-    } finally {
-      await fsp.chmod(dir, 0o700);
-    }
+    fsMocks.rename.mockRejectedValueOnce(new Error('disk full'));
+    await expect(store.set('K', 'bad')).rejects.toThrow(/Failed to persist/);
+    expect(await store.get('K')).toBe('ok');
+    const reloaded = new FileSecretStore(filePath);
+    expect(await reloaded.get('K')).toBe('ok');
   });
 });
