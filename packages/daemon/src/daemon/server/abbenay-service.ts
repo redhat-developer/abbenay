@@ -2369,19 +2369,20 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
         }
       }
       const secretName = providerSecretName(pcfg);
+      let secretStoreProto = 0;
+      if (pcfg.secret_store === 'env') {
+        secretStoreProto = 2;
+      } else if (pcfg.secret_store === 'memory') {
+        secretStoreProto = 3;
+      } else if (pcfg.secret_store === 'file') {
+        secretStoreProto = 4;
+      } else if (secretName) {
+        secretStoreProto = 1;
+      }
       providers[pid] = {
         engine: pcfg.engine || pid,
         secret_name: secretName,
-        secret_store:
-          pcfg.secret_store === 'env'
-            ? 2
-            : pcfg.secret_store === 'memory'
-              ? 3
-              : pcfg.secret_store === 'file'
-                ? 4
-                : secretName
-                  ? 1
-                  : 0,
+        secret_store: secretStoreProto,
         api_key_keychain_name: pcfg.secret_store === 'env' ? undefined : secretName,
         api_key_env_var_name:
           pcfg.secret_store === 'env'

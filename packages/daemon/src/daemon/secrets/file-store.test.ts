@@ -40,8 +40,7 @@ describe('FileSecretStore', () => {
     expect(await reloaded.get('OPENROUTER_API_KEY')).toBe('sk-or-test');
   });
 
-  it('writes mode 0600 on unix', async () => {
-    if (process.platform === 'win32') return;
+  it.skipIf(process.platform === 'win32')('writes mode 0600 on unix', async () => {
     await store.set('K', 'v');
     const st = await fsp.stat(filePath);
     expect(st.mode & 0o777).toBe(0o600);
@@ -85,8 +84,7 @@ describe('FileSecretStore', () => {
     expect(await reloaded.get('C')).toBe('3');
   });
 
-  it('leaves cache consistent with disk when persist fails', async () => {
-    if (process.platform === 'win32') return;
+  it.skipIf(process.platform === 'win32')('leaves cache consistent with disk when persist fails', async () => {
     await store.set('K', 'ok');
     await fsp.chmod(dir, 0o500);
     try {
