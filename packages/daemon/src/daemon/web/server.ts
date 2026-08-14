@@ -1505,7 +1505,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           config.providers[providerId].secret_store = 'env';
           config.providers[providerId].api_key_env_var_name = secretNameRef;
           delete config.providers[providerId].api_key_keychain_name;
-        } else if (storeRaw === 'memory' || storeRaw === 'keychain') {
+        } else if (storeRaw === 'memory' || storeRaw === 'keychain' || storeRaw === 'file') {
           const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
           const memoryOk = requireNamespacedMemory(registry, storeRaw);
           if (!memoryOk.ok) {

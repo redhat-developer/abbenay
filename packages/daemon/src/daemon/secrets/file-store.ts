@@ -6,9 +6,14 @@
  * where the OS keychain is unavailable and process-lifetime memory is not
  * durable across restarts.
  *
+ * Mutations are serialized per instance so concurrent set/delete calls cannot
+ * clobber each other. The in-memory cache is updated only after a successful
+ * atomic rename to disk.
+ *
  * Never logs secret values.
  */
 
+import { randomUUID } from 'node:crypto';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -21,6 +26,8 @@ const DIR_MODE = 0o700;
 export class FileSecretStore implements SecretStore {
   private readonly filePath: string;
   private cache: Map<string, string> | null = null;
+  /** Chains set/delete so concurrent writers apply in order. */
+  private writeChain: Promise<void> = Promise.resolve();
 
   constructor(filePath?: string) {
     this.filePath = filePath ?? getSecretsPath();
@@ -68,7 +75,7 @@ export class FileSecretStore implements SecretStore {
     await fsp.mkdir(dir, { recursive: true, mode: DIR_MODE });
 
     const payload = JSON.stringify(Object.fromEntries(map), null, 2);
-    const tmpPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    const tmpPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     try {
       await fsp.writeFile(tmpPath, payload, { encoding: 'utf8', mode: FILE_MODE });
       await fsp.rename(tmpPath, this.filePath);
@@ -88,24 +95,40 @@ export class FileSecretStore implements SecretStore {
     }
   }
 
+  private enqueueWrite<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.writeChain.then(op, op);
+    // Keep the chain alive even if this op rejects (caller still sees the error).
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   async get(key: string): Promise<string | null> {
     const map = await this.ensureLoaded();
     return map.get(key) ?? null;
   }
 
   async set(key: string, value: string): Promise<void> {
-    const map = await this.ensureLoaded();
-    map.set(key, value);
-    await this.persist(map);
+    await this.enqueueWrite(async () => {
+      const next = new Map(await this.ensureLoaded());
+      next.set(key, value);
+      await this.persist(next);
+      this.cache = next;
+    });
   }
 
   async delete(key: string): Promise<boolean> {
-    const map = await this.ensureLoaded();
-    const existed = map.delete(key);
-    if (existed) {
-      await this.persist(map);
-    }
-    return existed;
+    return this.enqueueWrite(async () => {
+      const next = new Map(await this.ensureLoaded());
+      const existed = next.delete(key);
+      if (existed) {
+        await this.persist(next);
+        this.cache = next;
+      }
+      return existed;
+    });
   }
 
   async has(key: string): Promise<boolean> {
