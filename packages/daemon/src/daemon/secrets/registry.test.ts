@@ -14,8 +14,9 @@ import {
 function createRegistry() {
   const memory = new MemorySecretStore();
   const keychain = new MemorySecretStore(); // stand-in for keychain in unit tests
-  const registry = new SecretStoreRegistry(memory, keychain);
-  return { registry, memory, keychain };
+  const file = new MemorySecretStore(); // stand-in for file store in unit tests
+  const registry = new SecretStoreRegistry(memory, keychain, file);
+  return { registry, memory, keychain, file };
 }
 
 describe('SecretStoreRegistry', () => {
@@ -30,6 +31,24 @@ describe('SecretStoreRegistry', () => {
     expect(await keychain.has('K')).toBe(true);
     expect(await memory.has('K')).toBe(true);
     expect(await registry.locateAll('K')).toEqual(['memory', 'keychain']);
+  });
+
+  it('setIn file is discrete from memory and keychain', async () => {
+    const { registry, memory, keychain, file } = createRegistry();
+    await registry.setIn('keychain', 'K', 'kc');
+    await registry.setIn('memory', 'K', 'mem');
+    await registry.setIn('file', 'K', 'disk');
+
+    expect(await memory.get('K')).toBe('mem');
+    expect(await keychain.get('K')).toBe('kc');
+    expect(await file.get('K')).toBe('disk');
+    expect(await registry.locateAll('K')).toEqual(['memory', 'keychain', 'file']);
+  });
+
+  it('secretBackendToProto maps file to 4', () => {
+    expect(secretBackendToProto('file')).toBe(4);
+    expect(secretBackendToProto('memory')).toBe(3);
+    expect(secretBackendToProto('keychain')).toBe(1);
   });
 
   it('setIn memory does not clear keychain (discrete namespaces)', async () => {
@@ -100,6 +119,12 @@ describe('parseSecretStoreChoice', () => {
     }
   });
 
+  it('accepts file', () => {
+    for (const store of ['file', 'SECRET_STORE_FILE', 4, '4']) {
+      expect(parseSecretStoreChoice(store)).toEqual({ ok: true, backend: 'file' });
+    }
+  });
+
   it('rejects ENV writes', () => {
     const result = parseSecretStoreChoice('SECRET_STORE_ENV');
     expect(result.ok).toBe(false);
@@ -143,6 +168,7 @@ describe('secretBackendToProto', () => {
   it('maps backends to proto enum numbers', () => {
     expect(secretBackendToProto('keychain')).toBe(1);
     expect(secretBackendToProto('memory')).toBe(3);
+    expect(secretBackendToProto('file')).toBe(4);
     expect(secretBackendToProto(null)).toBe(0);
   });
 });

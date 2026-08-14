@@ -19,6 +19,7 @@
  *     Linux:   $XDG_CONFIG_HOME/abbenay   → ~/.config/abbenay
  *     macOS:   ~/Library/Application Support/abbenay
  *     Windows: %APPDATA%/abbenay
+ *     Holds config.yaml and secrets.json (file secret store)
  *
  *   Workspace config dir
  *     All:     <workspace>/.config/abbenay
@@ -157,6 +158,18 @@ export function getPidPath(): string {
 /** User config file:  <configDir>/config.yaml */
 export function getUserConfigPath(): string {
     return path.join(getConfigDir(), 'config.yaml');
+}
+
+/**
+ * File-backed secrets path:  <configDir>/secrets.json
+ *
+ * Override with ``ABBENAY_SECRETS_FILE`` (tests / custom mounts). Lives next to
+ * ``config.yaml`` so the same RW volume persists providers and secrets.
+ */
+export function getSecretsPath(): string {
+    const override = process.env.ABBENAY_SECRETS_FILE?.trim();
+    if (override) return override;
+    return path.join(getConfigDir(), 'secrets.json');
 }
 
 /** Workspace config file:  <workspaceConfigDir>/config.yaml */

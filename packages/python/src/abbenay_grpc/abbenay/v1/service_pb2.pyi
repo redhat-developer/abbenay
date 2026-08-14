@@ -59,6 +59,7 @@ class SecretStore(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     SECRET_STORE_KEYCHAIN: _ClassVar[SecretStore]
     SECRET_STORE_ENV: _ClassVar[SecretStore]
     SECRET_STORE_MEMORY: _ClassVar[SecretStore]
+    SECRET_STORE_FILE: _ClassVar[SecretStore]
 ROLE_UNSPECIFIED: Role
 ROLE_SYSTEM: Role
 ROLE_USER: Role
@@ -91,6 +92,7 @@ SECRET_STORE_UNSPECIFIED: SecretStore
 SECRET_STORE_KEYCHAIN: SecretStore
 SECRET_STORE_ENV: SecretStore
 SECRET_STORE_MEMORY: SecretStore
+SECRET_STORE_FILE: SecretStore
 
 class Empty(_message.Message):
     __slots__ = ()

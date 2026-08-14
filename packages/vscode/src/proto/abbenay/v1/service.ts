@@ -319,6 +319,8 @@ export enum SecretStore {
   SECRET_STORE_KEYCHAIN = 1,
   SECRET_STORE_ENV = 2,
   SECRET_STORE_MEMORY = 3,
+  /** SECRET_STORE_FILE - config-dir secrets.json (durable with volume) */
+  SECRET_STORE_FILE = 4,
   UNRECOGNIZED = -1,
 }
 
@@ -336,6 +338,9 @@ export function secretStoreFromJSON(object: any): SecretStore {
     case 3:
     case "SECRET_STORE_MEMORY":
       return SecretStore.SECRET_STORE_MEMORY;
+    case 4:
+    case "SECRET_STORE_FILE":
+      return SecretStore.SECRET_STORE_FILE;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -353,6 +358,8 @@ export function secretStoreToJSON(object: SecretStore): string {
       return "SECRET_STORE_ENV";
     case SecretStore.SECRET_STORE_MEMORY:
       return "SECRET_STORE_MEMORY";
+    case SecretStore.SECRET_STORE_FILE:
+      return "SECRET_STORE_FILE";
     case SecretStore.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

@@ -83,7 +83,7 @@ export interface ProviderConfig {
    * - `memory` / `keychain` / omitted (with a store name): daemon secret store
    * - `env`: process environment variable
    */
-  secret_store?: 'memory' | 'keychain' | 'env';
+  secret_store?: 'memory' | 'keychain' | 'env' | 'file';
   /**
    * @deprecated Use {@link secret_name}. Kept for existing YAML configs.
    */
@@ -116,13 +116,13 @@ export function isProviderOwnedSecretName(providerId: string, secretName: string
 
 /**
  * How to resolve credentials for a provider.
- * `store` → named backend (memory|keychain) via (secret_store, secret_name);
+ * `store` → named backend (memory|keychain|file) via (secret_store, secret_name);
  * `env` → process.env[secret_name]. Omitted secret_store defaults to keychain.
  */
 export function providerCredentialSource(
   cfg: ProviderConfig,
 ):
-  | { kind: 'store'; name: string; backend: 'memory' | 'keychain' }
+  | { kind: 'store'; name: string; backend: 'memory' | 'keychain' | 'file' }
   | { kind: 'env'; name: string }
   | null {
   if (cfg.secret_store === 'env') {
@@ -131,7 +131,10 @@ export function providerCredentialSource(
   }
   const storeName = providerSecretName(cfg);
   if (storeName) {
-    const backend = cfg.secret_store === 'memory' ? 'memory' : 'keychain';
+    const backend =
+      cfg.secret_store === 'memory' || cfg.secret_store === 'file'
+        ? cfg.secret_store
+        : 'keychain';
     return { kind: 'store', name: storeName, backend };
   }
   if (cfg.api_key_env_var_name) {

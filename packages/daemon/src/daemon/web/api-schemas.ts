@@ -42,12 +42,12 @@ export const PostConfigBodySchema = z
 
 // ── Secrets ─────────────────────────────────────────────────────────────
 
-const SecretStoreFieldSchema = z.enum(['memory', 'keychain', 'env']).optional();
+const SecretStoreFieldSchema = z.enum(['memory', 'keychain', 'env', 'file']).optional();
 
 export const PostSecretByKeyBodySchema = z
   .object({
     value: z.string().min(1),
-    /** Default: keychain (persistent). memory = process-lifetime only. */
+    /** Default: keychain (persistent). memory = process-lifetime; file = config-dir JSON. */
     secretStore: SecretStoreFieldSchema,
   })
   .strict();
@@ -56,7 +56,7 @@ export const PostSecretBodySchema = z
   .object({
     key: z.string().min(1),
     value: z.string().min(1),
-    /** Default: keychain (persistent). memory = process-lifetime only. */
+    /** Default: keychain (persistent). memory = process-lifetime; file = config-dir JSON. */
     secretStore: SecretStoreFieldSchema,
   })
   .strict();
@@ -111,7 +111,7 @@ export const PostProviderConfigureBodySchema = z
     /** Logical secret name (SetSecret key). Prefer over inventing from provider id. */
     secretName: z.string().min(1).optional(),
     /** Where to write apiKey: memory | keychain (default keychain). */
-    secretStore: z.enum(['memory', 'keychain', 'env']).optional(),
+    secretStore: z.enum(['memory', 'keychain', 'env', 'file']).optional(),
     /** @deprecated Use secretName. */
     apiKeyKeychainName: z.string().min(1).optional(),
     envVarName: z.string().min(1).optional(),

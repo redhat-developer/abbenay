@@ -388,6 +388,7 @@ Each provider can specify exactly ONE of these (mutually exclusive):
 - `secret_store` selects the namespace:
   - `keychain` (default when omitted) → OS keychain
   - `memory` → process-lifetime daemon memory
+  - `file` → `<configDir>/secrets.json` (durable with the config volume; mode `0600`)
   - `env` → process environment variable named `secret_name`
 - The same `secret_name` may exist in more than one store; resolve uses only
   the provider's `secret_store` (no overlay)
@@ -409,20 +410,35 @@ providers:
     secret_store: env          # already exported in the process environment
 ```
 
+```yaml
+providers:
+  container-openai:
+    engine: openai
+    secret_name: "OPENAI_API_KEY"
+    secret_store: file         # persists next to config.yaml on the RW volume
+```
+
 ### Option 1b: In-memory (process-lifetime) via secrets API
 
 - Same `secret_name` in the `memory` namespace; set value with `SetSecret` /
   `POST /api/secrets` and HTTP `secretStore: memory` (SetSecret still cannot
   write `env`)
 - Lives only while the daemon process is running
-- Independent from keychain — overlapping names are allowed (DR-047)
+- Independent from keychain/file — overlapping names are allowed (DR-047)
+
+### Option 1c: File-backed (config-dir) via secrets API
+
+- Same API with `secretStore: file` / `secret_store: file`
+- Written to `<configDir>/secrets.json` (override path with `ABBENAY_SECRETS_FILE`)
+- Survives daemon restarts when the config directory is on a persistent volume
+  (e.g. APME Helm `persistence.abbenay.enabled=true`)
 
 ### Recommended workflow (keys are N:1 with providers)
 
-1. **Add a secret** (store) — `SetSecret` with store `memory|keychain`, HTTP
+1. **Add a secret** (store) — `SetSecret` with store `memory|keychain|file`, HTTP
    `secretStore`, **or** export an env var yourself.
 2. **Configure the provider** — `secret_name=NAME` and
-   `secret_store=memory|keychain|env` (YAML/config; HTTP configure uses
+   `secret_store=memory|keychain|file|env` (YAML/config; HTTP configure uses
    camelCase `secretName` / `secretStore`). For `env`, the variable is resolved at
    request time (it need not exist at configure time).
 3. Many providers may share one `(secret_store, secret_name)` pair.

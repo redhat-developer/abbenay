@@ -2045,11 +2045,14 @@ export function createAbbenayService(
                 const registry = isSecretStoreRegistry(state.secretStore)
                   ? state.secretStore
                   : null;
-                const backend = providerCfg.secret_store === 'memory' ? 'memory' : 'keychain';
+                const backend =
+                  providerCfg.secret_store === 'memory' || providerCfg.secret_store === 'file'
+                    ? providerCfg.secret_store
+                    : 'keychain';
                 if (registry) {
                   await registry.deleteFrom(backend, secretName);
                 } else if (backend === 'keychain') {
-                  // Memory without a registry was never a valid write target.
+                  // Memory/file without a registry was never a valid write target.
                   await state.secretStore.delete(secretName);
                 }
                 auditSecretChange({ key: secretName, op: 'delete', source: 'grpc-configure' });
@@ -2374,9 +2377,11 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
             ? 2
             : pcfg.secret_store === 'memory'
               ? 3
-              : secretName
-                ? 1
-                : 0,
+              : pcfg.secret_store === 'file'
+                ? 4
+                : secretName
+                  ? 1
+                  : 0,
         api_key_keychain_name: pcfg.secret_store === 'env' ? undefined : secretName,
         api_key_env_var_name:
           pcfg.secret_store === 'env'
@@ -2458,11 +2463,13 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
         }
       }
       const secretName = pcfg.secret_name || pcfg.api_key_keychain_name || undefined;
-      let secretStore: 'memory' | 'keychain' | 'env' | undefined;
+      let secretStore: 'memory' | 'keychain' | 'env' | 'file' | undefined;
       if (pcfg.secret_store === 2 || pcfg.secret_store === 'SECRET_STORE_ENV' || pcfg.secret_store === 'env') {
         secretStore = 'env';
       } else if (pcfg.secret_store === 3 || pcfg.secret_store === 'SECRET_STORE_MEMORY' || pcfg.secret_store === 'memory') {
         secretStore = 'memory';
+      } else if (pcfg.secret_store === 4 || pcfg.secret_store === 'SECRET_STORE_FILE' || pcfg.secret_store === 'file') {
+        secretStore = 'file';
       } else if (pcfg.secret_store === 1 || pcfg.secret_store === 'SECRET_STORE_KEYCHAIN' || pcfg.secret_store === 'keychain') {
         secretStore = 'keychain';
       } else if (pcfg.api_key_env_var_name && !secretName) {

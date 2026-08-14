@@ -1133,7 +1133,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
   /**
    * DELETE /api/secrets/:key - Delete a secret
-   * Query: secretStore=memory|keychain (default keychain)
+   * Query: secretStore=memory|keychain|file (default keychain)
    */
   app.delete('/api/secrets/:key', async (req, res) => {
     try {
@@ -1626,11 +1626,14 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
             const registry = isSecretStoreRegistry(state.secretStore)
               ? state.secretStore
               : null;
-            const backend = providerCfg.secret_store === 'memory' ? 'memory' : 'keychain';
+            const backend =
+              providerCfg.secret_store === 'memory' || providerCfg.secret_store === 'file'
+                ? providerCfg.secret_store
+                : 'keychain';
             if (registry) {
               await registry.deleteFrom(backend, secretName);
             } else if (backend === 'keychain') {
-              // Memory without a registry was never a valid write target.
+              // Memory/file without a registry was never a valid write target.
               await state.secretStore.delete(secretName);
             }
             auditSecretChange({ key: secretName, op: 'delete', source: 'http-configure' });

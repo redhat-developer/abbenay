@@ -2,8 +2,8 @@
  * Secret store interface and in-memory implementation.
  *
  * Core consumers inject their own SecretStore implementation.
- * The daemon uses SecretStoreRegistry (MemorySecretStore + KeychainSecretStore);
- * tests/library use MemorySecretStore.
+ * The daemon uses SecretStoreRegistry (MemorySecretStore + KeychainSecretStore
+ * + FileSecretStore); tests/library use MemorySecretStore.
  *
  * Credential aggregation (finding A1): one daemon may hold many provider keys.
  * Mutating APIs must stay auth-gated; use {@link auditSecretChange} so operators
