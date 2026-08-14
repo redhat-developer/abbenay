@@ -63,6 +63,7 @@ const chatRequests: Array<{ model: string; messages: any[] }> = [];
 const mockSecretStore = new SecretStoreRegistry(
   new MemorySecretStore(),
   new MemorySecretStore(),
+  new MemorySecretStore(), // file stand-in (no disk I/O in this suite)
 );
 
 function sleep(ms: number): Promise<void> {
@@ -558,6 +559,25 @@ describe('Web API - Secrets Endpoints', () => {
     expect(kc.body.exists).toBe(false);
   });
 
+  it('GET /api/key-status?source=file reports file-only secrets', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/FILE_STATUS`, {
+      value: 'on-disk',
+      secretStore: 'file',
+    });
+    const file = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=file&name=FILE_STATUS`,
+    );
+    expect(file.statusCode).toBe(200);
+    expect(file.body.exists).toBe(true);
+    const kc = await httpRequest(
+      'GET',
+      `${baseUrl}/api/key-status?source=keychain&name=FILE_STATUS`,
+    );
+    expect(kc.statusCode).toBe(200);
+    expect(kc.body.exists).toBe(false);
+  });
+
   it('POST /api/provider/:id/configure writes apiKey to memory backend', async () => {
     const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/mem-openai/configure`, {
       engine: 'openai',
@@ -583,6 +603,35 @@ describe('Web API - Secrets Endpoints', () => {
     });
     expect(statusCode).toBe(200);
     expect(body.success).toBe(true);
+  });
+
+  it('POST /api/provider/:id/configure picks an existing file secret', async () => {
+    await httpRequest('POST', `${baseUrl}/api/secrets/SHARED_FILE`, {
+      value: 'file-value',
+      secretStore: 'file',
+    });
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/file-openai/configure`, {
+      engine: 'openai',
+      secretName: 'SHARED_FILE',
+      secretStore: 'file',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(await mockSecretStore.hasIn('file', 'SHARED_FILE')).toBe(true);
+    expect(await mockSecretStore.hasIn('keychain', 'SHARED_FILE')).toBe(false);
+  });
+
+  it('POST /api/provider/:id/configure writes apiKey to file backend', async () => {
+    const { statusCode, body } = await httpRequest('POST', `${baseUrl}/api/provider/file-write/configure`, {
+      engine: 'openai',
+      apiKey: 'sk-file',
+      secretName: 'FILE_OPENAI_API_KEY',
+      secretStore: 'file',
+    });
+    expect(statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(await mockSecretStore.getFrom('file', 'FILE_OPENAI_API_KEY')).toBe('sk-file');
+    expect(await mockSecretStore.hasIn('keychain', 'FILE_OPENAI_API_KEY')).toBe(false);
   });
 
   it('POST /api/provider/:id/configure accepts secretStore=env without writing store', async () => {

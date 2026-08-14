@@ -861,3 +861,25 @@ store to keychain preserves existing callers. Keys are not 1:1 with
 providers — configure should pick a secret by name after `SetSecret`.
 `secret_name` / `secret_store` name the real abstraction;
 `api_key_keychain_name` was a historical misnomer.
+
+---
+
+## DR-048: Filesystem secret store for durable non-keychain hosts
+
+**Date:** 2026-08-14
+**Decision:** Add a third writable secret backend, `file`
+(`SECRET_STORE_FILE` / `secretStore: "file"`), implemented as
+`FileSecretStore` persisting a JSON map at `<configDir>/secrets.json`
+(mode `0600`; override with `ABBENAY_SECRETS_FILE`). It is always registered
+in `SecretStoreRegistry` alongside memory and keychain; clients opt in via
+`(secret_store, secret_name)`. No encryption-at-rest in this revision —
+protection is filesystem permissions and the same RW volume that already
+holds `config.yaml` (e.g. container emptyDir or PVC). Default write backend
+remains keychain.
+**Rationale:** OS keychain is unavailable or awkward in many container /
+sidecar deployments (APME Helm Abbenay), and process-lifetime memory is not
+durable across restarts. Portal/Gateway databases are not a secrets vault;
+Abbenay remains source of truth for provider credentials. Placing secrets
+next to config reuses the existing config volume contract without introducing
+a separate Gateway SoT or a cloud KMS dependency. Encryption can layer later
+without changing the `(secret_store, secret_name)` address model.

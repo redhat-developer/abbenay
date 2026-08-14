@@ -85,8 +85,8 @@ export const ProviderConfigSchema = z
     engine: z.string().min(1),
     /** Logical secret name (store key or env var). Preferred. */
     secret_name: z.string().min(1).optional(),
-    /** memory | keychain | env — where secret_name is resolved. */
-    secret_store: z.enum(['memory', 'keychain', 'env']).optional(),
+    /** memory | keychain | env | file — where secret_name is resolved. */
+    secret_store: z.enum(['memory', 'keychain', 'env', 'file']).optional(),
     /** @deprecated Use secret_name. */
     api_key_keychain_name: z.string().min(1).optional(),
     /** @deprecated Use secret_name + secret_store: env. */

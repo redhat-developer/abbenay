@@ -12,6 +12,7 @@ import type { PolicyConfig } from '../core/policies.js';
 import { MemorySecretStore } from '../core/secrets.js';
 import { SecretStoreRegistry } from './secrets/registry.js';
 import { KeychainSecretStore } from './secrets/keychain.js';
+import { FileSecretStore } from './secrets/file-store.js';
 import { ToolRegistry } from '../core/tool-registry.js';
 import { ToolRouter } from './tool-router.js';
 import { McpClientPool } from './mcp-client-pool.js';
@@ -85,7 +86,11 @@ export class DaemonState extends CoreState {
 
   constructor() {
     super({
-      secretStore: new SecretStoreRegistry(new MemorySecretStore(), new KeychainSecretStore()),
+      secretStore: new SecretStoreRegistry(
+        new MemorySecretStore(),
+        new KeychainSecretStore(),
+        new FileSecretStore(),
+      ),
     });
 
     // Initialize tool registry, router, MCP client pool, and MCP server

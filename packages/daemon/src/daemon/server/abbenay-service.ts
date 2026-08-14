@@ -28,8 +28,10 @@ import {
 import { auditSecretChange } from '../../core/secrets.js';
 import {
   isSecretStoreRegistry,
+  isWritableSecretBackend,
   parseSecretStoreChoice,
   requireNamespacedMemory,
+  secretAuditSource,
   secretBackendToProto,
 } from '../secrets/registry.js';
 import {
@@ -871,8 +873,7 @@ export function createAbbenayService(
       const write = registry
         ? registry.setIn(parsed.backend, key, value)
         : state.secretStore.set(key, value);
-      const auditSource =
-        parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets';
+      const auditSource = secretAuditSource('grpc-secrets', parsed.backend);
 
       write.then(() => {
         auditSecretChange({ key, op: 'set', source: auditSource });
@@ -922,8 +923,7 @@ export function createAbbenayService(
         auditSecretChange({
           key,
           op: 'delete',
-          source:
-            parsed.backend === 'memory' ? 'grpc-secrets-memory' : 'grpc-secrets',
+          source: secretAuditSource('grpc-secrets', parsed.backend),
         });
         callback(null, {});
       }).catch((error: unknown) => {
@@ -1890,8 +1890,7 @@ export function createAbbenayService(
             } else {
               await state.secretStore.set(secretName, apiKey);
             }
-            const auditSource =
-              storeChoice.backend === 'memory' ? 'grpc-configure-memory' : 'grpc-configure';
+            const auditSource = secretAuditSource('grpc-configure', storeChoice.backend);
             auditSecretChange({ key: secretName, op: 'set', source: auditSource });
             config.providers[providerId].secret_name = secretName;
             config.providers[providerId].secret_store = storeChoice.backend;
@@ -2045,11 +2044,14 @@ export function createAbbenayService(
                 const registry = isSecretStoreRegistry(state.secretStore)
                   ? state.secretStore
                   : null;
-                const backend = providerCfg.secret_store === 'memory' ? 'memory' : 'keychain';
+                const backend =
+                  providerCfg.secret_store === 'memory' || providerCfg.secret_store === 'file'
+                    ? providerCfg.secret_store
+                    : 'keychain';
                 if (registry) {
                   await registry.deleteFrom(backend, secretName);
                 } else if (backend === 'keychain') {
-                  // Memory without a registry was never a valid write target.
+                  // Memory/file without a registry was never a valid write target.
                   await state.secretStore.delete(secretName);
                 }
                 auditSecretChange({ key: secretName, op: 'delete', source: 'grpc-configure' });
@@ -2108,7 +2110,7 @@ export function createAbbenayService(
       (async () => {
         try {
           let exists = false;
-          if (source === 'keychain' || source === 'memory') {
+          if (isWritableSecretBackend(source)) {
             const registry = isSecretStoreRegistry(state.secretStore)
               ? state.secretStore
               : null;
@@ -2366,17 +2368,20 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
         }
       }
       const secretName = providerSecretName(pcfg);
+      let secretStoreProto = 0;
+      if (pcfg.secret_store === 'env') {
+        secretStoreProto = 2;
+      } else if (pcfg.secret_store === 'memory') {
+        secretStoreProto = 3;
+      } else if (pcfg.secret_store === 'file') {
+        secretStoreProto = 4;
+      } else if (secretName) {
+        secretStoreProto = 1;
+      }
       providers[pid] = {
         engine: pcfg.engine || pid,
         secret_name: secretName,
-        secret_store:
-          pcfg.secret_store === 'env'
-            ? 2
-            : pcfg.secret_store === 'memory'
-              ? 3
-              : secretName
-                ? 1
-                : 0,
+        secret_store: secretStoreProto,
         api_key_keychain_name: pcfg.secret_store === 'env' ? undefined : secretName,
         api_key_env_var_name:
           pcfg.secret_store === 'env'
@@ -2458,11 +2463,13 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
         }
       }
       const secretName = pcfg.secret_name || pcfg.api_key_keychain_name || undefined;
-      let secretStore: 'memory' | 'keychain' | 'env' | undefined;
+      let secretStore: 'memory' | 'keychain' | 'env' | 'file' | undefined;
       if (pcfg.secret_store === 2 || pcfg.secret_store === 'SECRET_STORE_ENV' || pcfg.secret_store === 'env') {
         secretStore = 'env';
       } else if (pcfg.secret_store === 3 || pcfg.secret_store === 'SECRET_STORE_MEMORY' || pcfg.secret_store === 'memory') {
         secretStore = 'memory';
+      } else if (pcfg.secret_store === 4 || pcfg.secret_store === 'SECRET_STORE_FILE' || pcfg.secret_store === 'file') {
+        secretStore = 'file';
       } else if (pcfg.secret_store === 1 || pcfg.secret_store === 'SECRET_STORE_KEYCHAIN' || pcfg.secret_store === 'keychain') {
         secretStore = 'keychain';
       } else if (pcfg.api_key_env_var_name && !secretName) {

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { getDefaultSocketPath } from '../transport.js';
 import { loadConfig, saveConfig, loadWorkspaceConfig, saveWorkspaceConfig, getUserConfigPath, getWorkspaceConfigPath, providerSecretName, isProviderOwnedSecretName, type ConfigFile, type ProviderConfig } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
-import { isSecretStoreRegistry, parseSecretStoreChoice, requireNamespacedMemory } from '../secrets/registry.js';
+import { isSecretStoreRegistry, isWritableSecretBackend, parseSecretStoreChoice, requireNamespacedMemory, secretAuditSource } from '../secrets/registry.js';
 import {
   auditProviderEndpointChange,
   auditProviderEndpointConfigDiff,
@@ -1080,8 +1080,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       } else {
         await state.secretStore.set(key, parsed.data.value);
       }
-      const auditSource =
-        storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets';
+      const auditSource = secretAuditSource('http-secrets', storeChoice.backend);
       auditSecretChange({ key, op: 'set', source: auditSource });
       res.json({ success: true, secretStore: storeChoice.backend });
       state.notifyModelsChanged('secret_updated');
@@ -1119,8 +1118,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       } else {
         await state.secretStore.set(parsed.data.key, parsed.data.value);
       }
-      const auditSource =
-        storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets';
+      const auditSource = secretAuditSource('http-secrets', storeChoice.backend);
       auditSecretChange({ key: parsed.data.key, op: 'set', source: auditSource });
       res.json({ success: true, secretStore: storeChoice.backend });
       state.notifyModelsChanged('secret_updated');
@@ -1133,7 +1131,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
 
   /**
    * DELETE /api/secrets/:key - Delete a secret
-   * Query: secretStore=memory|keychain (default keychain)
+   * Query: secretStore=memory|keychain|file (default keychain)
    */
   app.delete('/api/secrets/:key', async (req, res) => {
     try {
@@ -1170,8 +1168,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       auditSecretChange({
         key: req.params.key,
         op: 'delete',
-        source:
-          storeChoice.backend === 'memory' ? 'http-secrets-memory' : 'http-secrets',
+        source: secretAuditSource('http-secrets', storeChoice.backend),
       });
       res.json({ success: true, secretStore: storeChoice.backend });
       state.notifyModelsChanged('secret_deleted');
@@ -1184,7 +1181,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
   
   /**
    * GET /api/key-status - Check if a specific key is available
-   * Query: source=keychain|env, name=KEY_NAME
+   * Query: source=keychain|memory|file|env, name=KEY_NAME
    */
   app.get('/api/key-status', async (req, res) => {
     try {
@@ -1197,7 +1194,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
       }
       
       let exists = false;
-      if (source === 'keychain' || source === 'memory') {
+      if (isWritableSecretBackend(source)) {
         const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
         exists = registry
           ? await registry.hasIn(source, name)
@@ -1491,8 +1488,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         } else {
           await state.secretStore.set(secretName, apiKey);
         }
-        const auditSource =
-          storeChoice.backend === 'memory' ? 'http-configure-memory' : 'http-configure';
+        const auditSource = secretAuditSource('http-configure', storeChoice.backend);
         auditSecretChange({ key: secretName, op: 'set', source: auditSource });
         config.providers[providerId].secret_name = secretName;
         config.providers[providerId].secret_store = storeChoice.backend;
@@ -1505,7 +1501,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
           config.providers[providerId].secret_store = 'env';
           config.providers[providerId].api_key_env_var_name = secretNameRef;
           delete config.providers[providerId].api_key_keychain_name;
-        } else if (storeRaw === 'memory' || storeRaw === 'keychain') {
+        } else if (storeRaw === 'memory' || storeRaw === 'keychain' || storeRaw === 'file') {
           const registry = isSecretStoreRegistry(state.secretStore) ? state.secretStore : null;
           const memoryOk = requireNamespacedMemory(registry, storeRaw);
           if (!memoryOk.ok) {
@@ -1626,11 +1622,14 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
             const registry = isSecretStoreRegistry(state.secretStore)
               ? state.secretStore
               : null;
-            const backend = providerCfg.secret_store === 'memory' ? 'memory' : 'keychain';
+            const backend =
+              providerCfg.secret_store === 'memory' || providerCfg.secret_store === 'file'
+                ? providerCfg.secret_store
+                : 'keychain';
             if (registry) {
               await registry.deleteFrom(backend, secretName);
             } else if (backend === 'keychain') {
-              // Memory without a registry was never a valid write target.
+              // Memory/file without a registry was never a valid write target.
               await state.secretStore.delete(secretName);
             }
             auditSecretChange({ key: secretName, op: 'delete', source: 'http-configure' });

@@ -35,6 +35,8 @@ function isSea(): boolean {
 export class KeychainSecretStore implements SecretStore {
   private keytar: typeof import('keytar') | null = null;
   private loadError: string | null = null;
+  /** Shared in-flight import so constructor + first get/set cannot race. */
+  private loadPromise: Promise<typeof import('keytar') | null> | null = null;
   
   constructor() {
     // Load keytar lazily since it's a native module
@@ -44,7 +46,13 @@ export class KeychainSecretStore implements SecretStore {
   private async loadKeytar(): Promise<typeof import('keytar') | null> {
     if (this.keytar) return this.keytar;
     if (this.loadError) return null;
-    
+    if (!this.loadPromise) {
+      this.loadPromise = this.importKeytar();
+    }
+    return this.loadPromise;
+  }
+
+  private async importKeytar(): Promise<typeof import('keytar') | null> {
     try {
       if (isSea()) {
         // SEA mode: keytar.node ships alongside the executable

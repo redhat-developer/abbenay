@@ -408,11 +408,20 @@ describe('protoToConfigFile', () => {
         mem: { engine: 'openai', secret_name: 'M', secret_store: 3 },
         envp: { engine: 'openai', secret_name: 'E', secret_store: 'SECRET_STORE_ENV' },
         kc: { engine: 'openai', secret_name: 'K', secret_store: 'SECRET_STORE_KEYCHAIN' },
+        filep: { engine: 'openai', secret_name: 'F', secret_store: 4 },
       },
     });
     expect(config.providers!.mem.secret_store).toBe('memory');
     expect(config.providers!.envp.secret_store).toBe('env');
     expect(config.providers!.kc.secret_store).toBe('keychain');
+    expect(config.providers!.filep.secret_store).toBe('file');
+
+    const proto = configFileToProto({
+      providers: {
+        filep: { engine: 'openai', secret_name: 'F', secret_store: 'file' },
+      },
+    });
+    expect(proto.providers!.filep.secret_store).toBe(4);
   });
 
   it('provider with no models gets undefined models field', () => {
@@ -1246,6 +1255,23 @@ describe('createAbbenayService handlers', () => {
     const mem = await invokeUnary(service.GetKeyStatus, { source: 'memory', name: 'MEM_ONLY' });
     expect(mem.response?.exists).toBe(true);
     const kc = await invokeUnary(service.GetKeyStatus, { source: 'keychain', name: 'MEM_ONLY' });
+    expect(kc.response?.exists).toBe(false);
+  });
+
+  it('GetKeyStatus checks file independently of keychain', async () => {
+    const { SecretStoreRegistry } = await import('../secrets/registry.js');
+    const { MemorySecretStore } = await import('../../core/secrets.js');
+    const memory = new MemorySecretStore();
+    const keychain = new MemorySecretStore();
+    const file = new MemorySecretStore();
+    await file.set('FILE_ONLY', 'v');
+    const registry = new SecretStoreRegistry(memory, keychain, file);
+    const state = createMockState({ secretStore: registry });
+    const service = createServiceHandlers(state);
+
+    const fileStatus = await invokeUnary(service.GetKeyStatus, { source: 'file', name: 'FILE_ONLY' });
+    expect(fileStatus.response?.exists).toBe(true);
+    const kc = await invokeUnary(service.GetKeyStatus, { source: 'keychain', name: 'FILE_ONLY' });
     expect(kc.response?.exists).toBe(false);
   });
 

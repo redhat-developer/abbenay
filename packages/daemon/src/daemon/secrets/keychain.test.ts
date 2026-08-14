@@ -37,6 +37,7 @@ type KeychainInternals = {
     deletePassword: typeof mocks.deletePassword;
   } | null;
   loadError: string | null;
+  loadPromise: Promise<unknown> | null;
   loadKeytarFromSea: () => {
     getPassword: typeof mocks.getPassword;
     setPassword: typeof mocks.setPassword;
@@ -83,6 +84,8 @@ describe('KeychainSecretStore', () => {
         throw importError;
       },
     }));
+    // Drop any successful keytar module from an earlier test (flake under --coverage).
+    vi.resetModules();
     const { KeychainSecretStore } = await import('./keychain.js');
     const store = new KeychainSecretStore();
     await vi.dynamicImportSettled();
@@ -103,6 +106,7 @@ describe('KeychainSecretStore', () => {
     const internals = store as unknown as KeychainInternals;
     internals.keytar = null;
     internals.loadError = null;
+    internals.loadPromise = null;
     setup?.(internals);
     return store;
   }
@@ -416,5 +420,6 @@ describe('KeychainSecretStore', () => {
     // Prefer sticky loadError over console.warn — parallel suites can clobber spies.
     expect(internals.keytar).toBeNull();
     expect(internals.loadError).toBe('native addon missing');
+    expect(mocks.getPassword).not.toHaveBeenCalled();
   });
 });

@@ -74,7 +74,7 @@ describe('PostProviderConfigureBodySchema', () => {
     ).toBe(true);
   });
 
-  it('accepts secretStore memory|keychain|env with apiKey or secretName', () => {
+  it('accepts secretStore memory|keychain|env|file with apiKey or secretName', () => {
     expect(
       PostProviderConfigureBodySchema.safeParse({
         engine: 'openai',
@@ -88,6 +88,13 @@ describe('PostProviderConfigureBodySchema', () => {
         engine: 'openai',
         secretName: 'ENV_VAR',
         secretStore: 'env',
+      }).success,
+    ).toBe(true);
+    expect(
+      PostProviderConfigureBodySchema.safeParse({
+        engine: 'openai',
+        secretName: 'FILE_KEY',
+        secretStore: 'file',
       }).success,
     ).toBe(true);
   });
@@ -174,7 +181,7 @@ describe('secret body schemas', () => {
     expect(PostSecretByKeyBodySchema.safeParse({ value: '' }).success).toBe(false);
   });
 
-  it('accepts optional secretStore memory|keychain|env', () => {
+  it('accepts optional secretStore memory|keychain|env|file', () => {
     expect(
       PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'memory' }).success,
     ).toBe(true);
@@ -183,6 +190,9 @@ describe('secret body schemas', () => {
     ).toBe(true);
     expect(
       PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'env' }).success,
+    ).toBe(true);
+    expect(
+      PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'file' }).success,
     ).toBe(true);
     expect(
       PostSecretBodySchema.safeParse({ key: 'K', value: 'v', secretStore: 'vault' }).success,

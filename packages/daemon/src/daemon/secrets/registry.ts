@@ -1,5 +1,5 @@
 /**
- * Registry of discrete secret backends (memory + keychain today).
+ * Registry of discrete secret backends (memory + keychain + file).
  *
  * Each backend is independent — the same key name may exist in more than one.
  * Resolution is always (secret_store, secret_name). The {@link SecretStore}
@@ -12,15 +12,23 @@
  */
 
 import type { SecretStore } from '../../core/secrets.js';
+import { MemorySecretStore } from '../../core/secrets.js';
 
 /** Built-in writable registry backends. */
-export type SecretBackend = 'memory' | 'keychain';
+export type SecretBackend = 'memory' | 'keychain' | 'file';
 
 /** Full secret_store vocabulary including env references. */
 export type SecretStoreKind = SecretBackend | 'env';
 
 /** Default writable backend when store is omitted (backward compatible). */
 export const DEFAULT_SECRET_BACKEND: SecretBackend = 'keychain';
+
+const WRITABLE_BACKENDS: readonly SecretBackend[] = ['memory', 'keychain', 'file'] as const;
+
+/** True when ``s`` is a daemon-owned writable store id (not env). */
+export function isWritableSecretBackend(s: string): s is SecretBackend {
+  return s === 'memory' || s === 'keychain' || s === 'file';
+}
 
 /**
  * Maps store id → {@link SecretStore} implementation.
@@ -33,6 +41,8 @@ export class SecretStoreRegistry implements SecretStore {
   constructor(
     private readonly memory: SecretStore,
     private readonly keychain: SecretStore,
+    /** Defaults to in-memory stand-in so unit tests need not touch disk. */
+    private readonly file: SecretStore = new MemorySecretStore(),
   ) {}
 
   /** Expose backends for tests and future registry iteration. */
@@ -44,17 +54,23 @@ export class SecretStoreRegistry implements SecretStore {
     return this.keychain;
   }
 
+  get fileStore(): SecretStore {
+    return this.file;
+  }
+
   /** Built-in writable backends (order stable for ListSecrets). */
   backends(): readonly SecretBackend[] {
-    return ['memory', 'keychain'] as const;
+    return WRITABLE_BACKENDS;
   }
 
   private storeFor(backend: SecretBackend): SecretStore {
-    return backend === 'memory' ? this.memory : this.keychain;
+    if (backend === 'memory') return this.memory;
+    if (backend === 'file') return this.file;
+    return this.keychain;
   }
 
   private requireBackend(backend: string): SecretBackend {
-    if (backend === 'memory' || backend === 'keychain') return backend;
+    if (isWritableSecretBackend(backend)) return backend;
     throw new Error(`Unknown secret store: ${backend}`);
   }
 
@@ -103,7 +119,7 @@ export class SecretStoreRegistry implements SecretStore {
 
   /**
    * @deprecated Prefer {@link locateAll}. Returns the first backend that holds
-   * the key (memory before keychain), or null.
+   * the key (memory before keychain before file), or null.
    */
   async locate(key: string): Promise<SecretBackend | null> {
     const all = await this.locateAll(key);
@@ -124,12 +140,12 @@ export function requireNamespacedMemory(
   registry: SecretStoreRegistry | null,
   backend: string,
 ): { ok: true } | { ok: false; error: string } {
-  if (backend === 'memory' && !registry) {
+  if ((backend === 'memory' || backend === 'file') && !registry) {
     return {
       ok: false,
       error:
-        'secret_store=memory requires a namespaced secret store (memory + keychain); ' +
-        'this daemon is not running with SecretStoreRegistry',
+        `secret_store=${backend} requires a namespaced secret store ` +
+        '(memory + keychain + file); this daemon is not running with SecretStoreRegistry',
     };
   }
   return { ok: true };
@@ -169,6 +185,9 @@ export function parseSecretStoreChoice(
   if (store === 'memory' || store === 'SECRET_STORE_MEMORY' || store === 3 || store === '3') {
     return { ok: true, backend: 'memory' };
   }
+  if (store === 'file' || store === 'SECRET_STORE_FILE' || store === 4 || store === '4') {
+    return { ok: true, backend: 'file' };
+  }
   if (store === 'env' || store === 'SECRET_STORE_ENV' || store === 2 || store === '2') {
     if (opts?.allowEnv) {
       return { ok: true, backend: 'env' };
@@ -185,7 +204,20 @@ export function parseSecretStoreChoice(
 
 /** Proto SecretStore enum numeric values for ListSecrets / SecretInfo. */
 export function secretBackendToProto(backend: SecretBackend | null): number {
-  if (backend === 'memory') return 3; // SECRET_STORE_MEMORY
   if (backend === 'keychain') return 1; // SECRET_STORE_KEYCHAIN
+  if (backend === 'memory') return 3; // SECRET_STORE_MEMORY
+  if (backend === 'file') return 4; // SECRET_STORE_FILE
   return 0; // SECRET_STORE_UNSPECIFIED
+}
+
+/**
+ * Audit ``source`` label for a writable backend.
+ * Keychain keeps the unsuffixed base; memory/file append ``-memory`` / ``-file``.
+ */
+export function secretAuditSource(
+  base: 'http-secrets' | 'grpc-secrets' | 'http-configure' | 'grpc-configure',
+  backend: string,
+): string {
+  if (backend === 'memory' || backend === 'file') return `${base}-${backend}`;
+  return base;
 }

@@ -1040,6 +1040,7 @@ enum SecretStore {
   SECRET_STORE_KEYCHAIN = 1;
   SECRET_STORE_ENV = 2;
   SECRET_STORE_MEMORY = 3;
+  SECRET_STORE_FILE = 4;  // config-dir secrets.json (durable with volume)
 }
 
 message DeleteSecretRequest {

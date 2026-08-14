@@ -42,12 +42,15 @@ export const PostConfigBodySchema = z
 
 // ── Secrets ─────────────────────────────────────────────────────────────
 
-const SecretStoreFieldSchema = z.enum(['memory', 'keychain', 'env']).optional();
+const SecretStoreFieldSchema = z.enum(['memory', 'keychain', 'env', 'file']).optional();
 
 export const PostSecretByKeyBodySchema = z
   .object({
     value: z.string().min(1),
-    /** Default: keychain (persistent). memory = process-lifetime only. */
+    /**
+     * Writable store: memory | keychain (default) | file.
+     * `env` is accepted by the schema but rejected at the route (not writable).
+     */
     secretStore: SecretStoreFieldSchema,
   })
   .strict();
@@ -56,7 +59,10 @@ export const PostSecretBodySchema = z
   .object({
     key: z.string().min(1),
     value: z.string().min(1),
-    /** Default: keychain (persistent). memory = process-lifetime only. */
+    /**
+     * Writable store: memory | keychain (default) | file.
+     * `env` is accepted by the schema but rejected at the route (not writable).
+     */
     secretStore: SecretStoreFieldSchema,
   })
   .strict();
@@ -110,8 +116,12 @@ export const PostProviderConfigureBodySchema = z
     apiKey: z.string().min(1).optional(),
     /** Logical secret name (SetSecret key). Prefer over inventing from provider id. */
     secretName: z.string().min(1).optional(),
-    /** Where to write apiKey: memory | keychain (default keychain). */
-    secretStore: z.enum(['memory', 'keychain', 'env']).optional(),
+    /**
+     * Credential store: memory | keychain (default) | file | env.
+     * With apiKey: writable backends only (env rejected). Without apiKey:
+     * references an existing secret (`env` = process.env[secretName]).
+     */
+    secretStore: z.enum(['memory', 'keychain', 'env', 'file']).optional(),
     /** @deprecated Use secretName. */
     apiKeyKeychainName: z.string().min(1).optional(),
     envVarName: z.string().min(1).optional(),

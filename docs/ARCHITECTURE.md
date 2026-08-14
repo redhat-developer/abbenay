@@ -87,8 +87,9 @@ Full application layer. Extends core with transport, UI, and CLI.
 | `daemon/web/server.ts` | Express web server + REST API |
 | `daemon/web/openai-compat.ts` | OpenAI-compatible `/v1/*` routes (models, chat completions) |
 | `daemon/web/grpc-web-control.ts` | gRPC client for web server control |
-| `daemon/secrets/registry.ts` | `SecretStoreRegistry` (memory + keychain namespaces) |
+| `daemon/secrets/registry.ts` | `SecretStoreRegistry` (memory + keychain + file namespaces) |
 | `daemon/secrets/keychain.ts` | `KeychainSecretStore` (keytar native addon) |
+| `daemon/secrets/file-store.ts` | `FileSecretStore` (`<configDir>/secrets.json`, mode `0600`) |
 
 ## Components
 
@@ -206,8 +207,8 @@ interface SecretStore {
 ```
 
 `CoreState` accepts any `SecretStore` via constructor injection. `DaemonState`
-uses `SecretStoreRegistry` (discrete process-lifetime `MemorySecretStore` +
-keytar-backed `KeychainSecretStore` namespaces; resolve via
+uses `SecretStoreRegistry` (discrete `MemorySecretStore`, keytar-backed
+`KeychainSecretStore`, and config-dir `FileSecretStore` namespaces; resolve via
 `(secret_store, secret_name)`) by default. Tests and library consumers can
 use `MemorySecretStore` alone. `NamespacedSecretStore` extends the interface
 for multi-backend `getFrom` / `setIn` / …
