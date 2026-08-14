@@ -222,6 +222,7 @@ describe('authorizeConsumer', () => {
       { loopbackOnly: false, allowOpenAuth: false },
     );
     expect(result.allowed).toBe(false);
+    expect(result.code).toBe('PERMISSION_DENIED');
     expect(result.reason).toMatch(/beyond localhost|consumers/i);
   });
 
@@ -243,11 +244,12 @@ describe('authorizeConsumer', () => {
         },
       }, 'inline_policy');
       expect(result.allowed).toBe(false);
+      expect(result.code).toBe('UNAUTHENTICATED');
       expect(result.reason).toContain('x-abbenay-token');
     });
   });
 
-  it('rejects wrong token', async () => {
+  it('rejects wrong token as unauthenticated', async () => {
     await withEnv('TEST_TOKEN', 'secret123', () => {
       const result = authorizeConsumer(mockGrpcCall('wrong-token'), {
         consumers: {
@@ -255,6 +257,7 @@ describe('authorizeConsumer', () => {
         },
       }, 'secrets');
       expect(result.allowed).toBe(false);
+      expect(result.code).toBe('UNAUTHENTICATED');
       expect(result.reason).toContain('not recognized');
     });
   });
@@ -283,6 +286,7 @@ describe('authorizeConsumer', () => {
           },
         }, capability);
         expect(result.allowed, capability).toBe(false);
+        expect(result.code, capability).toBe('PERMISSION_DENIED');
       }
     });
   });
@@ -328,6 +332,7 @@ describe('authorizeConsumer', () => {
         },
       }, 'secrets');
       expect(result.allowed).toBe(false);
+      expect(result.code).toBe('PERMISSION_DENIED');
     });
   });
 
@@ -339,6 +344,7 @@ describe('authorizeConsumer', () => {
         },
       }, 'shutdown');
       expect(result.allowed).toBe(false);
+      expect(result.code).toBe('PERMISSION_DENIED');
     });
   });
 });

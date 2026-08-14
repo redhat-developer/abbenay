@@ -346,9 +346,16 @@ consumers:
 | Unix socket or loopback TCP (`127.0.0.1`, `::1`) | Allow-all (local DX) | Token + capability required for sensitive RPCs |
 | Non-loopback TCP (`0.0.0.0`, LAN IP, …) | **Refuse to start** unless `--allow-open-auth` or `--insecure` | Token + capability required |
 
-Token comparison uses `crypto.timingSafeEqual` (equal-length buffers). Wrong
-or missing tokens receive `PERMISSION_DENIED`. Health/status/list discovery
-RPCs stay ungated so probes and local tooling keep working.
+Token comparison uses `crypto.timingSafeEqual` (equal-length buffers). Missing
+or unrecognized tokens receive `UNAUTHENTICATED`. A recognized consumer that
+lacks the required capability receives `PERMISSION_DENIED` (same denial
+message as an unrecognized token so the string does not leak validity).
+Health/status/list discovery RPCs stay ungated so probes and local tooling
+keep working. Session CRUD RPCs (`CreateSession` / `GetSession` /
+`ListSessions` / `DeleteSession`) are not capability-gated: no token still
+maps to the `local` owner, but a presented-but-unrecognized token is
+`UNAUTHENTICATED` (DR-049). `SessionChat` and `SummarizeSession` still
+require the `chat` capability.
 
 > **WARNING — open auth:** `--allow-open-auth` (or `--insecure`, which implies
 > it) on a non-loopback bind restores allow-all when `consumers` is empty.
@@ -366,6 +373,7 @@ Every session is stamped with an `owner` principal:
 | HTTP + `X-Abbenay-Session-Owner: <name>` | `http:<fingerprint>:<name>` |
 | gRPC with matching consumer token | `consumer:<name>` |
 | gRPC without consumer token | `local` |
+| gRPC with unrecognized consumer token (`consumers` configured) | RPC rejected (`UNAUTHENTICATED`) |
 
 List/get/delete/chat only return sessions for the caller's owner. Cross-owner
 access returns 404 (not 403) so session IDs are not leaked across principals.

@@ -127,6 +127,16 @@ async function expectPermissionDenied(promise: Promise<unknown>): Promise<void> 
   }
 }
 
+async function expectUnauthenticated(promise: Promise<unknown>): Promise<void> {
+  try {
+    await promise;
+    expect.fail('expected UNAUTHENTICATED');
+  } catch (err) {
+    const e = err as grpc.ServiceError;
+    expect(e.code).toBe(grpc.status.UNAUTHENTICATED);
+  }
+}
+
 describe('Consumer auth RPC gating', () => {
   let server: grpc.Server;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -223,12 +233,12 @@ describe('Consumer auth RPC gating', () => {
     mockSecretStoreData.clear();
   });
 
-  it('denies wrong token on SetSecret', async () => {
-    await expectPermissionDenied(callUnary(client, 'SetSecret', { key: 'K', value: 'v' }, 'wrong'));
+  it('denies wrong token on SetSecret as UNAUTHENTICATED', async () => {
+    await expectUnauthenticated(callUnary(client, 'SetSecret', { key: 'K', value: 'v' }, 'wrong'));
   });
 
-  it('denies missing token on GetSecret', async () => {
-    await expectPermissionDenied(callUnary(client, 'GetSecret', { key: 'K' }));
+  it('denies missing token on GetSecret as UNAUTHENTICATED', async () => {
+    await expectUnauthenticated(callUnary(client, 'GetSecret', { key: 'K' }));
   });
 
   it('denies SetSecret without secrets capability', async () => {
@@ -382,6 +392,51 @@ describe('Consumer auth RPC gating', () => {
   it('allows HealthCheck without consumer token (ungated)', async () => {
     const res = await callUnary(client, 'HealthCheck', {});
     expect(res.healthy).toBe(true);
+  });
+
+  it('rejects CreateSession with unrecognized token as UNAUTHENTICATED', async () => {
+    await expectUnauthenticated(callUnary(client, 'CreateSession', {
+      model: 'mock/echo',
+    }, 'wrong'));
+  });
+
+  it('keeps CreateSession without token in the local namespace', async () => {
+    const created = await callUnary(client, 'CreateSession', { model: 'mock/echo', topic: 'local-dx' });
+    expect(created.id).toBeTruthy();
+
+    const fetchedLocal = await callUnary(client, 'GetSession', { session_id: created.id });
+    expect(fetchedLocal.id).toBe(created.id);
+
+    try {
+      await callUnary(client, 'GetSession', { session_id: created.id }, GOOD_TOKEN);
+      expect.fail('consumer should not see local session');
+    } catch (err) {
+      expect((err as grpc.ServiceError).code).toBe(grpc.status.NOT_FOUND);
+    }
+  });
+
+  it('stamps matching consumer token as session owner and isolates from local', async () => {
+    const created = await callUnary(client, 'CreateSession', {
+      model: 'mock/echo',
+      topic: 'apme-owned',
+    }, GOOD_TOKEN);
+    expect(created.id).toBeTruthy();
+
+    const fetchedConsumer = await callUnary(client, 'GetSession', {
+      session_id: created.id,
+    }, GOOD_TOKEN);
+    expect(fetchedConsumer.id).toBe(created.id);
+
+    try {
+      await callUnary(client, 'GetSession', { session_id: created.id });
+      expect.fail('local caller should not see consumer session');
+    } catch (err) {
+      expect((err as grpc.ServiceError).code).toBe(grpc.status.NOT_FOUND);
+    }
+
+    await expectUnauthenticated(callUnary(client, 'GetSession', {
+      session_id: created.id,
+    }, 'wrong'));
   });
 
   it('full token can call secrets and config', async () => {

@@ -883,3 +883,26 @@ Abbenay remains source of truth for provider credentials. Placing secrets
 next to config reuses the existing config volume contract without introducing
 a separate Gateway SoT or a cloud KMS dependency. Encryption can layer later
 without changing the `(secret_store, secret_name)` address model.
+
+---
+
+## DR-049: Unrecognized gRPC consumer tokens fail closed for session ownership
+
+**Date:** 2026-08-15
+**Decision:** When `consumers` is configured and a caller presents
+`x-abbenay-token` that matches no consumer, session RPCs
+(`CreateSession`, `GetSession`, `ListSessions`, `DeleteSession`,
+`SessionChat`, `SummarizeSession`) return `UNAUTHENTICATED` instead of
+mapping the caller to `local`. Omitting the header still maps to `local`
+(unix-socket / local CLI DX). Privileged RPCs (`authorizeConsumer`) use the
+same split: missing or unrecognized token → `UNAUTHENTICATED`; recognized
+consumer lacking the capability → `PERMISSION_DENIED`. Denial *messages* for
+unrecognized token vs missing capability stay identical so the string does
+not leak token validity; status codes follow gRPC semantics.
+**Rationale:** PR #62 / DR-031 stamped sessions with an owner, but
+`resolveGrpcSessionOwner` treated a present-but-wrong token like no token.
+That let a caller with a bad consumer token create and list sessions in the
+CLI namespace. Fail-closed on unrecognized tokens closes that hole without
+breaking no-token local DX. Tracked as
+[issue #71](https://github.com/redhat-developer/abbenay/issues/71).
+

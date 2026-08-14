@@ -47,6 +47,7 @@ import {
   authorizeConsumer,
   matchConsumerByToken,
   hasConfiguredConsumers,
+  extractPresentedConsumerToken,
   DEFAULT_CONSUMER_AUTH_CONTEXT,
   type ConsumerAuthContext,
   type ConsumerCapability,
@@ -58,11 +59,13 @@ import {
 import { StdioCommandDeniedError } from '../stdio-command-policy.js';
 
 export type { ConsumerAuthContext, ConsumerCapability, AuthResult };
+export type { AuthDenyCode } from './consumer-auth.js';
 export {
   authorizeConsumer,
   matchConsumerByToken,
   DEFAULT_CONSUMER_AUTH_CONTEXT,
   hasConfiguredConsumers,
+  extractPresentedConsumerToken,
   buildConsumerAuthContext,
   assertConsumersConfiguredForBind,
   resolveAllowOpenAuth,
@@ -435,6 +438,21 @@ function toRole(protoRole: string | number): string {
   }
 }
 
+function grpcStatusForAuth(auth: AuthResult): grpc.status {
+  return auth.code === 'UNAUTHENTICATED'
+    ? grpc.status.UNAUTHENTICATED
+    : grpc.status.PERMISSION_DENIED;
+}
+
+function emitGrpcStatus(
+  call: grpc.ServerWritableStream<unknown, object>,
+  code: grpc.status,
+  message: string,
+): void {
+  const err = Object.assign(new Error(message), { code, details: message });
+  call.emit('error', err);
+}
+
 /**
  * Deny a unary RPC when consumer auth fails. Returns true when the call may proceed.
  */
@@ -447,7 +465,7 @@ function requireCapability(
   const auth = authorizeConsumer(call, loadConfig() || { providers: {} }, capability, authContext);
   if (!auth.allowed) {
     callback({
-      code: grpc.status.PERMISSION_DENIED,
+      code: grpcStatusForAuth(auth),
       message: auth.reason || 'Permission denied',
     });
     return false;
@@ -460,7 +478,7 @@ function requireCapability(
 
 /**
  * Deny a server-streaming RPC when consumer auth fails. Returns auth on success, null when denied.
- * Emits a gRPC PERMISSION_DENIED status (same as unary gates) so clients see a real RPC error,
+ * Emits UNAUTHENTICATED or PERMISSION_DENIED (same as unary gates) so clients see a real RPC error,
  * not only an in-band ChatChunk error.
  */
 function requireCapabilityStream(
@@ -470,14 +488,29 @@ function requireCapabilityStream(
 ): AuthResult | null {
   const auth = authorizeConsumer(call, loadConfig() || { providers: {} }, capability, authContext);
   if (!auth.allowed) {
-    const err = Object.assign(new Error(auth.reason || 'Permission denied'), {
-      code: grpc.status.PERMISSION_DENIED,
-      details: auth.reason || 'Permission denied',
-    });
-    call.emit('error', err);
+    emitGrpcStatus(call, grpcStatusForAuth(auth), auth.reason || 'Permission denied');
     return null;
   }
   return auth;
+}
+
+/**
+ * Resolve session owner or fail the unary RPC with UNAUTHENTICATED.
+ * Returns null when the call was rejected.
+ */
+function requireSessionOwner(
+  call: { metadata: grpc.Metadata },
+  callback: grpc.sendUnaryData<object>,
+): string | null {
+  const resolved = resolveGrpcSessionOwner(call, loadConfig());
+  if (!resolved.ok) {
+    callback({
+      code: grpc.status.UNAUTHENTICATED,
+      message: resolved.reason,
+    });
+    return null;
+  }
+  return resolved.owner;
 }
 
 /**
@@ -734,7 +767,7 @@ export function createAbbenayService(
           authContext,
         );
         if (!auth.allowed) {
-          call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
+          call.write({ error: { code: auth.code || 'PERMISSION_DENIED', message: auth.reason } });
           call.end();
           return;
         }
@@ -1321,7 +1354,8 @@ export function createAbbenayService(
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'model is required' });
         return;
       }
-      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      const owner = requireSessionOwner(call, callback);
+      if (!owner) return;
       state.sessionStore.create(model, topic || undefined, undefined, metadata, owner).then((session) => {
         callback(null, sessionToProto(session));
       }).catch((error: unknown) => {
@@ -1339,7 +1373,8 @@ export function createAbbenayService(
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
         return;
       }
-      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      const owner = requireSessionOwner(call, callback);
+      if (!owner) return;
       state.sessionStore.getOwned(id, owner, includeMessages).then((session) => {
         callback(null, sessionToProto(session));
       }).catch((error: unknown) => {
@@ -1356,7 +1391,8 @@ export function createAbbenayService(
       const rawOffset = call.request.offset;
       const limit = rawLimit == null || rawLimit < 0 ? undefined : rawLimit;
       const offset = rawOffset == null || rawOffset < 0 ? undefined : rawOffset;
-      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      const owner = requireSessionOwner(call, callback);
+      if (!owner) return;
       state.sessionStore.list({ model, limit, offset, owner }).then((result) => {
         callback(null, {
           sessions: result.sessions.map(summaryToProto),
@@ -1376,7 +1412,8 @@ export function createAbbenayService(
         callback({ code: grpc.status.INVALID_ARGUMENT, message: 'session_id is required' });
         return;
       }
-      const owner = resolveGrpcSessionOwner(call, loadConfig());
+      const owner = requireSessionOwner(call, callback);
+      if (!owner) return;
       state.sessionStore.deleteOwned(id, owner).then(async () => {
         // Clean up session-scoped dynamic MCP servers
         await state.mcpClientPool.disconnectByScope(id);
@@ -1446,7 +1483,7 @@ export function createAbbenayService(
           authContext,
         );
         if (!auth.allowed) {
-          call.write({ error: { code: 'PERMISSION_DENIED', message: auth.reason } });
+          call.write({ error: { code: auth.code || 'PERMISSION_DENIED', message: auth.reason } });
           call.end();
           return;
         }
@@ -1455,9 +1492,15 @@ export function createAbbenayService(
         }
       }
 
+      const ownerResult = resolveGrpcSessionOwner(call, loadConfig());
+      if (!ownerResult.ok) {
+        emitGrpcStatus(call, grpc.status.UNAUTHENTICATED, ownerResult.reason);
+        return;
+      }
+      const owner = ownerResult.owner;
+
       (async () => {
         try {
-          const owner = resolveGrpcSessionOwner(call, loadConfig());
           const session = await state.sessionStore.getOwned(sessionId, owner, true);
           await state.sessionStore.appendMessage(sessionId, chatMessage);
 
@@ -1567,9 +1610,11 @@ export function createAbbenayService(
         return;
       }
 
+      const owner = requireSessionOwner(call, callback);
+      if (!owner) return;
+
       (async () => {
         try {
-          const owner = resolveGrpcSessionOwner(call, loadConfig());
           const session = await state.sessionStore.getOwned(sessionId, owner, true);
           const userCount = session.messages.filter((m) => m.role === 'user').length;
 
@@ -1668,7 +1713,7 @@ export function createAbbenayService(
             `(server_id=${serverId}, transport=${transport.type})`,
         );
         callback({
-          code: grpc.status.PERMISSION_DENIED,
+          code: grpcStatusForAuth(auth),
           message: auth.reason || 'Permission denied',
         });
         return;
@@ -2622,24 +2667,34 @@ function transportProtoToConfig(transport: McpTransportProto): McpServerConfig {
   throw new Error(`Unknown transport type: "${type}". Must be "stdio", "http", or "sse".`);
 }
 
-// ── Consumer authorization (DR-024 / DR-025 / DR-037) ─────────────────
+// ── Consumer authorization (DR-024 / DR-025 / DR-037 / DR-049) ─────────
+
+export type GrpcSessionOwnerResult =
+  | { ok: true; owner: string }
+  | { ok: false; reason: string };
 
 /**
  * Resolve the session owner principal for a gRPC call.
  * - Matching consumer token → `consumer:<name>`
- * - Otherwise (local CLI / VS Code / no consumers) → `local`
+ * - No token → `local` (unix-socket / local CLI DX)
+ * - Token presented but unrecognized while `consumers` is configured → fail closed
  */
 export function resolveGrpcSessionOwner(
   call: { metadata: grpc.Metadata },
   config: ConfigFile | null,
-): string {
-  const metadata = call.metadata.get('x-abbenay-token');
-  const token = metadata.length > 0 ? String(metadata[0]) : undefined;
+): GrpcSessionOwnerResult {
+  const token = extractPresentedConsumerToken(call);
   const name = matchConsumerByToken(config, token);
   if (name) {
-    return `consumer:${name}`;
+    return { ok: true, owner: `consumer:${name}` };
   }
-  return LOCAL_SESSION_OWNER;
+  if (token !== undefined && hasConfiguredConsumers(config)) {
+    return {
+      ok: false,
+      reason: 'Consumer token not recognized.',
+    };
+  }
+  return { ok: true, owner: LOCAL_SESSION_OWNER };
 }
 
 /** @deprecated Use authorizeConsumer(call, config, 'mcp_register') instead. */

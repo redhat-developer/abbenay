@@ -338,8 +338,9 @@ class AbbenayClient:
             
         Raises:
             AbbenayError: If the server streams an error chunk (e.g.,
-                INVALID_ARGUMENT for a malformed inline policy, or
-                PERMISSION_DENIED when consumer auth fails).
+                INVALID_ARGUMENT for a malformed inline policy,
+                UNAUTHENTICATED for a missing/unrecognized consumer token,
+                or PERMISSION_DENIED when the consumer lacks a capability).
         """
         self._ensure_connected()
         
