@@ -408,11 +408,20 @@ describe('protoToConfigFile', () => {
         mem: { engine: 'openai', secret_name: 'M', secret_store: 3 },
         envp: { engine: 'openai', secret_name: 'E', secret_store: 'SECRET_STORE_ENV' },
         kc: { engine: 'openai', secret_name: 'K', secret_store: 'SECRET_STORE_KEYCHAIN' },
+        filep: { engine: 'openai', secret_name: 'F', secret_store: 4 },
       },
     });
     expect(config.providers!.mem.secret_store).toBe('memory');
     expect(config.providers!.envp.secret_store).toBe('env');
     expect(config.providers!.kc.secret_store).toBe('keychain');
+    expect(config.providers!.filep.secret_store).toBe('file');
+
+    const proto = configFileToProto({
+      providers: {
+        filep: { engine: 'openai', secret_name: 'F', secret_store: 'file' },
+      },
+    });
+    expect(proto.providers!.filep.secret_store).toBe(4);
   });
 
   it('provider with no models gets undefined models field', () => {

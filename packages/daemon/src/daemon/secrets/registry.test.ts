@@ -147,11 +147,17 @@ describe('parseSecretStoreChoice', () => {
 });
 
 describe('requireNamespacedMemory', () => {
-  it('allows memory when a registry is present', async () => {
+  it('allows memory and file when a registry is present', async () => {
     const { MemorySecretStore } = await import('../../core/secrets.js');
-    const registry = new SecretStoreRegistry(new MemorySecretStore(), new MemorySecretStore());
+    const registry = new SecretStoreRegistry(
+      new MemorySecretStore(),
+      new MemorySecretStore(),
+      new MemorySecretStore(),
+    );
     expect(requireNamespacedMemory(registry, 'memory')).toEqual({ ok: true });
+    expect(requireNamespacedMemory(registry, 'file')).toEqual({ ok: true });
     expect(requireNamespacedMemory(registry, 'keychain')).toEqual({ ok: true });
+    expect(registry.fileStore).toBeDefined();
   });
 
   it('rejects memory when only a plain secret store is available', () => {
@@ -161,6 +167,14 @@ describe('requireNamespacedMemory', () => {
       expect(result.error).toMatch(/memory|SecretStoreRegistry/i);
     }
     expect(requireNamespacedMemory(null, 'keychain')).toEqual({ ok: true });
+  });
+
+  it('rejects file when only a plain secret store is available', () => {
+    const result = requireNamespacedMemory(null, 'file');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/file|SecretStoreRegistry/i);
+    }
   });
 });
 
