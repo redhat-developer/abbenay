@@ -36,13 +36,6 @@ def _to_policy_proto(policy: Union["proto.PolicyConfig", Dict[str, Any]]) -> "pr
     )
 
 
-def _consumer_metadata(token: Optional[str]) -> Optional[List[tuple]]:
-    """Build gRPC metadata for an optional x-abbenay-token."""
-    if token is None:
-        return None
-    return [("x-abbenay-token", token)]
-
-
 class AbbenayError(Exception):
     """Base exception for Abbenay client errors."""
     pass
@@ -55,6 +48,11 @@ class ConnectionError(AbbenayError):
 
 class NotFoundError(AbbenayError):
     """Requested resource not found."""
+    pass
+
+
+class InsecureTokenError(AbbenayError):
+    """Consumer token requested on an unprotected (plaintext TCP) channel."""
     pass
 
 
@@ -136,6 +134,29 @@ class AbbenayClient:
         self._channel: Optional[grpc.aio.Channel] = None
         self._stub = None
         self._client_id: Optional[str] = None
+
+    def _is_unix_target(self) -> bool:
+        return self._target.startswith("unix:")
+
+    def _is_protected_channel(self) -> bool:
+        """True when the transport keeps consumer tokens off the open network.
+
+        Unix sockets are local IPC. TCP requires TLS so x-abbenay-token is not
+        sent in plaintext to a network observer.
+        """
+        return self._is_unix_target() or self._tls
+
+    def _token_metadata(self, token: Optional[str]) -> Optional[List[tuple]]:
+        """Return x-abbenay-token metadata, or reject plaintext TCP token use."""
+        if token is None:
+            return None
+        if not self._is_protected_channel():
+            raise InsecureTokenError(
+                "Consumer tokens require a protected channel. "
+                "Connect via Unix socket (default) or enable TLS "
+                "(tls=True and/or ca_cert=...) before passing token=."
+            )
+        return [("x-abbenay-token", token)]
     
     @staticmethod
     def _get_abbenay_dir() -> Path:
@@ -240,7 +261,7 @@ class AbbenayClient:
             self._client_id = None
 
         try:
-            is_unix = self._target.startswith("unix:")
+            is_unix = self._is_unix_target()
             if self._tls and not is_unix:
                 root_certs = None
                 if self._ca_cert:
@@ -336,9 +357,8 @@ class AbbenayClient:
                 When set, fully replaces any named policy on the model.
             token: Optional consumer auth token for inline policy
                 authorization (sent as x-abbenay-token gRPC metadata).
-                Required when the server has a ``consumers`` section in
-                config and the consumer needs the ``inline_policy``
-                capability.
+                Requires a Unix socket or TLS channel; plaintext TCP
+                raises InsecureTokenError.
             
         Yields:
             ChatChunk objects containing response data
@@ -379,7 +399,7 @@ class AbbenayClient:
         if policy is not None:
             request.policy.CopyFrom(_to_policy_proto(policy))
         
-        async for chunk in self._stub.Chat(request, metadata=_consumer_metadata(token)):
+        async for chunk in self._stub.Chat(request, metadata=self._token_metadata(token)):
             yield self._parse_chunk(chunk)
     
     async def create_session(
@@ -399,6 +419,7 @@ class AbbenayClient:
             token: Optional consumer auth token (x-abbenay-token). When
                 consumers are configured, pass the same token used for
                 session_chat so the session is owned by consumer:<name>.
+                Requires a Unix socket or TLS channel.
             
         Returns:
             The created Session
@@ -413,7 +434,7 @@ class AbbenayClient:
         
         response = await self._stub.CreateSession(
             request,
-            metadata=_consumer_metadata(token),
+            metadata=self._token_metadata(token),
         )
         return self._parse_session(response)
     
@@ -427,7 +448,8 @@ class AbbenayClient:
         
         Args:
             session_id: Session ID
-            token: Optional consumer auth token (x-abbenay-token)
+            token: Optional consumer auth token (x-abbenay-token).
+                Requires a Unix socket or TLS channel.
             
         Returns:
             The Session
@@ -443,7 +465,7 @@ class AbbenayClient:
                     session_id=session_id,
                     include_messages=True,
                 ),
-                metadata=_consumer_metadata(token),
+                metadata=self._token_metadata(token),
             )
             return self._parse_session(response)
         except grpc.aio.AioRpcError as e:
@@ -463,7 +485,8 @@ class AbbenayClient:
         Args:
             limit: Max sessions to return
             offset: Pagination offset
-            token: Optional consumer auth token (x-abbenay-token)
+            token: Optional consumer auth token (x-abbenay-token).
+                Requires a Unix socket or TLS channel.
             
         Returns:
             List of Sessions
@@ -475,7 +498,7 @@ class AbbenayClient:
                 limit=limit,
                 offset=offset,
             ),
-            metadata=_consumer_metadata(token),
+            metadata=self._token_metadata(token),
         )
         
         return [
@@ -501,14 +524,15 @@ class AbbenayClient:
         
         Args:
             session_id: Session ID
-            token: Optional consumer auth token (x-abbenay-token)
+            token: Optional consumer auth token (x-abbenay-token).
+                Requires a Unix socket or TLS channel.
         """
         self._ensure_connected()
         
         try:
             await self._stub.DeleteSession(
                 proto.DeleteSessionRequest(session_id=session_id),
-                metadata=_consumer_metadata(token),
+                metadata=self._token_metadata(token),
             )
         except grpc.aio.AioRpcError as e:
             if e.code() == grpc.StatusCode.NOT_FOUND:
@@ -581,13 +605,15 @@ class AbbenayClient:
             enable_tools: Enable tool calling
             tool_filter: Only expose these tools to the LLM (empty = all)
             policy: Optional inline policy override
-            token: Optional consumer auth token
+            token: Optional consumer auth token. Requires a Unix socket
+                or TLS channel.
 
         Yields:
             ChatChunk objects containing response data
 
         Raises:
             AbbenayError: On server error chunks
+            InsecureTokenError: If token is set on plaintext TCP
         """
         self._ensure_connected()
 
@@ -614,7 +640,7 @@ class AbbenayClient:
         if policy is not None:
             request.policy.CopyFrom(_to_policy_proto(policy))
 
-        async for chunk in self._stub.SessionChat(request, metadata=_consumer_metadata(token)):
+        async for chunk in self._stub.SessionChat(request, metadata=self._token_metadata(token)):
             yield self._parse_chunk(chunk)
 
     async def register_mcp_server(
@@ -641,7 +667,8 @@ class AbbenayClient:
                 args: command arguments (stdio)
             session_id: Scope to a session (auto-cleanup on delete)
             tool_filter: Only register these tools from the server
-            token: Consumer auth token for mcp_register capability
+            token: Consumer auth token for mcp_register capability.
+                Requires a Unix socket or TLS channel.
 
         Returns:
             List of discovered tool names (namespaced)
@@ -673,9 +700,10 @@ class AbbenayClient:
         if tool_filter:
             request.tool_filter.extend(tool_filter)
 
-        metadata = []
-        if token is not None:
-            metadata.append(("x-abbenay-token", token))
+        metadata: List[tuple] = []
+        token_md = self._token_metadata(token)
+        if token_md:
+            metadata.extend(token_md)
         if self._client_id is not None:
             metadata.append(("x-abbenay-client-id", self._client_id))
 
@@ -699,21 +727,17 @@ class AbbenayClient:
 
         Args:
             server_id: Server ID to unregister
-            token: Consumer auth token
+            token: Consumer auth token. Requires a Unix socket or TLS channel.
 
         Returns:
             True if successfully unregistered
         """
         self._ensure_connected()
 
-        metadata = []
-        if token is not None:
-            metadata.append(("x-abbenay-token", token))
-
         try:
             response = await self._stub.UnregisterMcpServer(
                 proto.UnregisterMcpServerRequest(server_id=server_id),
-                metadata=metadata or None,
+                metadata=self._token_metadata(token),
             )
             return response.success
         except grpc.aio.AioRpcError as e:

@@ -356,7 +356,9 @@ capability). Session CRUD RPCs (`CreateSession` / `GetSession` /
 `ListSessions` / `DeleteSession`) are not capability-gated: no token still
 maps to the `local` owner, but a presented-but-unrecognized token is
 `UNAUTHENTICATED` (DR-049). `SessionChat` and `SummarizeSession` still
-require the `chat` capability.
+require the `chat` capability. The Python client only attaches
+`x-abbenay-token` on a Unix socket or TLS channel; plaintext TCP +
+`token=` raises before the RPC is sent.
 
 > **WARNING — open auth:** `--allow-open-auth` (or `--insecure`, which implies
 > it) on a non-loopback bind restores allow-all when `consumers` is empty.

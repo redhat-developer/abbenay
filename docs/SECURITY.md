@@ -164,7 +164,8 @@ unless `--allow-open-auth` or `--insecure` is set. Configure consumers per
 ```
 
 **Pass:** start fails with empty consumers on `0.0.0.0`; with consumers, wrong
-token is denied on gated RPCs.
+token is denied on gated RPCs. Python clients must send `x-abbenay-token` only
+over Unix socket or TLS (plaintext TCP + `token=` is rejected client-side).
 **Fail:** non-loopback gRPC allows all callers with no consumers and no opt-in.
 
 ### 6. MCP HTTP endpoint
