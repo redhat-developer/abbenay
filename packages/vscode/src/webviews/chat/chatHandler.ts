@@ -272,10 +272,7 @@ async function handleSendMessage(
         toolCallId: '',
         name: '',
       },
-      options: {
-        toolMode: 'auto',
-        enableTools: true,
-      },
+      options: {},
     });
 
     for await (const chunk of stream) {

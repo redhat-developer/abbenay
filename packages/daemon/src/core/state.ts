@@ -614,7 +614,7 @@ export class CoreState {
     }
 
     // Policy can override tool mode (caller's explicit value takes priority)
-    const effectiveToolMode = toolOptions?.toolMode || flatPolicy?.toolMode || 'auto';
+    const effectiveToolMode = toolOptions?.toolMode || flatPolicy?.toolMode || 'none';
 
     // ── Apply system prompt (policy snippet + model prompt) ──
     let processedMessages = [...messages];
