@@ -584,6 +584,26 @@ describe('CoreState.chat', () => {
     expect(tools).toBeUndefined();
   });
 
+  it('infers auto mode when caller supplies tools without explicit toolMode', async () => {
+    const core = createCore({
+      config: {
+        providers: { 'my-mock': { engine: 'mock', models: { echo: {} } } },
+      },
+    });
+
+    const suppliedTools = [
+      { name: 'search', description: 'web search', inputSchema: '{}' },
+    ];
+    await collectChat(core, 'my-mock/echo', [{ role: 'user', content: 'find it' }], undefined, {
+      tools: suppliedTools,
+    });
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    const tools = mockStreamChat.mock.calls[0][6];
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe('search');
+  });
+
   it('applies inline policy without inheriting named policy fields', async () => {
     const core = createCore({
       config: {
