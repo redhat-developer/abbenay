@@ -160,11 +160,12 @@ unless `--allow-open-auth` or `--insecure` is set. Configure consumers per
 
 ```bash
 # After consumers + --grpc-tls on 0.0.0.0: sensitive RPCs need x-abbenay-token
-# Wrong/missing token → PERMISSION_DENIED (see consumer-auth tests / client docs)
+# Missing/wrong token → UNAUTHENTICATED; valid token without capability → PERMISSION_DENIED
 ```
 
 **Pass:** start fails with empty consumers on `0.0.0.0`; with consumers, wrong
-token is denied on gated RPCs.
+token is denied on gated RPCs. Python clients must send `x-abbenay-token` only
+over Unix socket or TLS (plaintext TCP + `token=` is rejected client-side).
 **Fail:** non-loopback gRPC allows all callers with no consumers and no opt-in.
 
 ### 6. MCP HTTP endpoint
@@ -201,3 +202,4 @@ need air-gap / offline posture:
 | DR-029 | Fail-closed TLS for non-loopback gRPC TCP |
 | DR-030 | Secure-by-default HTTP (auth, CORS, bind) |
 | DR-038 | Air-gap docs must not claim isolation equals security |
+| DR-049 | Unrecognized gRPC consumer tokens fail closed for session ownership |

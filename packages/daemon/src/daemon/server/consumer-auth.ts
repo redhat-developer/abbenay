@@ -5,7 +5,9 @@
  * - Non-loopback bind: empty `consumers` fails closed unless explicit open mode
  *   (`--allow-open-auth` or `--insecure`).
  * - When `consumers` is configured: sensitive RPCs require a matching token
- *   (timing-safe) and the requested capability.
+ *   (timing-safe) and the requested capability. Missing/unrecognized tokens
+ *   are UNAUTHENTICATED; a recognized consumer lacking the capability is
+ *   PERMISSION_DENIED.
  */
 
 import * as crypto from 'node:crypto';
@@ -16,10 +18,19 @@ import { isLoopbackHost } from '../grpc-tls.js';
 /** Capabilities a consumer may be granted. */
 export type ConsumerCapability = keyof ConsumerCapabilities;
 
+export type AuthDenyCode = 'UNAUTHENTICATED' | 'PERMISSION_DENIED';
+
 export interface AuthResult {
   allowed: boolean;
   consumer?: string;
   reason?: string;
+  /**
+   * Set when `allowed` is false.
+   * UNAUTHENTICATED = missing/unrecognized token when consumers are configured.
+   * PERMISSION_DENIED = recognized consumer lacking the capability, or empty
+   * consumers on a non-loopback bind without open auth.
+   */
+  code?: AuthDenyCode;
 }
 
 /**
@@ -175,9 +186,18 @@ export function matchConsumerByToken(
   return matched;
 }
 
-function extractToken(call: { metadata: grpc.Metadata }): string | undefined {
+/**
+ * First `x-abbenay-token` value when the header is present.
+ * Distinguishes "header omitted" (`undefined`) from "header sent" (including `""`).
+ */
+export function extractPresentedConsumerToken(
+  call: { metadata: grpc.Metadata },
+): string | undefined {
   const metadata = call.metadata.get('x-abbenay-token');
-  return metadata.length > 0 ? String(metadata[0]) : undefined;
+  if (metadata.length === 0) {
+    return undefined;
+  }
+  return String(metadata[0]);
 }
 
 /**
@@ -197,16 +217,18 @@ export function authorizeConsumer(
     }
     return {
       allowed: false,
+      code: 'PERMISSION_DENIED',
       reason:
         'Consumer authentication is required when gRPC is bound beyond localhost. ' +
         'Configure a consumers section in config.yaml, or restart with --allow-open-auth / --insecure.',
     };
   }
 
-  const token = extractToken(call);
-  if (!token) {
+  const token = extractPresentedConsumerToken(call);
+  if (token === undefined || token === '') {
     return {
       allowed: false,
+      code: 'UNAUTHENTICATED',
       reason: `${CAPABILITY_LABELS[capability]} requires consumer authentication. Set the x-abbenay-token gRPC metadata header.`,
     };
   }
@@ -215,6 +237,8 @@ export function authorizeConsumer(
   if (!name) {
     return {
       allowed: false,
+      code: 'UNAUTHENTICATED',
+      // Same message as missing-capability to avoid leaking token validity in the string.
       reason: `Consumer token not recognized or lacks ${CAPABILITY_LABELS[capability]} capability.`,
     };
   }
@@ -226,6 +250,7 @@ export function authorizeConsumer(
 
   return {
     allowed: false,
+    code: 'PERMISSION_DENIED',
     reason: `Consumer token not recognized or lacks ${CAPABILITY_LABELS[capability]} capability.`,
   };
 }

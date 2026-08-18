@@ -332,11 +332,11 @@ describe('MCP stdio spawn policy E2E (H6)', () => {
         server_id: 'no-auth',
         transport: { type: 'stdio', command: 'npx', args: [] },
       });
-      expect.fail('expected PERMISSION_DENIED');
+      expect.fail('expected UNAUTHENTICATED');
     } catch (err) {
       const e = err as grpc.ServiceError;
-      expect(e.code).toBe(grpc.status.PERMISSION_DENIED);
-      expect(e.message).toMatch(/consumer authentication|Permission denied|mcp_register/i);
+      expect(e.code).toBe(grpc.status.UNAUTHENTICATED);
+      expect(e.message).toMatch(/consumer authentication|mcp_register/i);
     }
     expect(stdioTransportConstructs).toHaveLength(0);
   });

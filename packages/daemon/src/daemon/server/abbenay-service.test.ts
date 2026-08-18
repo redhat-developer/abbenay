@@ -469,7 +469,19 @@ describe('protoToPolicyConfig', () => {
 describe('resolveGrpcSessionOwner', () => {
   it('returns local owner without matching token', () => {
     const call = { metadata: new grpc.Metadata() };
-    expect(resolveGrpcSessionOwner(call, { providers: {} })).toBe('local');
+    expect(resolveGrpcSessionOwner(call, { providers: {} })).toEqual({ ok: true, owner: 'local' });
+  });
+
+  it('returns local owner when consumers are configured but no token is sent', async () => {
+    await withEnv('TEST_OWNER_TOKEN', 'owner-tok', () => {
+      const call = { metadata: new grpc.Metadata() };
+      const config: ConfigFile = {
+        consumers: {
+          apme: { token_env: 'TEST_OWNER_TOKEN', capabilities: { chat: true } },
+        },
+      };
+      expect(resolveGrpcSessionOwner(call, config)).toEqual({ ok: true, owner: 'local' });
+    });
   });
 
   it('returns consumer owner when token matches', () => {
@@ -484,11 +496,53 @@ describe('resolveGrpcSessionOwner', () => {
           apme: { token_env: 'TEST_OWNER_TOKEN', capabilities: { chat: true } },
         },
       };
-      expect(resolveGrpcSessionOwner(call, config)).toBe('consumer:apme');
+      expect(resolveGrpcSessionOwner(call, config)).toEqual({
+        ok: true,
+        owner: 'consumer:apme',
+      });
     } finally {
       if (prev === undefined) delete process.env.TEST_OWNER_TOKEN;
       else process.env.TEST_OWNER_TOKEN = prev;
     }
+  });
+
+  it('fails closed when a token is presented but matches no consumer', async () => {
+    await withEnv('TEST_OWNER_TOKEN', 'owner-tok', () => {
+      const metadata = new grpc.Metadata();
+      metadata.add('x-abbenay-token', 'wrong-tok');
+      const call = { metadata };
+      const config: ConfigFile = {
+        consumers: {
+          apme: { token_env: 'TEST_OWNER_TOKEN', capabilities: { chat: true } },
+        },
+      };
+      expect(resolveGrpcSessionOwner(call, config)).toEqual({
+        ok: false,
+        reason: 'Consumer token not recognized.',
+      });
+    });
+  });
+
+  it('fails closed on empty presented token when consumers are configured', async () => {
+    await withEnv('TEST_OWNER_TOKEN', 'owner-tok', () => {
+      const metadata = new grpc.Metadata();
+      metadata.add('x-abbenay-token', '');
+      const config: ConfigFile = {
+        consumers: {
+          apme: { token_env: 'TEST_OWNER_TOKEN', capabilities: { chat: true } },
+        },
+      };
+      expect(resolveGrpcSessionOwner({ metadata }, config).ok).toBe(false);
+    });
+  });
+
+  it('ignores unrecognized tokens when no consumers are configured', () => {
+    const metadata = new grpc.Metadata();
+    metadata.add('x-abbenay-token', 'stray-tok');
+    expect(resolveGrpcSessionOwner({ metadata }, { providers: {} })).toEqual({
+      ok: true,
+      owner: 'local',
+    });
   });
 });
 
@@ -920,6 +974,82 @@ describe('createAbbenayService handlers', () => {
     const deleted = await invokeUnary(service.DeleteSession, { session_id: 'sess-1' });
     expect(deleted.error).toBeNull();
     expect(state.mcpClientPool.disconnectByScope).toHaveBeenCalledWith('sess-1');
+  });
+
+  it('session RPCs reject unrecognized consumer tokens as UNAUTHENTICATED', async () => {
+    await withEnv('SESS_OWNER_TOKEN', 'good-owner', async () => {
+      mockLoadConfig.mockReturnValue({
+        providers: {},
+        consumers: {
+          apme: { token_env: 'SESS_OWNER_TOKEN', capabilities: { chat: true } },
+        },
+      });
+      const state = createMockState();
+      const service = createServiceHandlers(state);
+      const badMeta = new grpc.Metadata();
+      badMeta.add('x-abbenay-token', 'wrong-owner');
+
+      const created = await invokeUnary(service.CreateSession, { model: 'mock/echo' }, badMeta);
+      expect(created.error?.code).toBe(grpc.status.UNAUTHENTICATED);
+      expect(state.sessionStore.create).not.toHaveBeenCalled();
+
+      const listed = await invokeUnary(service.ListSessions, {}, badMeta);
+      expect(listed.error?.code).toBe(grpc.status.UNAUTHENTICATED);
+
+      const got = await invokeUnary(service.GetSession, { session_id: 'sess-1' }, badMeta);
+      expect(got.error?.code).toBe(grpc.status.UNAUTHENTICATED);
+
+      const deleted = await invokeUnary(service.DeleteSession, { session_id: 'sess-1' }, badMeta);
+      expect(deleted.error?.code).toBe(grpc.status.UNAUTHENTICATED);
+    });
+  });
+
+  it('session RPCs keep no-token callers in the local namespace when consumers are configured', async () => {
+    await withEnv('SESS_OWNER_TOKEN', 'good-owner', async () => {
+      mockLoadConfig.mockReturnValue({
+        providers: {},
+        consumers: {
+          apme: { token_env: 'SESS_OWNER_TOKEN', capabilities: { chat: true } },
+        },
+      });
+      const state = createMockState();
+      const service = createServiceHandlers(state);
+
+      const created = await invokeUnary(service.CreateSession, { model: 'mock/echo', topic: 't' });
+      expect(created.error).toBeNull();
+      expect(state.sessionStore.create).toHaveBeenCalledWith(
+        'mock/echo',
+        't',
+        undefined,
+        undefined,
+        'local',
+      );
+    });
+  });
+
+  it('CreateSession stamps matching consumer token as consumer owner', async () => {
+    await withEnv('SESS_OWNER_TOKEN', 'good-owner', async () => {
+      mockLoadConfig.mockReturnValue({
+        providers: {},
+        consumers: {
+          apme: { token_env: 'SESS_OWNER_TOKEN', capabilities: { chat: true } },
+        },
+      });
+      const state = createMockState();
+      const service = createServiceHandlers(state);
+      const meta = new grpc.Metadata();
+      meta.add('x-abbenay-token', 'good-owner');
+
+      const created = await invokeUnary(service.CreateSession, { model: 'mock/echo' }, meta);
+      expect(created.error).toBeNull();
+      expect(state.sessionStore.create).toHaveBeenCalledWith(
+        'mock/echo',
+        undefined,
+        undefined,
+        undefined,
+        'consumer:apme',
+      );
+    });
   });
 
   it('SummarizeSession returns cached summary when counts match', async () => {
@@ -1396,7 +1526,7 @@ describe('createAbbenayService handlers', () => {
     const state = createMockState();
     const service = createServiceHandlers(state, DEFAULT_CONSUMER_AUTH_CONTEXT);
     const { error } = await invokeUnary(service.GetSecret, { key: 'K' });
-    expect(error?.code).toBe(grpc.status.PERMISSION_DENIED);
+    expect(error?.code).toBe(grpc.status.UNAUTHENTICATED);
   });
 
   it('Chat returns INVALID_ARGUMENT when model missing', async () => {
@@ -1416,7 +1546,7 @@ describe('createAbbenayService handlers', () => {
     expect(written[0]).toEqual({ error: { code: 'INVALID_ARGUMENT', message: 'Model is required' } });
   });
 
-  it('Chat stream emits PERMISSION_DENIED via gRPC error when auth fails', async () => {
+  it('Chat stream emits UNAUTHENTICATED via gRPC error when token is missing', async () => {
     mockLoadConfig.mockReturnValue({
       providers: {},
       consumers: {
@@ -1444,7 +1574,7 @@ describe('createAbbenayService handlers', () => {
     service.Chat(call as never);
     await vi.waitFor(() => expect(call.emit).toHaveBeenCalledWith('error', expect.any(Error)));
     const err = (call.emit as ReturnType<typeof vi.fn>).mock.calls[0][1] as Error & { code?: number };
-    expect(err.code).toBe(grpc.status.PERMISSION_DENIED);
+    expect(err.code).toBe(grpc.status.UNAUTHENTICATED);
   });
 
   it('SessionChat validates session_id and message content', async () => {
@@ -1524,7 +1654,7 @@ describe('createAbbenayService handlers', () => {
       server_id: 'dyn',
       transport: { type: 'stdio', command: 'npx', args: ['x'] },
     });
-    expect(error?.code).toBe(grpc.status.PERMISSION_DENIED);
+    expect(error?.code).toBe(grpc.status.UNAUTHENTICATED);
     expect(error?.message).toMatch(/consumer authentication/i);
   });
 
