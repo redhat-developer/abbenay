@@ -890,6 +890,7 @@ function handleSave(): void {
 // ─── Message Handler ─────────────────────────────────────────────────
 
 window.addEventListener('message', (event) => {
+  if (event.origin !== window.origin) return;
   const msg = event.data;
 
   switch (msg.type) {
