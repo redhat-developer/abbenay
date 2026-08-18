@@ -440,8 +440,10 @@ describe('Consumer auth RPC gating', () => {
   });
 
   it('full token can call secrets and config', async () => {
-    await callUnary(client, 'SetSecret', { key: 'FULL', value: 'ok' }, GOOD_TOKEN);
-    await callUnary(client, 'GetConfig', {}, GOOD_TOKEN);
+    const setRes = await callUnary(client, 'SetSecret', { key: 'FULL', value: 'ok' }, GOOD_TOKEN);
+    expect(setRes).toBeDefined();
+    const configRes = await callUnary(client, 'GetConfig', {}, GOOD_TOKEN);
+    expect(configRes).toBeDefined();
   });
 
   it('denies SummarizeSession without chat capability', async () => {
