@@ -548,6 +548,7 @@ describe('CoreState.chat', () => {
 
     const onApproval = vi.fn().mockResolvedValue('allow');
     await collectChat(core, 'my-mock/echo', [{ role: 'user', content: 'run tool' }], undefined, {
+      toolMode: 'auto',
       toolFilter: ['tool'],
       onToolApprovalNeeded: onApproval,
     });
@@ -557,6 +558,50 @@ describe('CoreState.chat', () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe('tool');
     expect(mockStreamChat.mock.calls[0][9]).toBe(10);
+  });
+
+  it('defaults to none mode and skips registry when toolMode is omitted', async () => {
+    const core = createCore({
+      config: {
+        providers: { 'my-mock': { engine: 'mock', models: { echo: {} } } },
+      },
+    });
+    const registry = new ToolRegistry();
+    registry.register('test', 'local', [
+      {
+        name: 'tool',
+        description: 'test tool',
+        inputSchema: '{}',
+        executor: async () => ({ ok: true }),
+      },
+    ]);
+    core.toolRegistry = registry;
+
+    await collectChat(core, 'my-mock/echo', [{ role: 'user', content: 'plain chat' }]);
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    const tools = mockStreamChat.mock.calls[0][6];
+    expect(tools).toBeUndefined();
+  });
+
+  it('infers auto mode when caller supplies tools without explicit toolMode', async () => {
+    const core = createCore({
+      config: {
+        providers: { 'my-mock': { engine: 'mock', models: { echo: {} } } },
+      },
+    });
+
+    const suppliedTools = [
+      { name: 'search', description: 'web search', inputSchema: '{}' },
+    ];
+    await collectChat(core, 'my-mock/echo', [{ role: 'user', content: 'find it' }], undefined, {
+      tools: suppliedTools,
+    });
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    const tools = mockStreamChat.mock.calls[0][6];
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe('search');
   });
 
   it('applies inline policy without inheriting named policy fields', async () => {

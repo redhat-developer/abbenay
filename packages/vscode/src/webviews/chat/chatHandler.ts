@@ -274,7 +274,6 @@ async function handleSendMessage(
       },
       options: {
         toolMode: 'auto',
-        enableTools: true,
       },
     });
 

@@ -2187,6 +2187,30 @@ describe('createAbbenayService handlers', () => {
     expect(failed.written.some((c) => (c as { error?: { message: string } }).error?.message === 'chat exploded')).toBe(true);
   });
 
+  it('Chat infers auto tool_mode when tools are supplied without an explicit mode', async () => {
+    async function* doneChunk() {
+      yield { type: 'done' as const, finishReason: 'stop' };
+    }
+    const chat = vi.fn().mockReturnValue(doneChunk());
+    const state = createMockState({ chat });
+    const service = createAbbenayService(state);
+
+    const { call } = makeWritableStreamCall({
+      model: 'mock/echo',
+      messages: [{ role: 2, content: 'find it' }],
+      tools: [{ name: 'search', description: 'web search', input_schema: '{}' }],
+      // No tool_mode/toolMode set — should be inferred as 'auto' since tools are present.
+    });
+    service.Chat(call as never);
+    await vi.waitFor(() => expect(call.end).toHaveBeenCalled());
+
+    expect(chat).toHaveBeenCalled();
+    const toolOptions = chat.mock.calls[0][3] as { toolMode?: string; tools?: Array<{ name: string }> };
+    expect(toolOptions.toolMode).toBe('auto');
+    expect(toolOptions.tools).toHaveLength(1);
+    expect(toolOptions.tools?.[0].name).toBe('search');
+  });
+
   it('SessionChat covers inline policy, tool lifecycle, and errors', async () => {
     async function* toolChunks() {
       yield { type: 'tool' as const, name: 'search', done: false, call: { params: { q: 'x' } } };

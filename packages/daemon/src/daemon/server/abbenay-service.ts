@@ -703,7 +703,8 @@ export function createAbbenayService(
       })).filter((t: ToolDefinition) => t.name); // Filter out empty-name tools
       
       // ── Extract tool mode from options ──
-      const toolMode = opts.tool_mode || opts.toolMode || 'auto';
+      const requestedToolMode = opts.tool_mode || opts.toolMode;
+      const toolMode = requestedToolMode || (tools.length > 0 ? 'auto' : undefined);
       const maxToolIterations = opts.max_tool_iterations || opts.maxToolIterations || 10;
       const chatToolFilter = opts.tool_filter || opts.toolFilter || [];
       
