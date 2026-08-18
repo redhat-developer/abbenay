@@ -94,9 +94,9 @@ describe('address file helpers', () => {
     });
   });
 
-  it('getTransport returns unix on non-win32', () => {
+  it('getTransport returns unix on non-win32', (context) => {
     if (process.platform === 'win32') {
-      return;
+      context.skip(); return;
     }
     Object.defineProperty(process, 'platform', { value: 'linux' });
     const info = getTransport();
@@ -139,8 +139,8 @@ describe('transport lifecycle helpers', () => {
     expect(fs.existsSync(runtimeDir)).toBe(true);
   });
 
-  it('ensureSocketDir creates parent dir on unix', () => {
-    if (process.platform === 'win32') return;
+  it('ensureSocketDir creates parent dir on unix', (context) => {
+    if (process.platform === 'win32') { context.skip(); return; }
     Object.defineProperty(process, 'platform', { value: 'linux' });
     const socketDir = path.dirname(getSocketPath());
     if (fs.existsSync(socketDir)) {
@@ -184,8 +184,8 @@ describe('transport lifecycle helpers', () => {
     }
   });
 
-  it('cleanupSocket removes unix socket file', () => {
-    if (process.platform === 'win32') return;
+  it('cleanupSocket removes unix socket file', (context) => {
+    if (process.platform === 'win32') { context.skip(); return; }
     Object.defineProperty(process, 'platform', { value: 'linux' });
     ensureSocketDir();
     const socketPath = getSocketPath();
@@ -288,8 +288,8 @@ describe('isDaemonRunning', () => {
     Object.defineProperty(process, 'platform', { value: original });
   });
 
-  it('on unix probes socket connectivity', async () => {
-    if (process.platform === 'win32') return;
+  it('on unix probes socket connectivity', async (context) => {
+    if (process.platform === 'win32') { context.skip(); return; }
     Object.defineProperty(process, 'platform', { value: 'linux' });
     ensureSocketDir();
     const socketPath = getDefaultSocketPath();
