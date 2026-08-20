@@ -898,6 +898,9 @@ describe('DaemonState.runHealthChecks', () => {
     mockMergeConfigs.mockReturnValue(config);
 
     await state.runHealthChecks();
+
+    const providers = await state.listProviders();
+    expect(providers).toHaveLength(0);
   });
 });
 
@@ -1285,7 +1288,7 @@ describe('DaemonState VS Code backchannel', () => {
 
   it('handleVSCodeResponse ignores malformed responses', () => {
     const connId = state.registerVSCodeConnection(createStreamCapture().stream);
-    state.handleVSCodeResponse(connId, { bad: true });
-    state.handleVSCodeResponse(connId, { request_id: 123 });
+    expect(() => state.handleVSCodeResponse(connId, { bad: true })).not.toThrow();
+    expect(() => state.handleVSCodeResponse(connId, { request_id: 123 })).not.toThrow();
   });
 });
