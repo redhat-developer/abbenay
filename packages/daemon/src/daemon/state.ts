@@ -464,7 +464,7 @@ export class DaemonState extends CoreState {
       }
     }
 
-    return workspaces.sort();
+    return workspaces.sort((a, b) => a.localeCompare(b));
   }
 
   getVSCodeConnectionIds(): string[] {

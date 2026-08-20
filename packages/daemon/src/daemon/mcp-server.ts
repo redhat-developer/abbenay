@@ -159,7 +159,7 @@ export class AbbenayMcpServer {
   }
 
   listRememberedClients(): string[] {
-    return [...this.rememberedClients].sort();
+    return [...this.rememberedClients].sort((a, b) => a.localeCompare(b));
   }
 
   listSessions(): McpSessionInfo[] {

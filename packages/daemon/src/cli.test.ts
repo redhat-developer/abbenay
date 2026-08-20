@@ -157,8 +157,8 @@ describe('CLI subprocess', () => {
     expect(output).toMatch(new RegExp(`PID:\\s+${process.pid}`));
   });
 
-  it('status uses Address label on win32', async () => {
-    if (process.platform !== 'win32') return;
+  it('status uses Address label on win32', async (context) => {
+    if (process.platform !== 'win32') { context.skip(); return; }
 
     process.env.XDG_RUNTIME_DIR = tmpRoot;
     ensureRuntimeDir();

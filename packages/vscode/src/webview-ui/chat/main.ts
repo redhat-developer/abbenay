@@ -335,6 +335,9 @@ function handleScroll(): void {
 // ── Message Handler ──────────────────────────────────────────────────────────
 
 function onMessage(event: MessageEvent): void {
+  if (event.origin !== window.origin) {
+    return;
+  }
   const msg = event.data;
 
   switch (msg.type) {
