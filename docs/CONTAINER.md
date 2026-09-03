@@ -45,7 +45,11 @@ The `start` command runs all services:
 - **No keytar / keychain.** The container has no D-Bus session or
   gnome-keyring, so `api_key_keychain_name` will not work. Use
   `api_key_env_var_name` in your config and pass keys as environment
-  variables.
+  variables. When configuring a provider in the dashboard, select **File**
+  to store the key in `secrets.json` on the config volume, or select **Env
+  Var** when the key is injected into the container environment. The File
+  option requires a writable config directory; the dashboard reports an
+  error and does not save the provider if the selected secret store fails.
 - **Config is mounted, not baked in.** Bind-mount your `config.yaml`
   into the container at runtime.
 
@@ -90,6 +94,11 @@ Mount this file into the container at:
 ```
 /home/abbenay/.config/abbenay/config.yaml
 ```
+
+For dashboard-managed credentials, mount the containing config directory as
+writable so the File source can persist `/home/abbenay/.config/abbenay/secrets.json`.
+Environment variables remain preferable when the deployment platform provides
+secret injection.
 
 ---
 
