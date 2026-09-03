@@ -18,7 +18,8 @@ import {
 import type { DaemonState } from '../state.js';
 import type { ConnectedClient } from '../state.js';
 import type { ProviderInfo, ModelInfo, ChatToolOptions } from '../../core/state.js';
-import type { SecretStore } from '../../core/secrets.js';
+import { MemorySecretStore, type SecretStore } from '../../core/secrets.js';
+import { SecretStoreRegistry } from '../secrets/registry.js';
 import { SessionStore } from '../../core/session-store.js';
 import { API_TOKEN_COOKIE, CSRF_COOKIE } from './http-security.js';
 
@@ -622,6 +623,42 @@ describe('createWebApp routes', () => {
       body: { value: 'secret-value' },
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it('POST /api/secrets/:key supports the file backend', async () => {
+    const fileStore = new MemorySecretStore();
+    const fileState = createMockState({
+      sessionsDir,
+      secretStore: new SecretStoreRegistry(new MemorySecretStore(), new MemorySecretStore(), fileStore),
+    });
+    const { httpServer, baseUrl: fileBase } = await startTestApp(fileState);
+    try {
+      const res = await httpRequest(fileBase, 'POST', '/api/secrets/FILE_KEY', {
+        body: { value: 'file-value', secretStore: 'file' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect((res.body as { secretStore: string }).secretStore).toBe('file');
+      expect(await fileStore.get('FILE_KEY')).toBe('file-value');
+    } finally {
+      await stopTestApp(httpServer);
+    }
+  });
+
+  it('returns an error when the selected secret backend cannot save', async () => {
+    const failingStore = createSecretStore({
+      async set() { throw new Error('Keychain storage not available'); },
+    });
+    const failingState = createMockState({ sessionsDir, secretStore: failingStore });
+    const { httpServer, baseUrl: failingBase } = await startTestApp(failingState);
+    try {
+      const res = await httpRequest(failingBase, 'POST', '/api/secrets/KEYCHAIN_KEY', {
+        body: { value: 'secret-value' },
+      });
+      expect(res.statusCode).toBe(500);
+      expect((res.body as { error: string }).error).toMatch(/keychain storage not available/i);
+    } finally {
+      await stopTestApp(httpServer);
+    }
   });
 
   it('DELETE /api/secrets/:key deletes a secret', async () => {
