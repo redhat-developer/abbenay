@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { DaemonClient } from '../daemon/client';
 import * as proto from '../proto/abbenay/v1/service';
 import { getLogger } from '../utils/logger';
+import { readLmToolModeSetting, resolveDaemonToolMode } from './lm-tool-mode';
 
 const logger = getLogger();
 
@@ -139,15 +140,13 @@ class AbbenayHandler implements vscode.LanguageModelChatProvider {
             logger.debug(`[LMProvider] Forwarding ${protoTools.length} tools to daemon`);
         }
 
-        // Determine tool mode:
-        // - When VS Code provides tools, use 'auto' (daemon owns the loop via Vercel AI SDK)
-        // - If toolMode is explicitly set in options, map it; otherwise infer from tools presence
-        let toolMode = protoTools.length > 0 ? 'auto' : 'none';
-        if (options.toolMode !== undefined) {
-            // VS Code LanguageModelChatToolMode enum: Required=1
-            // Map any non-undefined toolMode to 'auto' since VS Code only sends tools it wants used
-            toolMode = 'auto';
-        }
+        // Host-provided tools (Copilot, etc.): passthrough returns tool_call chunks for
+        // native host execution; auto runs the loop via the backchannel (legacy).
+        const lmToolMode = readLmToolModeSetting();
+        const toolMode = resolveDaemonToolMode(protoTools.length > 0, lmToolMode);
+        logger.debug(
+            `[LMProvider] toolMode=${toolMode} (abbenay.lmToolMode=${lmToolMode}, hostTools=${protoTools.length})`,
+        );
 
         const request: proto.DeepPartial<proto.ChatRequest> = {
             model: compositeId,
@@ -180,7 +179,7 @@ class AbbenayHandler implements vscode.LanguageModelChatProvider {
                         break;
                     }
                     case 'toolCall': {
-                        // Tool call from the LLM (passthrough mode or before execution)
+                        // Tool call from the LLM (passthrough — host executes natively)
                         const tc = c.toolCall;
                         logger.debug(`[LMProvider] Tool call: ${tc.name} (id: ${tc.id})`);
                         progress.report(new vscode.LanguageModelToolCallPart(

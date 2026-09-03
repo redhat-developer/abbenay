@@ -131,6 +131,15 @@
           "type": "string",
           "default": "",
           "description": "Environment variable name whose value is sent as x-abbenay-token consumer auth metadata. Prefer Abbenay: Set Daemon Token (SecretStorage) when possible."
+        },
+        "abbenay.lmToolMode": {
+          "type": "string",
+          "enum": [
+            "passthrough",
+            "auto"
+          ],
+          "default": "passthrough",
+          "description": "How Abbenay handles tools when another extension (e.g. GitHub Copilot) sends tools with a chat request. passthrough: return tool calls to the host for native VS Code execution (recommended for Copilot). auto: Abbenay runs the tool loop and invokes tools via the backchannel (legacy)."
         }
       }
     },
