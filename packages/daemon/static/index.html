@@ -2001,11 +2001,29 @@ function dashboard() {
           provCfg.api_key_keychain_name = secretName;
           delete provCfg.api_key_env_var_name;
         } else if ((this.wizardKeySource === 'keychain' || this.wizardKeySource === 'file') && !this.wizardApiKey && this.wizardEditMode) {
+          // Do not silently move an existing credential to another backend.
+          const existingStore = existingCfg.secret_store ||
+            (existingCfg.api_key_env_var_name ? 'env' : 'keychain');
+          const hasExistingCredential = !!(
+            existingCfg.secret_name ||
+            existingCfg.api_key_keychain_name ||
+            existingCfg.api_key_env_var_name
+          );
+          if (hasExistingCredential && existingStore !== this.wizardKeySource) {
+            this.wizardError = 'Changing API Key Source requires entering the API key again.';
+            return;
+          }
           // Edit mode, no new key entered — keep the existing credential setting.
-          provCfg.secret_store = this.wizardKeySource;
+          provCfg.secret_store = existingStore;
           provCfg.secret_name = provCfg.secret_name || provCfg.api_key_keychain_name;
           if (provCfg.secret_name) provCfg.api_key_keychain_name = provCfg.secret_name;
-          delete provCfg.api_key_env_var_name;
+          if (existingStore === 'env') {
+            provCfg.secret_name = existingCfg.secret_name || existingCfg.api_key_env_var_name;
+            provCfg.api_key_env_var_name = provCfg.secret_name;
+            delete provCfg.api_key_keychain_name;
+          } else {
+            delete provCfg.api_key_env_var_name;
+          }
         } else if (this.wizardKeySource === 'env') {
           const envName = this.wizardEnvVar || this.getEngineDefaultEnvVar(this.wizardEngine);
           provCfg.secret_name = envName;
@@ -2015,17 +2033,18 @@ function dashboard() {
         }
       }
       
-      // If provider was renamed in edit mode, remove old key
+      // Stage the update so a failed configuration write cannot leave the UI mutated.
+      const nextProviderConfig = { ...this.providerConfig };
       if (this.wizardEditMode && this.wizardEditId !== name) {
-        delete this.providerConfig[this.wizardEditId];
+        delete nextProviderConfig[this.wizardEditId];
       }
-      
-      // Save to config
-      this.providerConfig[name] = provCfg;
-      this.providerConfig = { ...this.providerConfig };
+      nextProviderConfig[name] = provCfg;
+      const previousProviderConfig = this.providerConfig;
+      this.providerConfig = nextProviderConfig;
       try {
         await this.saveFullConfig();
       } catch (e) {
+        this.providerConfig = previousProviderConfig;
         this.wizardError = e instanceof Error ? e.message : 'Failed to save provider configuration';
         return;
       }
@@ -2173,13 +2192,29 @@ function dashboard() {
     async deleteProvider(provId) {
       if (!confirm(`Delete provider "${provId}"?`)) return;
       const cfg = this.providerConfig[provId];
-      if (cfg?.api_key_keychain_name) {
-        try { await apiFetch(`/api/secrets/${cfg.api_key_keychain_name}`, { method: 'DELETE' }); } catch {}
+      const secretName = cfg?.secret_name || cfg?.api_key_keychain_name;
+      const nextProviderConfig = { ...this.providerConfig };
+      delete nextProviderConfig[provId];
+      const previousProviderConfig = this.providerConfig;
+      this.providerConfig = nextProviderConfig;
+      try {
+        await this.saveFullConfig();
+        if (secretName && cfg.secret_store !== 'env' && !cfg.api_key_env_var_name) {
+          const secretStore = cfg.secret_store || (cfg.api_key_env_var_name ? 'env' : 'keychain');
+          const secretResp = await apiFetch(
+            `/api/secrets/${encodeURIComponent(secretName)}?secretStore=${encodeURIComponent(secretStore)}`,
+            { method: 'DELETE' },
+          );
+          if (!secretResp.ok) {
+            throw new Error(await this.responseError(secretResp, 'Failed to delete API key'));
+          }
+        }
+        await this.refresh();
+      } catch (e) {
+        this.providerConfig = previousProviderConfig;
+        this.wizardError = e instanceof Error ? e.message : 'Failed to delete provider';
+        alert(this.wizardError);
       }
-      delete this.providerConfig[provId];
-      this.providerConfig = { ...this.providerConfig };
-      await this.saveFullConfig();
-      await this.refresh();
     },
     
     // ── MCP Servers ──

@@ -60,6 +60,7 @@ export class KeychainSecretStore implements SecretStore {
       }
       return this.keytar;
     } catch (error: unknown) {
+      this.keytar = null;
       this.loadError = error instanceof Error ? error.message : String(error);
       console.warn(`[Secrets] keytar not available: ${this.loadError}. Keychain storage disabled.`);
       return null;
