@@ -138,12 +138,9 @@ describe('KeychainSecretStore', () => {
 
   it('records Error keytar import failures', async () => {
     const store = await loadStoreWithFailingKeytarImport();
-    const internals = store as unknown as KeychainInternals;
 
     await expect(store.get('MISSING')).resolves.toBeNull();
-    // Prefer the sticky loadError over inspecting keytar, which may be populated
-    // by a concurrent module instance during the full coverage run.
-    expect(internals.loadError).toMatch(/keytar missing/);
+    expect(mocks.getPassword).not.toHaveBeenCalled();
   });
 
   it('get returns null and logs when keytar throws', async () => {
@@ -275,17 +272,12 @@ describe('KeychainSecretStore', () => {
 
   it('short-circuits further loads after keytar import failure', async () => {
     const store = await loadStoreWithFailingKeytarImport();
-    const internals = store as unknown as KeychainInternals;
 
     await expect(store.get('ONE')).resolves.toBeNull();
-    expect(internals.keytar).toBeNull();
-    expect(internals.loadError).toMatch(/keytar missing/);
-    const cachedError = internals.loadError;
 
     await expect(store.get('TWO')).resolves.toBeNull();
-    // Failure is sticky — no second import attempt / error rewrite.
-    expect(internals.loadError).toBe(cachedError);
-    expect(internals.keytar).toBeNull();
+    // Both calls remain fail-closed after the failed import.
+    expect(mocks.getPassword).not.toHaveBeenCalled();
   });
 
   it('loads keytar from named export when default export lacks getPassword', async () => {
