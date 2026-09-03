@@ -129,6 +129,16 @@ HTTP auth is on by default — use the dashboard login / API token when prompted
 The daemon binds to loopback by default; see
 [Security & air-gap](../../docs/SECURITY.md).
 
+### Copilot and other Language Model hosts
+
+When Copilot (or another extension) uses an Abbenay model with tools, set
+**Abbenay: Language Model Tool Mode** (`abbenay.lmToolMode`) to **passthrough**
+(default). Abbenay returns tool calls to the host for native execution instead
+of running them via the backchannel (which prompts on every tool).
+
+Use **auto** only if you need the legacy behavior where Abbenay executes tools
+itself.
+
 ### Config Files
 
 Configuration is stored in YAML files:
