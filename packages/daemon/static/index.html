@@ -1986,7 +1986,7 @@ function dashboard() {
           // User entered a new key — save it
           const secretName = existingCfg.secret_name || existingCfg.api_key_keychain_name || `${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
           try {
-            const secretResp = await apiFetch(`/api/secrets/${secretName}`, {
+            const secretResp = await apiFetch(`/api/secrets/${encodeURIComponent(secretName)}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ value: this.wizardApiKey, secretStore: this.wizardKeySource }),
