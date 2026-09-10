@@ -9,7 +9,7 @@
     "generate": "../../proto/generate.sh typescript"
   },
   "dependencies": {
-    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/grpc-js": "^1.14.4",
     "long": "^5.2.0",
     "nice-grpc": "^2.1.0",
     "nice-grpc-common": "^2.0.0",
