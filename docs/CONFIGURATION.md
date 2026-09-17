@@ -6,9 +6,11 @@ Abbenay uses YAML configuration files and system keychain for secrets.
 
 Models may define a durable `reasoning` default using one of `provider-default`,
 `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. The Abbenay Chat
-sidebar exposes the same values as a transient per-session control. A sidebar
-selection applies to requests in the current chat session and does not rewrite
-the configuration file.
+sidebar exposes the same values as a transient per-session control, and the
+native dashboard's **Configure model** editor exposes them as a durable
+per-model setting. A sidebar selection applies to requests in the current chat
+session and does not rewrite the configuration file. In the dashboard, choosing
+**Provider default** clears the per-model override.
 
 The provider configuration UIs in both the VS Code extension and native
 dashboard expose an **Images** capability override for each enabled model.
