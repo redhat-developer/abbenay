@@ -1488,6 +1488,36 @@ describe('createAbbenayService handlers', () => {
     expect(written.some((c) => (c as { done?: unknown }).done)).toBe(true);
   });
 
+  it('Chat accepts camelCase multimodal fields and empty content-part defaults', async () => {
+    async function* chunks() {
+      yield { type: 'done' as const, finishReason: 'stop' };
+    }
+    const chat = vi.fn().mockReturnValue(chunks());
+    const service = createAbbenayService(createMockState({ chat }));
+    const call = {
+      request: {
+        model: 'mock/echo',
+        messages: [{
+          role: 'ROLE_USER',
+          contentParts: [
+            { type: '', text: '', mimeType: 'image/png', data: Buffer.alloc(0), uri: '' },
+          ],
+        }],
+      },
+      metadata: new grpc.Metadata(),
+      write: vi.fn(),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.Chat(call as never);
+    await vi.waitFor(() => expect(call.end).toHaveBeenCalled());
+    expect(chat.mock.calls[0]?.[1]).toEqual([expect.objectContaining({
+      contentParts: [{ type: '', text: undefined, mimeType: 'image/png', data: undefined, uri: undefined }],
+    })]);
+  });
+
   it('Chat denies inline policy without capability when consumers configured', async () => {
     mockLoadConfig.mockReturnValue({
       providers: {},
