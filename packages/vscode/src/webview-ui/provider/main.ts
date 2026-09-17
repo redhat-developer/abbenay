@@ -55,6 +55,7 @@ interface ModelConfigView {
   max_tokens?: number;
   timeout?: number;
   supports_vision?: boolean;
+  openai_compat_tools?: 'off' | 'passthrough';
 }
 
 type ModelConfigRecord = Record<string, unknown>;
@@ -73,6 +74,7 @@ function normalizeModelConfig(config: ModelConfigRecord, fallbackModelId: string
     max_tokens: value('maxTokens', 'max_tokens') as number | undefined,
     timeout: value('timeout', 'timeout') as number | undefined,
     supports_vision: value('supportsVision', 'supports_vision') as boolean | undefined,
+    openai_compat_tools: value('openaiCompatTools', 'openai_compat_tools') as ModelConfigView['openai_compat_tools'],
   };
 
   if (!normalized.model_id) {
@@ -810,7 +812,7 @@ function renderModelSection(): void {
     visionCheckbox.setAttribute('aria-label', `Enable image input for ${name}`);
     visionCheckbox.addEventListener('click', (event) => event.stopPropagation());
     visionCheckbox.addEventListener('change', () => {
-      const updated = { ...(selectedModels.get(name) || {}) };
+      const updated = { ...selectedModels.get(name) };
       if (visionCheckbox.checked) {
         updated.supports_vision = true;
       } else {

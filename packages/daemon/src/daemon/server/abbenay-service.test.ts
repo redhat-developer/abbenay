@@ -147,6 +147,7 @@ describe('configFileToProto', () => {
               max_tokens: 4096,
               policy: 'concise',
               supports_vision: true,
+              openai_compat_tools: 'passthrough',
             },
           },
         },
@@ -174,6 +175,7 @@ describe('configFileToProto', () => {
     expect(proto.providers!['my-openai'].models!['fast'].max_tokens).toBe(4096);
     expect(proto.providers!['my-openai'].models!['fast'].policy).toBe('concise');
     expect(proto.providers!['my-openai'].models!['fast'].supports_vision).toBe(true);
+    expect(proto.providers!['my-openai'].models!['fast'].openai_compat_tools).toBe('passthrough');
   });
 
   it('converts MCP server config', () => {
@@ -279,6 +281,7 @@ describe('protoToConfigFile', () => {
               temperature: 0.7,
               max_tokens: 4096,
               supports_vision: true,
+              openai_compat_tools: 'passthrough',
             },
           },
         },
@@ -293,6 +296,7 @@ describe('protoToConfigFile', () => {
     expect(roundTripped.providers!['my-openai'].models!['fast'].temperature).toBe(0.7);
     expect(roundTripped.providers!['my-openai'].models!['fast'].max_tokens).toBe(4096);
     expect(roundTripped.providers!['my-openai'].models!['fast'].supports_vision).toBe(true);
+    expect(roundTripped.providers!['my-openai'].models!['fast'].openai_compat_tools).toBe('passthrough');
   });
 
   it('round-trips MCP servers', () => {
@@ -2090,7 +2094,11 @@ describe('createAbbenayService handlers', () => {
       title: 'Topic',
       messages: [
         { role: 'system', content: 'sys' },
-        { role: 'user', content: 'hi' },
+        {
+          role: 'user',
+          content: 'hi',
+          contentParts: [{ type: 'image', mimeType: 'image/png', data: Uint8Array.from([1, 2, 3]) }],
+        },
         { role: 'assistant', content: 'yo', tool_calls: [{ id: 'tc1', name: 'search', arguments: '{}' }] },
         { role: 'tool', content: 'result', name: 'search', tool_call_id: 'tc1' },
         { role: 'unknown', content: 'fallback' },
@@ -2138,6 +2146,11 @@ describe('createAbbenayService handlers', () => {
     const got = await invokeUnary(service.GetSession, { session_id: 'sess-full', include_messages: true });
     expect(got.response?.id).toBe('sess-full');
     expect(rpcArray<{ role: number }>(got.response, 'messages').map((m) => m.role)).toEqual([1, 2, 3, 4, 2]);
+    expect(rpcArray<{ content_parts?: Array<{ type: string; mime_type: string; data: Buffer }> }>(got.response, 'messages')[1]?.content_parts?.[0]).toMatchObject({
+      type: 'image',
+      mime_type: 'image/png',
+      data: Buffer.from([1, 2, 3]),
+    });
 
     expect((await invokeUnary(service.GetSession, { session_id: 'missing' })).error?.code).toBe(grpc.status.NOT_FOUND);
     expect((await invokeUnary(service.DeleteSession, {})).error?.code).toBe(grpc.status.INVALID_ARGUMENT);

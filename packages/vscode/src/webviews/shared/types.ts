@@ -112,6 +112,7 @@ export interface ModelConfigView {
   max_tokens?: number;
   timeout?: number;
   supports_vision?: boolean;
+  openai_compat_tools?: 'off' | 'passthrough';
 }
 
 export type ReasoningLevel = 'provider-default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';

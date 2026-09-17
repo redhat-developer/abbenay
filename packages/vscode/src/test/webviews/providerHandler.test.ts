@@ -107,12 +107,12 @@ suite('Provider Handler', () => {
       },
     }, webview, client);
 
-    assert.strictEqual(updatedConfig.providers.openai.models.luna.supports_vision, true);
-    assert.strictEqual(updatedConfig.providers.openai.models.luna.model_id, 'gpt-5.6-luna');
+    assert.strictEqual(updatedConfig.providers.openai.models.luna.supportsVision, true);
+    assert.strictEqual(updatedConfig.providers.openai.models.luna.modelId, 'gpt-5.6-luna');
     assert.strictEqual(updatedConfig.providers.openai.models.old, undefined);
   });
 
-  test('configureProvider should retain the webview model configuration shape', async () => {
+  test('configureProvider should serialize the complete model configuration for protobuf', async () => {
     const webview = createMockWebview();
     let updatedConfig: any;
     const client = createMockDaemonClient({
@@ -133,15 +133,17 @@ suite('Provider Handler', () => {
           reasoning: 'high',
           supports_vision: true,
           system_prompt: 'Be concise',
+          openai_compat_tools: 'passthrough',
         },
       },
     }, webview, client);
 
     assert.deepStrictEqual(updatedConfig.providers.openai.models.luna, {
-      model_id: 'gpt-5.6-luna',
+      modelId: 'gpt-5.6-luna',
       reasoning: 'high',
-      supports_vision: true,
-      system_prompt: 'Be concise',
+      supportsVision: true,
+      systemPrompt: 'Be concise',
+      openaiCompatTools: 'passthrough',
     });
   });
 

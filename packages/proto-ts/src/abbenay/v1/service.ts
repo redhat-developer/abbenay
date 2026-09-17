@@ -646,8 +646,8 @@ export interface ChatOptions {
     | undefined;
   /**
    * auto: daemon owns tool loop, executes tools
-   *   passthrough: stream tool_call chunks to caller, no execution
-   *   none: no tools sent to LLM
+   * passthrough: stream tool_call chunks to caller, no execution
+   * none: no tools sent to LLM
    */
   reasoning?: string | undefined;
 }
@@ -1158,7 +1158,11 @@ export interface ModelParamConfig {
     | boolean
     | undefined;
   /** Configured reasoning effort default */
-  reasoning?: string | undefined;
+  reasoning?:
+    | string
+    | undefined;
+  /** Per-model OpenAI-compatible tools mode */
+  openaiCompatTools?: string | undefined;
 }
 
 export interface McpServerConfigMsg {
@@ -11299,6 +11303,7 @@ function createBaseModelParamConfig(): ModelParamConfig {
     timeout: undefined,
     supportsVision: undefined,
     reasoning: undefined,
+    openaiCompatTools: undefined,
   };
 }
 
@@ -11336,6 +11341,9 @@ export const ModelParamConfig: MessageFns<ModelParamConfig> = {
     }
     if (message.reasoning !== undefined) {
       writer.uint32(90).string(message.reasoning);
+    }
+    if (message.openaiCompatTools !== undefined) {
+      writer.uint32(98).string(message.openaiCompatTools);
     }
     return writer;
   },
@@ -11435,6 +11443,14 @@ export const ModelParamConfig: MessageFns<ModelParamConfig> = {
           message.reasoning = reader.string();
           continue;
         }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.openaiCompatTools = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -11485,6 +11501,11 @@ export const ModelParamConfig: MessageFns<ModelParamConfig> = {
         ? globalThis.Boolean(object.supports_vision)
         : undefined,
       reasoning: isSet(object.reasoning) ? globalThis.String(object.reasoning) : undefined,
+      openaiCompatTools: isSet(object.openaiCompatTools)
+        ? globalThis.String(object.openaiCompatTools)
+        : isSet(object.openai_compat_tools)
+        ? globalThis.String(object.openai_compat_tools)
+        : undefined,
     };
   },
 
@@ -11523,6 +11544,9 @@ export const ModelParamConfig: MessageFns<ModelParamConfig> = {
     if (message.reasoning !== undefined) {
       obj.reasoning = message.reasoning;
     }
+    if (message.openaiCompatTools !== undefined) {
+      obj.openaiCompatTools = message.openaiCompatTools;
+    }
     return obj;
   },
 
@@ -11542,6 +11566,7 @@ export const ModelParamConfig: MessageFns<ModelParamConfig> = {
     message.timeout = object.timeout ?? undefined;
     message.supportsVision = object.supportsVision ?? undefined;
     message.reasoning = object.reasoning ?? undefined;
+    message.openaiCompatTools = object.openaiCompatTools ?? undefined;
     return message;
   },
 };

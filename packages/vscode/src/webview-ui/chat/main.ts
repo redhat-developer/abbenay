@@ -370,7 +370,7 @@ function onMessage(event: MessageEvent): void {
     case 'sessionCreated':
       state.currentSessionId = msg.session.id;
       state.currentModel = msg.session.model;
-      setReasoningForCurrentModel();
+      setReasoningForCurrentModel(pendingInjectedPrompt !== null && state.reasoning !== 'provider-default');
       state.messages = [];
       state.currentAssistantText = '';
       state.pendingToolCalls.clear();
@@ -475,9 +475,11 @@ function renderModels(): void {
   setReasoningForCurrentModel();
 }
 
-function setReasoningForCurrentModel(): void {
+function setReasoningForCurrentModel(preserveExplicitSelection = false): void {
   const model = state.models.find(candidate => candidate.id === state.currentModel);
-  state.reasoning = model?.reasoning ?? 'provider-default';
+  if (!preserveExplicitSelection) {
+    state.reasoning = model?.reasoning ?? 'provider-default';
+  }
   if ($reasoningSelect) {
     $reasoningSelect.value = state.reasoning;
   }

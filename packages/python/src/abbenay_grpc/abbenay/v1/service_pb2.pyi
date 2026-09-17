@@ -1023,7 +1023,7 @@ class FullProviderConfig(_message.Message):
     def __init__(self, engine: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ..., api_key_env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., models: _Optional[_Mapping[str, ModelParamConfig]] = ..., secret_name: _Optional[str] = ..., secret_store: _Optional[_Union[SecretStore, str]] = ...) -> None: ...
 
 class ModelParamConfig(_message.Message):
-    __slots__ = ("model_id", "policy", "system_prompt", "system_prompt_mode", "temperature", "top_p", "top_k", "max_tokens", "timeout", "supports_vision", "reasoning")
+    __slots__ = ("model_id", "policy", "system_prompt", "system_prompt_mode", "temperature", "top_p", "top_k", "max_tokens", "timeout", "supports_vision", "reasoning", "openai_compat_tools")
     MODEL_ID_FIELD_NUMBER: _ClassVar[int]
     POLICY_FIELD_NUMBER: _ClassVar[int]
     SYSTEM_PROMPT_FIELD_NUMBER: _ClassVar[int]
@@ -1035,6 +1035,7 @@ class ModelParamConfig(_message.Message):
     TIMEOUT_FIELD_NUMBER: _ClassVar[int]
     SUPPORTS_VISION_FIELD_NUMBER: _ClassVar[int]
     REASONING_FIELD_NUMBER: _ClassVar[int]
+    OPENAI_COMPAT_TOOLS_FIELD_NUMBER: _ClassVar[int]
     model_id: str
     policy: str
     system_prompt: str
@@ -1046,7 +1047,8 @@ class ModelParamConfig(_message.Message):
     timeout: int
     supports_vision: bool
     reasoning: str
-    def __init__(self, model_id: _Optional[str] = ..., policy: _Optional[str] = ..., system_prompt: _Optional[str] = ..., system_prompt_mode: _Optional[str] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., top_k: _Optional[int] = ..., max_tokens: _Optional[int] = ..., timeout: _Optional[int] = ..., supports_vision: _Optional[bool] = ..., reasoning: _Optional[str] = ...) -> None: ...
+    openai_compat_tools: str
+    def __init__(self, model_id: _Optional[str] = ..., policy: _Optional[str] = ..., system_prompt: _Optional[str] = ..., system_prompt_mode: _Optional[str] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., top_k: _Optional[int] = ..., max_tokens: _Optional[int] = ..., timeout: _Optional[int] = ..., supports_vision: _Optional[bool] = ..., reasoning: _Optional[str] = ..., openai_compat_tools: _Optional[str] = ...) -> None: ...
 
 class McpServerConfigMsg(_message.Message):
     __slots__ = ("command", "args", "url", "transport", "enabled", "headers", "env", "max_response_size")

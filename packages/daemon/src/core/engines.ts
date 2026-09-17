@@ -947,20 +947,30 @@ export interface ChatContentPart {
   uri?: string;
 }
 
+function normalizeContentPartData(data: unknown): Uint8Array | undefined {
+  if (typeof data === 'string') {
+    return Uint8Array.from(Buffer.from(data, 'base64'));
+  }
+  if (data instanceof Uint8Array) {
+    return data;
+  }
+  if (data && typeof data === 'object') {
+    const persistedBuffer = data as { type?: unknown; data?: unknown };
+    if (persistedBuffer.type === 'Buffer' && Array.isArray(persistedBuffer.data)) {
+      return Uint8Array.from(persistedBuffer.data.filter((value): value is number => typeof value === 'number'));
+    }
+    return Uint8Array.from(Object.values(data as Record<string, number>));
+  }
+  return undefined;
+}
+
 /** Convert persisted JSON/base64 values back into transport-ready bytes. */
 export function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => ({
     ...message,
     contentParts: message.contentParts?.map((part) => ({
       ...part,
-      data:
-        typeof part.data === 'string'
-          ? Uint8Array.from(Buffer.from(part.data, 'base64'))
-          : part.data instanceof Uint8Array
-            ? part.data
-            : part.data
-              ? Uint8Array.from(Object.values(part.data as unknown as Record<string, number>))
-              : undefined,
+      data: normalizeContentPartData(part.data),
     })),
   }));
 }

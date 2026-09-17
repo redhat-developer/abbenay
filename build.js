@@ -241,7 +241,7 @@ function packageExtension() {
 
     // Map our platform-arch to VS Code marketplace target identifiers
     const vsceTarget = `${PLATFORM}-${ARCH}`;
-    run(`npx vsce package --no-dependencies --target ${vsceTarget}`, { cwd: VSCODE_ROOT });
+    run(`npx vsce package --no-dependencies --target ${vsceTarget} --out ${TARGET_VSIX_NAME}`, { cwd: VSCODE_ROOT });
 
     const targetVsixPath = path.join(VSCODE_ROOT, TARGET_VSIX_NAME);
     if (fs.existsSync(targetVsixPath)) {

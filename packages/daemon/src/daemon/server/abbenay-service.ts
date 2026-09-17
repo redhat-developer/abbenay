@@ -310,6 +310,8 @@ interface ModelParamConfigProto {
   timeout?: number;
   supports_vision?: boolean;
   reasoning?: string;
+  openai_compat_tools?: string;
+  openaiCompatTools?: string;
 }
 
 interface McpServerConfigMsgProto {
@@ -2389,6 +2391,13 @@ function sessionToProto(session: import('../../core/session-store.js').Session) 
     messages: session.messages.map((m) => ({
       role: m.role === 'system' ? 1 : m.role === 'user' ? 2 : m.role === 'assistant' ? 3 : m.role === 'tool' ? 4 : 2,
       content: m.content,
+      content_parts: m.contentParts?.map((part) => ({
+        type: part.type,
+        text: part.text,
+        mime_type: part.mimeType,
+        data: part.data ? Buffer.from(part.data) : undefined,
+        uri: part.uri,
+      })),
       name: m.name,
       tool_call_id: m.tool_call_id,
       tool_calls: m.tool_calls?.map((tc: unknown) => {
@@ -2468,6 +2477,7 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
             timeout: mcfg.timeout,
             supports_vision: mcfg.supports_vision,
             reasoning: mcfg.reasoning,
+            openai_compat_tools: mcfg.openai_compat_tools,
           };
         }
       }
@@ -2565,6 +2575,7 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
             timeout: mcfg.timeout,
             supports_vision: mcfg.supports_vision,
             reasoning: mcfg.reasoning as ReasoningLevel | undefined,
+            openai_compat_tools: (mcfg.openai_compat_tools || mcfg.openaiCompatTools) as import('../../core/config.js').OpenAICompatToolsMode | undefined,
           };
         }
       }

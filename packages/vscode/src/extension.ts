@@ -321,7 +321,7 @@ function registerCommands(context: vscode.ExtensionContext, chat: ChatViewProvid
     }),
   );
 
-  context.subscriptions.push(
+  const chatCommandSubscriptions = [
     vscode.commands.registerCommand('abbenay.chat.newSession', () => {
       chat.newSession();
     }),
@@ -331,7 +331,8 @@ function registerCommands(context: vscode.ExtensionContext, chat: ChatViewProvid
     vscode.commands.registerCommand('abbenay.chat.settings', () => {
       vscode.commands.executeCommand('abbenay.configureProvider');
     }),
-  );
+  ];
+  context.subscriptions.push(...chatCommandSubscriptions);
 
   // Chat send command — allows other extensions to inject a prompt
   context.subscriptions.push(

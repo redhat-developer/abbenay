@@ -191,10 +191,10 @@ export class SessionStore {
     }
 
     const session = JSON.parse(raw) as Session;
-    session.messages = normalizeChatMessages(session.messages || []);
     if (!includeMessages) {
       return { ...session, messages: [] };
     }
+    session.messages = normalizeChatMessages(session.messages || []);
     return session;
   }
 
