@@ -299,6 +299,30 @@ describe('protoToConfigFile', () => {
     expect(roundTripped.providers!['my-openai'].models!['fast'].openai_compat_tools).toBe('passthrough');
   });
 
+  it('rejects unsupported model enum values', () => {
+    expect(() => protoToConfigFile({
+      providers: {
+        provider: {
+          engine: 'openai',
+          models: {
+            model: { reasoning: 'unsupported' },
+          },
+        },
+      },
+    })).toThrow("Unsupported reasoning level 'unsupported'");
+
+    expect(() => protoToConfigFile({
+      providers: {
+        provider: {
+          engine: 'openai',
+          models: {
+            model: { openai_compat_tools: 'unsupported' },
+          },
+        },
+      },
+    })).toThrow("Unsupported OpenAI-compatible tools mode 'unsupported'");
+  });
+
   it('round-trips MCP servers', () => {
     const original: ConfigFile = {
       mcp_servers: {
@@ -889,6 +913,41 @@ describe('createAbbenayService handlers', () => {
       config: { providers: { bad: { engine: 'unknown' } } },
     });
     expect(badEngine.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+  });
+
+  it('UpdateConfig rejects unsupported model enum values', async () => {
+    const state = createMockState();
+    const service = createServiceHandlers(state);
+
+    const invalidReasoning = await invokeUnary(service.UpdateConfig, {
+      location: 'user',
+      config: {
+        providers: {
+          provider: {
+            engine: 'mock',
+            models: { model: { reasoning: 'unsupported' } },
+          },
+        },
+      },
+    });
+    expect(invalidReasoning.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+    expect(invalidReasoning.error?.message).toContain("Unsupported reasoning level 'unsupported'");
+
+    const invalidToolsMode = await invokeUnary(service.UpdateConfig, {
+      location: 'user',
+      config: {
+        providers: {
+          provider: {
+            engine: 'mock',
+            models: { model: { openai_compat_tools: 'unsupported' } },
+          },
+        },
+      },
+    });
+    expect(invalidToolsMode.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+    expect(invalidToolsMode.error?.message).toContain(
+      "Unsupported OpenAI-compatible tools mode 'unsupported'",
+    );
   });
 
   it('CreatePolicy and DeletePolicy manage custom policies', async () => {

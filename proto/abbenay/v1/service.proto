@@ -453,10 +453,11 @@ message ChatOptions {
   repeated string tool_filter = 7;      // Only use these tools (empty = all)
   optional int32 top_k = 8;            // Top-k sampling
   optional int32 timeout = 9;          // Request timeout in ms
-  optional string tool_mode = 10;      // "auto" (default) | "passthrough" | "none"
-                                        // auto: daemon owns tool loop, executes tools
-                                        // passthrough: stream tool_call chunks to caller, no execution
-                                        // none: no tools sent to LLM
+  // "auto" (default) | "passthrough" | "none"
+  // auto: daemon owns tool loop, executes tools
+  // passthrough: stream tool_call chunks to caller, no execution
+  // none: no tools sent to LLM
+  optional string tool_mode = 10;
   optional string reasoning = 11;      // provider-defined reasoning effort override
 }
 

@@ -25,6 +25,7 @@ import {
   getUserConfigPath, getWorkspaceConfigPath, isValidVirtualName,
   providerSecretName, isProviderOwnedSecretName,
   type ConfigFile, type ProviderConfig as DaemonProviderConfig, type McpServerConfig,
+  type OpenAICompatToolsMode,
 } from '../../core/config.js';
 import { auditSecretChange } from '../../core/secrets.js';
 import {
@@ -429,6 +430,12 @@ function parseReasoningLevel(value: string | undefined): ReasoningLevel | undefi
     return value as ReasoningLevel;
   }
   throw new Error(`Unsupported reasoning level '${value}'`);
+}
+
+function parseOpenAICompatToolsMode(value: string | undefined): OpenAICompatToolsMode | undefined {
+  if (value == null || value === '') return undefined;
+  if (value === 'off' || value === 'passthrough') return value;
+  throw new Error(`Unsupported OpenAI-compatible tools mode '${value}'`);
 }
 
 /**
@@ -1220,7 +1227,16 @@ export function createAbbenayService(
           return;
         }
 
-        const configFile = protoToConfigFile(protoConfig);
+        let configFile: ConfigFile;
+        try {
+          configFile = protoToConfigFile(protoConfig);
+        } catch (error: unknown) {
+          callback({
+            code: grpc.status.INVALID_ARGUMENT,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
         const enginesCheck = validateConfigProviderEngines(configFile);
         if (!enginesCheck.ok) {
           callback({ code: grpc.status.INVALID_ARGUMENT, message: enginesCheck.error });
@@ -2574,8 +2590,10 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
             max_tokens: mcfg.max_tokens,
             timeout: mcfg.timeout,
             supports_vision: mcfg.supports_vision,
-            reasoning: mcfg.reasoning as ReasoningLevel | undefined,
-            openai_compat_tools: (mcfg.openai_compat_tools || mcfg.openaiCompatTools) as import('../../core/config.js').OpenAICompatToolsMode | undefined,
+            reasoning: parseReasoningLevel(mcfg.reasoning),
+            openai_compat_tools: parseOpenAICompatToolsMode(
+              mcfg.openai_compat_tools || mcfg.openaiCompatTools,
+            ),
           };
         }
       }

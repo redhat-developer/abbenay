@@ -640,15 +640,16 @@ export interface ChatOptions {
   timeout?:
     | number
     | undefined;
-  /** "auto" (default) | "passthrough" | "none" */
-  toolMode?:
-    | string
-    | undefined;
   /**
+   * "auto" (default) | "passthrough" | "none"
    * auto: daemon owns tool loop, executes tools
    * passthrough: stream tool_call chunks to caller, no execution
    * none: no tools sent to LLM
    */
+  toolMode?:
+    | string
+    | undefined;
+  /** provider-defined reasoning effort override */
   reasoning?: string | undefined;
 }
 
