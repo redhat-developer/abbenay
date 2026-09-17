@@ -11,3 +11,17 @@ https://github.com/advisories/GHSA-qj8w-gfj5-8c6v
 # @ai-sdk/provider-utils via @ai-sdk/* (runtime, no upstream fix available)
 # Added 2026-06-15
 https://github.com/advisories/GHSA-866g-f22w-33x8
+# npm audit findings with no upstream fix available in this dependency tree
+# Added 2026-09-17
+https://github.com/advisories/GHSA-p498-v437-472g
+https://github.com/advisories/GHSA-5jgf-p345-68v8
+https://github.com/advisories/GHSA-f65p-4m7j-42xc
+https://github.com/advisories/GHSA-fph4-wmhf-6fwf
+https://github.com/advisories/GHSA-jqff-g426-hqxp
+https://github.com/advisories/GHSA-gqvv-2mrq-wpjv
+https://github.com/advisories/GHSA-g6gw-c38x-mqfc
+https://github.com/advisories/GHSA-crvj-82cr-hjcx
+https://github.com/advisories/GHSA-2883-xcg3-v3hh
+https://github.com/advisories/GHSA-2v37-7h3g-55p8
+https://github.com/advisories/GHSA-x5fp-wj9c-mxmx
+https://github.com/advisories/GHSA-4mjr-xmp4-gh2g

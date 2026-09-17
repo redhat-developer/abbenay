@@ -37,6 +37,10 @@ const PLATFORM = process.platform === 'darwin' ? 'darwin' : process.platform ===
 const ARCH = process.arch; // x64, arm64
 const DIST_DIR = path.join(ROOT, 'dist');
 const PLATFORM_DIR = path.join(DIST_DIR, `${PLATFORM}-${ARCH}`);
+const VSCODE_PACKAGE = JSON.parse(
+    fs.readFileSync(path.join(VSCODE_ROOT, 'package.json'), 'utf8'),
+);
+const TARGET_VSIX_NAME = `${VSCODE_PACKAGE.name}-${PLATFORM}-${ARCH}-${VSCODE_PACKAGE.version}.vsix`;
 
 // ── CLI flags ──────────────────────────────────────────────────────────
 const args = new Set(process.argv.slice(2));
@@ -239,9 +243,9 @@ function packageExtension() {
     const vsceTarget = `${PLATFORM}-${ARCH}`;
     run(`npx vsce package --no-dependencies --target ${vsceTarget}`, { cwd: VSCODE_ROOT });
 
-    const vsixFiles = fs.readdirSync(VSCODE_ROOT).filter(f => f.endsWith('.vsix'));
-    if (vsixFiles.length > 0) {
-        console.log(`  VSIX: ${path.join(VSCODE_ROOT, vsixFiles[0])}`);
+    const targetVsixPath = path.join(VSCODE_ROOT, TARGET_VSIX_NAME);
+    if (fs.existsSync(targetVsixPath)) {
+        console.log(`  VSIX: ${targetVsixPath}`);
     }
 }
 
@@ -317,14 +321,13 @@ function createDistribution() {
 function installExtension() {
     banner('Stage 6: Install extension into VS Code');
 
-    const vsixFiles = fs.readdirSync(VSCODE_ROOT).filter(f => f.endsWith('.vsix'));
-    if (vsixFiles.length === 0) {
-        console.error('  ERROR: No .vsix file found — cannot install');
+    const vsixPath = path.join(VSCODE_ROOT, TARGET_VSIX_NAME);
+    if (!fs.existsSync(vsixPath)) {
+        console.error(`  ERROR: Expected VSIX not found: ${vsixPath}`);
         return;
     }
 
-    const vsixPath = path.join(VSCODE_ROOT, vsixFiles[0]);
-    console.log(`  Installing ${vsixFiles[0]}...`);
+    console.log(`  Installing ${TARGET_VSIX_NAME}...`);
 
     // Uninstall first to force a clean install (--force alone doesn't always replace files)
     try {

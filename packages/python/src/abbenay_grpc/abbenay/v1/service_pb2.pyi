@@ -399,7 +399,7 @@ class SessionChatRequest(_message.Message):
     def __init__(self, session_id: _Optional[str] = ..., message: _Optional[_Union[Message, _Mapping]] = ..., options: _Optional[_Union[ChatOptions, _Mapping]] = ..., policy: _Optional[_Union[PolicyConfig, _Mapping]] = ...) -> None: ...
 
 class ChatOptions(_message.Message):
-    __slots__ = ("temperature", "max_tokens", "top_p", "stop", "enable_tools", "max_tool_iterations", "tool_filter", "top_k", "timeout", "tool_mode")
+    __slots__ = ("temperature", "max_tokens", "top_p", "stop", "enable_tools", "max_tool_iterations", "tool_filter", "top_k", "timeout", "tool_mode", "reasoning")
     TEMPERATURE_FIELD_NUMBER: _ClassVar[int]
     MAX_TOKENS_FIELD_NUMBER: _ClassVar[int]
     TOP_P_FIELD_NUMBER: _ClassVar[int]
@@ -410,6 +410,7 @@ class ChatOptions(_message.Message):
     TOP_K_FIELD_NUMBER: _ClassVar[int]
     TIMEOUT_FIELD_NUMBER: _ClassVar[int]
     TOOL_MODE_FIELD_NUMBER: _ClassVar[int]
+    REASONING_FIELD_NUMBER: _ClassVar[int]
     temperature: float
     max_tokens: int
     top_p: float
@@ -420,7 +421,8 @@ class ChatOptions(_message.Message):
     top_k: int
     timeout: int
     tool_mode: str
-    def __init__(self, temperature: _Optional[float] = ..., max_tokens: _Optional[int] = ..., top_p: _Optional[float] = ..., stop: _Optional[_Iterable[str]] = ..., enable_tools: _Optional[bool] = ..., max_tool_iterations: _Optional[int] = ..., tool_filter: _Optional[_Iterable[str]] = ..., top_k: _Optional[int] = ..., timeout: _Optional[int] = ..., tool_mode: _Optional[str] = ...) -> None: ...
+    reasoning: str
+    def __init__(self, temperature: _Optional[float] = ..., max_tokens: _Optional[int] = ..., top_p: _Optional[float] = ..., stop: _Optional[_Iterable[str]] = ..., enable_tools: _Optional[bool] = ..., max_tool_iterations: _Optional[int] = ..., tool_filter: _Optional[_Iterable[str]] = ..., top_k: _Optional[int] = ..., timeout: _Optional[int] = ..., tool_mode: _Optional[str] = ..., reasoning: _Optional[str] = ...) -> None: ...
 
 class ChatChunk(_message.Message):
     __slots__ = ("text", "tool_call", "tool_result", "prompt", "usage", "error", "done")
@@ -505,18 +507,20 @@ class DoneChunk(_message.Message):
     def __init__(self, finish_reason: _Optional[str] = ...) -> None: ...
 
 class Message(_message.Message):
-    __slots__ = ("role", "content", "tool_calls", "tool_call_id", "name")
+    __slots__ = ("role", "content", "tool_calls", "tool_call_id", "name", "content_parts")
     ROLE_FIELD_NUMBER: _ClassVar[int]
     CONTENT_FIELD_NUMBER: _ClassVar[int]
     TOOL_CALLS_FIELD_NUMBER: _ClassVar[int]
     TOOL_CALL_ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_PARTS_FIELD_NUMBER: _ClassVar[int]
     role: Role
     content: str
     tool_calls: _containers.RepeatedCompositeFieldContainer[ToolCall]
     tool_call_id: str
     name: str
-    def __init__(self, role: _Optional[_Union[Role, str]] = ..., content: _Optional[str] = ..., tool_calls: _Optional[_Iterable[_Union[ToolCall, _Mapping]]] = ..., tool_call_id: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
+    content_parts: _containers.RepeatedCompositeFieldContainer[ToolContent]
+    def __init__(self, role: _Optional[_Union[Role, str]] = ..., content: _Optional[str] = ..., tool_calls: _Optional[_Iterable[_Union[ToolCall, _Mapping]]] = ..., tool_call_id: _Optional[str] = ..., name: _Optional[str] = ..., content_parts: _Optional[_Iterable[_Union[ToolContent, _Mapping]]] = ...) -> None: ...
 
 class ToolCall(_message.Message):
     __slots__ = ("id", "name", "arguments")
@@ -799,7 +803,7 @@ class Model(_message.Message):
     def __init__(self, id: _Optional[str] = ..., provider: _Optional[str] = ..., name: _Optional[str] = ..., capabilities: _Optional[_Union[ModelCapabilities, _Mapping]] = ..., source: _Optional[_Union[ModelSource, str]] = ..., engine: _Optional[str] = ..., params: _Optional[_Union[ModelParams, _Mapping]] = ..., engine_model_id: _Optional[str] = ..., policy: _Optional[str] = ...) -> None: ...
 
 class ModelParams(_message.Message):
-    __slots__ = ("temperature", "top_p", "max_tokens", "system_prompt", "system_prompt_mode", "top_k", "timeout")
+    __slots__ = ("temperature", "top_p", "max_tokens", "system_prompt", "system_prompt_mode", "top_k", "timeout", "reasoning")
     TEMPERATURE_FIELD_NUMBER: _ClassVar[int]
     TOP_P_FIELD_NUMBER: _ClassVar[int]
     MAX_TOKENS_FIELD_NUMBER: _ClassVar[int]
@@ -807,6 +811,7 @@ class ModelParams(_message.Message):
     SYSTEM_PROMPT_MODE_FIELD_NUMBER: _ClassVar[int]
     TOP_K_FIELD_NUMBER: _ClassVar[int]
     TIMEOUT_FIELD_NUMBER: _ClassVar[int]
+    REASONING_FIELD_NUMBER: _ClassVar[int]
     temperature: float
     top_p: float
     max_tokens: int
@@ -814,7 +819,8 @@ class ModelParams(_message.Message):
     system_prompt_mode: str
     top_k: int
     timeout: int
-    def __init__(self, temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., max_tokens: _Optional[int] = ..., system_prompt: _Optional[str] = ..., system_prompt_mode: _Optional[str] = ..., top_k: _Optional[int] = ..., timeout: _Optional[int] = ...) -> None: ...
+    reasoning: str
+    def __init__(self, temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., max_tokens: _Optional[int] = ..., system_prompt: _Optional[str] = ..., system_prompt_mode: _Optional[str] = ..., top_k: _Optional[int] = ..., timeout: _Optional[int] = ..., reasoning: _Optional[str] = ...) -> None: ...
 
 class ModelCapabilities(_message.Message):
     __slots__ = ("supports_streaming", "supports_tools", "supports_vision", "context_window")
@@ -1017,7 +1023,7 @@ class FullProviderConfig(_message.Message):
     def __init__(self, engine: _Optional[str] = ..., api_key_keychain_name: _Optional[str] = ..., api_key_env_var_name: _Optional[str] = ..., base_url: _Optional[str] = ..., models: _Optional[_Mapping[str, ModelParamConfig]] = ..., secret_name: _Optional[str] = ..., secret_store: _Optional[_Union[SecretStore, str]] = ...) -> None: ...
 
 class ModelParamConfig(_message.Message):
-    __slots__ = ("model_id", "policy", "system_prompt", "system_prompt_mode", "temperature", "top_p", "top_k", "max_tokens", "timeout")
+    __slots__ = ("model_id", "policy", "system_prompt", "system_prompt_mode", "temperature", "top_p", "top_k", "max_tokens", "timeout", "supports_vision", "reasoning")
     MODEL_ID_FIELD_NUMBER: _ClassVar[int]
     POLICY_FIELD_NUMBER: _ClassVar[int]
     SYSTEM_PROMPT_FIELD_NUMBER: _ClassVar[int]
@@ -1027,6 +1033,8 @@ class ModelParamConfig(_message.Message):
     TOP_K_FIELD_NUMBER: _ClassVar[int]
     MAX_TOKENS_FIELD_NUMBER: _ClassVar[int]
     TIMEOUT_FIELD_NUMBER: _ClassVar[int]
+    SUPPORTS_VISION_FIELD_NUMBER: _ClassVar[int]
+    REASONING_FIELD_NUMBER: _ClassVar[int]
     model_id: str
     policy: str
     system_prompt: str
@@ -1036,7 +1044,9 @@ class ModelParamConfig(_message.Message):
     top_k: int
     max_tokens: int
     timeout: int
-    def __init__(self, model_id: _Optional[str] = ..., policy: _Optional[str] = ..., system_prompt: _Optional[str] = ..., system_prompt_mode: _Optional[str] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., top_k: _Optional[int] = ..., max_tokens: _Optional[int] = ..., timeout: _Optional[int] = ...) -> None: ...
+    supports_vision: bool
+    reasoning: str
+    def __init__(self, model_id: _Optional[str] = ..., policy: _Optional[str] = ..., system_prompt: _Optional[str] = ..., system_prompt_mode: _Optional[str] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., top_k: _Optional[int] = ..., max_tokens: _Optional[int] = ..., timeout: _Optional[int] = ..., supports_vision: _Optional[bool] = ..., reasoning: _Optional[str] = ...) -> None: ...
 
 class McpServerConfigMsg(_message.Message):
     __slots__ = ("command", "args", "url", "transport", "enabled", "headers", "env", "max_response_size")

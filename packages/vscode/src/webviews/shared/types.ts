@@ -9,7 +9,7 @@ export type ProviderToHostMessage =
   | { type: 'getProviderTemplates' }
   | { type: 'getEngines' }
   | { type: 'getConfig'; location?: string }
-  | { type: 'configureProvider'; providerId: string; engine?: string; apiKey?: string; envVarName?: string; baseUrl?: string; target?: string; models?: Record<string, { model_id: string }> }
+  | { type: 'configureProvider'; providerId: string; engine?: string; apiKey?: string; envVarName?: string; baseUrl?: string; target?: string; models?: Record<string, ModelConfigView> }
   | { type: 'removeProvider'; providerId: string; target?: string }
   | { type: 'setSecret'; key: string; value: string }
   | { type: 'deleteSecret'; key: string }
@@ -38,11 +38,12 @@ export type ChatToHostMessage =
   | { type: 'createSession'; model: string; topic?: string }
   | { type: 'deleteSession'; sessionId: string }
   | { type: 'getSession'; sessionId: string }
-  | { type: 'sendMessage'; sessionId: string; content: string; model?: string }
+  | { type: 'sendMessage'; sessionId: string; content: string; model?: string; reasoning?: ReasoningLevel }
   | { type: 'cancelStream' }
   | { type: 'approveToolCall'; requestId: string; decision: 'allow' | 'deny' | 'abort' };
 
 export type HostToChatMessage =
+  | { type: 'topBarAction'; action: 'newSession' | 'deleteSession' }
   | { type: 'models'; models: ModelInfo[] }
   | { type: 'sessions'; sessions: SessionInfo[] }
   | { type: 'sessionCreated'; session: SessionDetail }
@@ -95,7 +96,25 @@ export interface ModelInfo {
   provider: string;
   name: string;
   engine: string;
+  reasoning?: ReasoningLevel;
 }
+
+/** Serializable subset of the daemon's per-model configuration. */
+export interface ModelConfigView {
+  model_id?: string;
+  reasoning?: ReasoningLevel;
+  policy?: string;
+  system_prompt?: string;
+  system_prompt_mode?: string;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  max_tokens?: number;
+  timeout?: number;
+  supports_vision?: boolean;
+}
+
+export type ReasoningLevel = 'provider-default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface SessionInfo {
   id: string;

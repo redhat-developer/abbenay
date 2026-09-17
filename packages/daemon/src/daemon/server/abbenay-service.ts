@@ -9,6 +9,7 @@ import {
   getEngines,
   getProviderTemplates,
   validateConfigProviderEngines,
+  type ReasoningLevel,
   type ToolDefinition,
 } from '../../core/engines.js';
 import {
@@ -109,11 +110,32 @@ interface DiscoverModelsRequestProto {
 interface ProtoMessage {
   role?: string | number;
   content?: string;
+  content_parts?: ProtoContentPart[];
+  contentParts?: ProtoContentPart[];
   name?: string;
   tool_call_id?: string;
   toolCallId?: string;
   tool_calls?: unknown[];
   toolCalls?: unknown[];
+}
+
+interface ProtoContentPart {
+  type?: string;
+  text?: string;
+  mime_type?: string;
+  mimeType?: string;
+  data?: Buffer;
+  uri?: string;
+}
+
+function toChatContentParts(parts: ProtoContentPart[] | undefined) {
+  return (parts || []).map((part) => ({
+    type: part.type || '',
+    text: part.text || undefined,
+    mimeType: part.mime_type || part.mimeType || undefined,
+    data: part.data && part.data.length > 0 ? Buffer.from(part.data) : undefined,
+    uri: part.uri || undefined,
+  }));
 }
 
 interface ChatOptionsProto {
@@ -128,6 +150,7 @@ interface ChatOptionsProto {
   maxToolIterations?: number;
   tool_filter?: string[];
   toolFilter?: string[];
+  reasoning?: string;
 }
 
 interface ProtoTool {
@@ -285,6 +308,8 @@ interface ModelParamConfigProto {
   top_k?: number;
   max_tokens?: number;
   timeout?: number;
+  supports_vision?: boolean;
+  reasoning?: string;
 }
 
 interface McpServerConfigMsgProto {
@@ -389,6 +414,19 @@ interface RequestParams {
   top_k?: number;
   maxTokens?: number;
   timeout?: number;
+  reasoning?: ReasoningLevel;
+}
+
+const REASONING_LEVELS: readonly ReasoningLevel[] = [
+  'provider-default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh',
+];
+
+function parseReasoningLevel(value: string | undefined): ReasoningLevel | undefined {
+  if (value == null || value === '') return undefined;
+  if ((REASONING_LEVELS as readonly string[]).includes(value)) {
+    return value as ReasoningLevel;
+  }
+  throw new Error(`Unsupported reasoning level '${value}'`);
 }
 
 /**
@@ -617,6 +655,7 @@ export function createAbbenayService(
               system_prompt_mode: m.params.system_prompt_mode,
               top_k: m.params.top_k,
               timeout: m.params.timeout,
+              reasoning: m.params.reasoning,
             } : undefined,
             policy: m.params?.policy,
           })),
@@ -705,6 +744,7 @@ export function createAbbenayService(
       const messages = (request.messages || []).map((m: ProtoMessage) => ({
         role: toRole((m.role ?? 'ROLE_USER') as string | number),
         content: m.content || '',
+        contentParts: toChatContentParts(m.content_parts || m.contentParts),
         // Preserve tool-related fields for conversation history
         name: m.name || undefined,
         tool_call_id: m.tool_call_id || m.toolCallId || undefined,
@@ -725,6 +765,13 @@ export function createAbbenayService(
       if (opts.top_k != null) requestParams.top_k = opts.top_k;
       if (opts.max_tokens != null) requestParams.maxTokens = opts.max_tokens;
       if (opts.timeout != null) requestParams.timeout = opts.timeout;
+      try {
+        requestParams.reasoning = parseReasoningLevel(opts.reasoning);
+      } catch (error: unknown) {
+        call.write({ error: { code: 'INVALID_ARGUMENT', message: error instanceof Error ? error.message : String(error) } });
+        call.end();
+        return;
+      }
       const hasParams = Object.keys(requestParams).length > 0;
       
       // ── Extract tools from proto request ──
@@ -1437,7 +1484,8 @@ export function createAbbenayService(
         call.end();
         return;
       }
-      if (!userMsg || !userMsg.content) {
+      const contentParts = toChatContentParts(userMsg?.content_parts || userMsg?.contentParts);
+      if (!userMsg || (!userMsg.content && contentParts.length === 0)) {
         call.write({ error: { code: 'INVALID_ARGUMENT', message: 'message with content is required' } });
         call.end();
         return;
@@ -1446,6 +1494,7 @@ export function createAbbenayService(
       const chatMessage = {
         role: toRole((userMsg.role ?? 'ROLE_USER') as string | number),
         content: userMsg.content || '',
+        contentParts,
         name: userMsg.name || undefined,
         tool_call_id: userMsg.tool_call_id || userMsg.toolCallId || undefined,
         tool_calls: userMsg.tool_calls || userMsg.toolCalls || undefined,
@@ -1458,6 +1507,13 @@ export function createAbbenayService(
       if (opts.top_k != null) requestParams.top_k = opts.top_k;
       if (opts.max_tokens != null) requestParams.maxTokens = opts.max_tokens;
       if (opts.timeout != null) requestParams.timeout = opts.timeout;
+      try {
+        requestParams.reasoning = parseReasoningLevel(opts.reasoning);
+      } catch (error: unknown) {
+        call.write({ error: { code: 'INVALID_ARGUMENT', message: error instanceof Error ? error.message : String(error) } });
+        call.end();
+        return;
+      }
       const hasParams = Object.keys(requestParams).length > 0;
 
       const toolMode = opts.tool_mode || opts.toolMode || 'none';
@@ -2410,6 +2466,8 @@ export function configFileToProto(config: ConfigFile): ConfigProto {
             top_k: mcfg.top_k,
             max_tokens: mcfg.max_tokens,
             timeout: mcfg.timeout,
+            supports_vision: mcfg.supports_vision,
+            reasoning: mcfg.reasoning,
           };
         }
       }
@@ -2505,6 +2563,8 @@ export function protoToConfigFile(proto: ConfigProto): ConfigFile {
             top_k: mcfg.top_k,
             max_tokens: mcfg.max_tokens,
             timeout: mcfg.timeout,
+            supports_vision: mcfg.supports_vision,
+            reasoning: mcfg.reasoning as ReasoningLevel | undefined,
           };
         }
       }

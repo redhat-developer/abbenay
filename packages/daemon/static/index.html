@@ -1044,6 +1044,7 @@
                         <div style="display: flex; align-items: center; gap: 4px;">
                           <span x-show="cfg.temperature != null || cfg.top_p != null || cfg.system_prompt" 
                                 style="font-size: 0.65rem; color: #6a6e73;" title="Has custom parameters">&#9881;</span>
+                            <span x-show="cfg.supports_vision === true" class="cap-tag vision" title="Image input explicitly enabled">V</span>
                           <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem;" 
                                   @click="startEditModel(name)">Configure</button>
                           <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.7rem; color: #c9190b;" 
@@ -1188,6 +1189,26 @@
                         <option value="replace">Replace</option>
                       </select>
                     </div>
+                  </div>
+
+                  <!-- Image input capability -->
+                  <div style="margin-bottom: 20px;">
+                    <div style="font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #6a6e73; padding-bottom: 6px; margin-bottom: 12px; border-bottom: 1px solid #e0e0e0;">
+                      Capabilities <span style="text-transform: none; font-weight: 400;">— optional</span>
+                    </div>
+                    <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                      <input type="checkbox"
+                             style="margin-top: 2px;"
+                             :checked="cfg.supports_vision === true"
+                             @change="setDraftParam('supports_vision', $event.target.checked ? true : undefined)">
+                      <span>
+                        <span style="font-weight: 500;">Enable image input</span>
+                        <span class="info-tip" data-tip="Advertise image input support for this model even when endpoint discovery does not report vision capability. Uncheck to return to automatic discovery." @mouseenter="showTip($el)" @mouseleave="hideTip()"><span class="info-icon">i</span></span>
+                        <div style="font-size: 0.75rem; color: #6a6e73; margin-top: 4px;">
+                          Explicitly set supports_vision: true. Unchecked uses automatic capability discovery.
+                        </div>
+                      </span>
+                    </label>
                   </div>
 
                   <!-- OpenAI-compatible /v1 tools (DR-032) -->

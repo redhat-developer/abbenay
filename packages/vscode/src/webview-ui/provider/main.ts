@@ -43,6 +43,47 @@ interface ModelInfo {
   engine: string;
 }
 
+interface ModelConfigView {
+  model_id?: string;
+  reasoning?: 'provider-default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  policy?: string;
+  system_prompt?: string;
+  system_prompt_mode?: string;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  max_tokens?: number;
+  timeout?: number;
+  supports_vision?: boolean;
+}
+
+type ModelConfigRecord = Record<string, unknown>;
+
+function normalizeModelConfig(config: ModelConfigRecord, fallbackModelId: string): ModelConfigView {
+  const value = (camelCase: string, snakeCase: string): unknown => config[camelCase] ?? config[snakeCase];
+  const normalized: ModelConfigView = {
+    model_id: value('modelId', 'model_id') as string | undefined,
+    reasoning: value('reasoning', 'reasoning') as ModelConfigView['reasoning'],
+    policy: value('policy', 'policy') as string | undefined,
+    system_prompt: value('systemPrompt', 'system_prompt') as string | undefined,
+    system_prompt_mode: value('systemPromptMode', 'system_prompt_mode') as string | undefined,
+    temperature: value('temperature', 'temperature') as number | undefined,
+    top_p: value('topP', 'top_p') as number | undefined,
+    top_k: value('topK', 'top_k') as number | undefined,
+    max_tokens: value('maxTokens', 'max_tokens') as number | undefined,
+    timeout: value('timeout', 'timeout') as number | undefined,
+    supports_vision: value('supportsVision', 'supports_vision') as boolean | undefined,
+  };
+
+  if (!normalized.model_id) {
+    normalized.model_id = fallbackModelId;
+  }
+
+  return Object.fromEntries(
+    Object.entries(normalized).filter(([, fieldValue]) => fieldValue !== undefined),
+  ) as ModelConfigView;
+}
+
 // ─── State ───────────────────────────────────────────────────────────
 
 const vsCodeApi = acquireVsCodeApi();
@@ -51,7 +92,7 @@ let providers: ProviderInfo[] = [];
 let engines: EngineInfo[] = [];
 let discoveredModels: ModelInfo[] = [];
 
-const selectedModels: Map<string, string> = new Map();
+const selectedModels: Map<string, ModelConfigView> = new Map();
 const leftSelected: Set<string> = new Set();
 const rightSelected: Set<string> = new Set();
 let editingProviderId: string | null = null;
@@ -65,7 +106,7 @@ let apiKeyMethod: 'keychain' | 'env' = 'keychain';
 let isDiscovering = false;
 let discoverError: string | null = null;
 let modelFilter = '';
-let pendingEditModels: Record<string, { model_id?: string }> | null = null;
+let pendingEditModels: Record<string, ModelConfigView> | null = null;
 
 // ─── Notification ────────────────────────────────────────────────────
 
@@ -717,7 +758,7 @@ function renderModelSection(): void {
         while (selectedModels.has(`${id}-${i}`)) {i++;}
         name = `${id}-${i}`;
       }
-      selectedModels.set(name, id);
+      selectedModels.set(name, { model_id: id });
     }
     leftSelected.clear();
     renderModelSection();
@@ -751,10 +792,38 @@ function renderModelSection(): void {
   const rightItems = document.createElement('div');
   rightItems.className = 'dual-list-items';
 
-  enabledEntries.forEach(([name]) => {
+  enabledEntries.forEach(([name, config]) => {
     const item = document.createElement('div');
-    item.className = `dual-list-item${rightSelected.has(name) ? ' selected' : ''}`;
-    item.textContent = name;
+    item.className = `dual-list-item enabled-model-item${rightSelected.has(name) ? ' selected' : ''}`;
+
+    const modelName = document.createElement('span');
+    modelName.textContent = name;
+    item.appendChild(modelName);
+
+    const visionLabel = document.createElement('label');
+    visionLabel.className = 'model-capability-toggle';
+    visionLabel.title = 'Explicitly advertise image input support for this model';
+
+    const visionCheckbox = document.createElement('input');
+    visionCheckbox.type = 'checkbox';
+    visionCheckbox.checked = config.supports_vision === true;
+    visionCheckbox.setAttribute('aria-label', `Enable image input for ${name}`);
+    visionCheckbox.addEventListener('click', (event) => event.stopPropagation());
+    visionCheckbox.addEventListener('change', () => {
+      const updated = { ...(selectedModels.get(name) || {}) };
+      if (visionCheckbox.checked) {
+        updated.supports_vision = true;
+      } else {
+        delete updated.supports_vision;
+      }
+      selectedModels.set(name, updated);
+    });
+
+    const visionText = document.createElement('span');
+    visionText.textContent = 'Images';
+    visionLabel.appendChild(visionCheckbox);
+    visionLabel.appendChild(visionText);
+    item.appendChild(visionLabel);
     item.addEventListener('click', () => {
       if (rightSelected.has(name)) {
         rightSelected.delete(name);
@@ -782,8 +851,7 @@ function applyPendingModels(): void {
   if (!pendingEditModels || discoveredModels.length === 0) {return;}
 
   for (const [name, cfg] of Object.entries(pendingEditModels)) {
-    const modelId = cfg.model_id || name;
-    selectedModels.set(name, modelId);
+    selectedModels.set(name, normalizeModelConfig(cfg as ModelConfigRecord, name));
   }
   pendingEditModels = null;
   renderModelSection();
@@ -854,7 +922,7 @@ function handleSave(): void {
     providerId,
     engine,
     models: Object.fromEntries(
-      Array.from(selectedModels.entries()).map(([name, modelId]) => [name, { model_id: modelId }]),
+      Array.from(selectedModels.entries()).map(([name, config]) => [name, { ...config }]),
     ),
   };
 
@@ -912,7 +980,7 @@ window.addEventListener('message', (event) => {
       if (editingProviderId && msg.config) {
         const cfgProviders = (msg.config as Record<string, unknown>).providers as Record<string, Record<string, unknown>> | undefined;
         const providerCfg = cfgProviders?.[editingProviderId];
-        const models = providerCfg?.models as Record<string, { model_id?: string }> | undefined;
+        const models = providerCfg?.models as Record<string, ModelConfigRecord> | undefined;
         if (models && Object.keys(models).length > 0) {
           pendingEditModels = models;
           applyPendingModels();

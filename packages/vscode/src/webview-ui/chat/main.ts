@@ -52,7 +52,20 @@ type ModelInfo = {
   provider: string;
   name: string;
   engine: string;
+  reasoning?: ReasoningLevel;
 };
+
+type ReasoningLevel = 'provider-default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
+const reasoningOptions: { value: ReasoningLevel; label: string }[] = [
+  { value: 'provider-default', label: 'Default' },
+  { value: 'none', label: 'None' },
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'Extra high' },
+];
 
 type SessionInfo = {
   id: string;
@@ -80,6 +93,7 @@ const state = {
   sessions: [] as SessionInfo[],
   currentSessionId: null as string | null,
   currentModel: '',
+  reasoning: 'provider-default' as ReasoningLevel,
   messages: [] as MessageInfo[],
   isStreaming: false,
   currentAssistantText: '',
@@ -92,6 +106,7 @@ const state = {
 // ── DOM References ───────────────────────────────────────────────────────────
 
 let $modelSelect: HTMLElement & { value: string };
+let $reasoningSelect: HTMLElement & { value: string };
 let $messageList: HTMLElement;
 let $textarea: HTMLTextAreaElement;
 let $sendBtn: HTMLButtonElement;
@@ -159,68 +174,48 @@ function init(): void {
       <div class="input-box">
         <textarea id="msgInput" placeholder="Ask Abbenay..." rows="1"></textarea>
         <div class="input-toolbar">
-          <vscode-single-select id="modelSelect" class="toolbar-select" position="above">
-            <vscode-option value="">Select model...</vscode-option>
-          </vscode-single-select>
-          <vscode-button id="newSessionBtn" secondary class="toolbar-btn" title="New session">+ New</vscode-button>
-          <vscode-button id="deleteSessionBtn" secondary class="toolbar-btn" title="Delete session">&times;</vscode-button>
-          <div class="gear-menu-wrapper">
-            <button id="gearBtn" class="gear-btn" title="Settings">&#9881;</button>
-            <div id="gearMenu" class="gear-menu">
-              <button class="gear-menu-item" data-action="configureProvider">Configure Providers</button>
-              <button class="gear-menu-item" data-action="openDashboard">Open Dashboard</button>
-            </div>
-          </div>
-          <button id="sendBtn" class="send-btn" disabled title="Send (Enter)">&#9650;</button>
-          <button id="cancelBtn" class="cancel-btn" style="display: none;" title="Cancel">&#9632;</button>
+          <label class="toolbar-field toolbar-model-field">
+            <span class="toolbar-label">Model</span>
+            <vscode-single-select id="modelSelect" class="toolbar-select" position="above" aria-label="Model">
+              <vscode-option value="">Select model...</vscode-option>
+            </vscode-single-select>
+          </label>
+          <label class="toolbar-field toolbar-reasoning-field">
+            <span class="toolbar-label">Reasoning</span>
+            <vscode-single-select id="reasoningSelect" class="toolbar-select" position="above" title="Reasoning effort" aria-label="Reasoning effort">
+              ${reasoningOptions.map(option => `<vscode-option value="${option.value}">${option.label}</vscode-option>`).join('')}
+            </vscode-single-select>
+          </label>
+          <button id="sendBtn" class="send-btn" disabled title="Send (Enter)" aria-label="Send message">&#8593;</button>
+          <button id="cancelBtn" class="cancel-btn" style="display: none;" title="Cancel" aria-label="Cancel response">&#9632;</button>
         </div>
-      </div>
-      <div class="input-hints">
-        <span>Shift+Enter for newline</span>
-        <span>Enter to send</span>
       </div>
     </div>
   `;
 
   $modelSelect = document.getElementById('modelSelect') as HTMLElement & { value: string };
+  $reasoningSelect = document.getElementById('reasoningSelect') as HTMLElement & { value: string };
   $messageList = document.getElementById('messageList') as HTMLElement;
   $textarea = document.getElementById('msgInput') as HTMLTextAreaElement;
   $sendBtn = document.getElementById('sendBtn') as HTMLButtonElement;
   $cancelBtn = document.getElementById('cancelBtn') as HTMLButtonElement;
 
   // Event listeners
-  document.getElementById('newSessionBtn')!.addEventListener('click', handleNewSession);
-  document.getElementById('deleteSessionBtn')!.addEventListener('click', handleDeleteSession);
   $modelSelect.addEventListener('change', () => {
     state.currentModel = $modelSelect.value;
+    setReasoningForCurrentModel();
+  });
+  $reasoningSelect.addEventListener('change', () => {
+    state.reasoning = ($reasoningSelect.value || 'provider-default') as ReasoningLevel;
   });
   $sendBtn.addEventListener('click', handleSend);
   $cancelBtn.addEventListener('click', handleCancel);
   $textarea.addEventListener('keydown', handleTextareaKeydown);
-  $textarea.addEventListener('input', autoResize);
+  $textarea.addEventListener('input', () => {
+    autoResize();
+    updateInputState();
+  });
   $messageList.addEventListener('scroll', handleScroll);
-
-  const gearBtn = document.getElementById('gearBtn')!;
-  const gearMenu = document.getElementById('gearMenu')!;
-
-  gearBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    gearMenu.classList.toggle('open');
-  });
-
-  gearMenu.querySelectorAll('.gear-menu-item').forEach((item) => {
-    item.addEventListener('click', () => {
-      const action = (item as HTMLElement).dataset.action;
-      if (action) {
-        api.postMessage({ type: action });
-      }
-      gearMenu.classList.remove('open');
-    });
-  });
-
-  document.addEventListener('click', () => {
-    gearMenu.classList.remove('open');
-  });
 
   window.addEventListener('message', onMessage);
   api.postMessage({ type: 'ready' });
@@ -251,7 +246,20 @@ function handleDeleteSession(): void {
 
 function handleSend(): void {
   const text = $textarea.value.trim();
-  if (!text || !state.currentSessionId || state.isStreaming || state.approvalWaiting) {
+  if (!text || state.isStreaming || state.approvalWaiting) {
+    return;
+  }
+
+  if (!state.currentSessionId) {
+    const model = state.currentModel || $modelSelect.value || state.models[0]?.id;
+    if (!model) {
+      showError('Please select a model first');
+      return;
+    }
+    state.currentModel = model;
+    $modelSelect.value = model;
+    pendingInjectedPrompt = text;
+    api.postMessage({ type: 'createSession', model, topic: 'New Chat' });
     return;
   }
 
@@ -275,6 +283,7 @@ function handleSend(): void {
     type: 'sendMessage',
     sessionId: state.currentSessionId,
     content: text,
+    ...(state.reasoning !== 'provider-default' ? { reasoning: state.reasoning } : {}),
   });
 
   state.userScrolledUp = false;
@@ -341,6 +350,13 @@ function onMessage(event: MessageEvent): void {
   const msg = event.data;
 
   switch (msg.type) {
+    case 'topBarAction':
+      if (msg.action === 'newSession') {
+        handleNewSession();
+      } else {
+        handleDeleteSession();
+      }
+      break;
     case 'models':
       state.models = msg.models;
       renderModels();
@@ -354,6 +370,7 @@ function onMessage(event: MessageEvent): void {
     case 'sessionCreated':
       state.currentSessionId = msg.session.id;
       state.currentModel = msg.session.model;
+      setReasoningForCurrentModel();
       state.messages = [];
       state.currentAssistantText = '';
       state.pendingToolCalls.clear();
@@ -376,6 +393,7 @@ function onMessage(event: MessageEvent): void {
     case 'sessionLoaded':
       state.currentSessionId = msg.session.id;
       state.currentModel = msg.session.model;
+      setReasoningForCurrentModel();
       state.messages = msg.session.messages.filter((m: MessageInfo) => m.role !== 'system');
       state.currentAssistantText = '';
       state.pendingToolCalls.clear();
@@ -453,6 +471,15 @@ function renderModels(): void {
     $modelSelect.value = state.currentModel;
   } else if (currentValue) {
     $modelSelect.value = currentValue;
+  }
+  setReasoningForCurrentModel();
+}
+
+function setReasoningForCurrentModel(): void {
+  const model = state.models.find(candidate => candidate.id === state.currentModel);
+  state.reasoning = model?.reasoning ?? 'provider-default';
+  if ($reasoningSelect) {
+    $reasoningSelect.value = state.reasoning;
   }
 }
 
@@ -843,9 +870,10 @@ function showError(message: string, context?: string): void {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function updateInputState(): void {
-  const canSend = !state.isStreaming && !state.approvalWaiting && state.currentSessionId !== null;
+  const canSend = !state.isStreaming && !state.approvalWaiting &&
+    (state.currentSessionId !== null || Boolean(state.currentModel || $modelSelect.value));
 
-  $sendBtn.disabled = !canSend;
+  $sendBtn.disabled = !canSend || !$textarea.value.trim();
   $textarea.disabled = state.isStreaming || state.approvalWaiting;
 
   if (state.approvalWaiting) {

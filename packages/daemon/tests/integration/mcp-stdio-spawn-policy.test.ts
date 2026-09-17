@@ -68,6 +68,7 @@ vi.mock('../../src/core/engines.js', () => ({
   getEngine: (id: string) => (id === 'mock' ? { id: 'mock', requiresKey: false } : undefined),
   fetchModels: async () => [],
   streamChat: async function* () { yield { type: 'done', finishReason: 'stop' }; },
+  normalizeChatMessages: (messages: unknown[]) => messages,
   getProviderTemplates: () => [],
 }));
 

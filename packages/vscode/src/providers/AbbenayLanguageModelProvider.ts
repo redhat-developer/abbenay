@@ -108,7 +108,7 @@ class AbbenayHandler implements vscode.LanguageModelChatProvider {
                     toolCalling: model.capabilities?.supportsTools || false,
                 },
             };
-            logger.info(`[LMProvider]   → id="${info.id}" name="${info.name}" family="${info.family}" detail="${info.detail}"`);
+            logger.info(`[LMProvider]   → id="${info.id}" name="${info.name}" family="${info.family}" vision=${info.capabilities.imageInput} detail="${info.detail}"`);
             return info;
         });
         return result;
@@ -340,6 +340,7 @@ function convertMessages(messages: readonly vscode.LanguageModelChatRequestMessa
         }
 
         let textContent = '';
+        const contentParts: proto.DeepPartial<proto.ToolContent>[] = [];
         const toolCalls: proto.DeepPartial<proto.ToolCall>[] = [];
         let toolCallId = '';
 
@@ -363,12 +364,20 @@ function convertMessages(messages: readonly vscode.LanguageModelChatRequestMessa
                         textContent += resultPart.value;
                     }
                 }
+            } else if (part instanceof vscode.LanguageModelDataPart) {
+                // Preserve inline images/files instead of silently dropping them.
+                contentParts.push({
+                    type: part.mimeType.startsWith('image/') ? 'image' : 'file',
+                    mimeType: part.mimeType,
+                    data: Buffer.from(part.data),
+                });
             }
         }
 
         return {
             role,
             content: textContent,
+            contentParts: contentParts as proto.ToolContent[],
             toolCalls: toolCalls as proto.ToolCall[],
             toolCallId,
             name: m.name || '',

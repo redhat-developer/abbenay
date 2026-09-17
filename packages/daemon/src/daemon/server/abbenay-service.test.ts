@@ -146,6 +146,7 @@ describe('configFileToProto', () => {
               temperature: 0.7,
               max_tokens: 4096,
               policy: 'concise',
+              supports_vision: true,
             },
           },
         },
@@ -166,11 +167,13 @@ describe('configFileToProto', () => {
       top_k: undefined,
       max_tokens: undefined,
       timeout: undefined,
+              supports_vision: undefined,
     });
     expect(proto.providers!['my-openai'].models!['fast'].model_id).toBe('gpt-4o-mini');
     expect(proto.providers!['my-openai'].models!['fast'].temperature).toBe(0.7);
     expect(proto.providers!['my-openai'].models!['fast'].max_tokens).toBe(4096);
     expect(proto.providers!['my-openai'].models!['fast'].policy).toBe('concise');
+    expect(proto.providers!['my-openai'].models!['fast'].supports_vision).toBe(true);
   });
 
   it('converts MCP server config', () => {
@@ -275,6 +278,7 @@ describe('protoToConfigFile', () => {
               model_id: 'gpt-4o-mini',
               temperature: 0.7,
               max_tokens: 4096,
+              supports_vision: true,
             },
           },
         },
@@ -288,6 +292,7 @@ describe('protoToConfigFile', () => {
     expect(roundTripped.providers!['my-openai'].models!['fast'].model_id).toBe('gpt-4o-mini');
     expect(roundTripped.providers!['my-openai'].models!['fast'].temperature).toBe(0.7);
     expect(roundTripped.providers!['my-openai'].models!['fast'].max_tokens).toBe(4096);
+    expect(roundTripped.providers!['my-openai'].models!['fast'].supports_vision).toBe(true);
   });
 
   it('round-trips MCP servers', () => {
@@ -1639,6 +1644,114 @@ describe('createAbbenayService handlers', () => {
     expect(written.some((c) => (c as { text?: { text: string } }).text?.text === 'answer')).toBe(true);
     expect(sessionStore.updateTitle).toHaveBeenCalledWith('sess-1', 'First question here');
     expect(mockMaybeSummarize).toHaveBeenCalled();
+  });
+
+  it('SessionChat accepts an image-only message', async () => {
+    async function* chunks() {
+      yield { type: 'done' as const, finishReason: 'stop' };
+    }
+    const session = {
+      id: 'sess-image',
+      model: 'mock/echo',
+      title: 'New Session',
+      messages: [],
+      metadata: {},
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const sessionStore = {
+      getOwned: vi.fn().mockResolvedValue(session),
+      appendMessage: vi.fn().mockResolvedValue(undefined),
+      updateTitle: vi.fn().mockResolvedValue(undefined),
+    };
+    const chat = vi.fn().mockReturnValue(chunks());
+    const state = createMockState({ chat, sessionStore });
+    const service = createAbbenayService(state);
+    const call = {
+      request: {
+        session_id: 'sess-image',
+        message: {
+          role: 'ROLE_USER',
+          content_parts: [{ type: 'image', mime_type: 'image/png', data: Buffer.from([1, 2, 3]) }],
+        },
+      },
+      metadata: new grpc.Metadata(),
+      write: vi.fn(),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.SessionChat(call as never);
+    await vi.waitFor(() => expect(call.end).toHaveBeenCalled());
+    expect(chat.mock.calls[0]?.[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: '', contentParts: [expect.objectContaining({ type: 'image' })] }),
+    ]));
+  });
+
+  it('SessionChat forwards a valid reasoning override to state.chat', async () => {
+    async function* chunks() {
+      yield { type: 'done' as const, finishReason: 'stop' };
+    }
+    const session = {
+      id: 'sess-reasoning',
+      model: 'mock/echo',
+      title: 'Existing Session',
+      messages: [],
+      metadata: {},
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const sessionStore = {
+      getOwned: vi.fn().mockResolvedValue(session),
+      appendMessage: vi.fn().mockResolvedValue(undefined),
+      updateTitle: vi.fn().mockResolvedValue(undefined),
+    };
+    const chat = vi.fn().mockReturnValue(chunks());
+    const state = createMockState({ chat, sessionStore });
+    const service = createAbbenayService(state);
+    const call = {
+      request: {
+        session_id: 'sess-reasoning',
+        message: { role: 'ROLE_USER', content: 'Think carefully' },
+        options: { reasoning: 'high' },
+      },
+      metadata: new grpc.Metadata(),
+      write: vi.fn(),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.SessionChat(call as never);
+    await vi.waitFor(() => expect(call.end).toHaveBeenCalled());
+    const chatCall = chat.mock.calls[0] as unknown[];
+    expect(chatCall[0]).toBe('mock/echo');
+    expect(chatCall[1]).toEqual(expect.any(Array));
+    expect(chatCall[2]).toEqual(expect.objectContaining({ reasoning: 'high' }));
+  });
+
+  it('SessionChat rejects an invalid reasoning override', async () => {
+    const state = createMockState();
+    const service = createAbbenayService(state);
+    const written: unknown[] = [];
+    const call = {
+      request: {
+        session_id: 'sess-1',
+        message: { role: 'ROLE_USER', content: 'Hello' },
+        options: { reasoning: 'invalid' },
+      },
+      metadata: new grpc.Metadata(),
+      write: (msg: unknown) => written.push(msg),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.SessionChat(call as never);
+    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
+    expect(written[0]).toEqual({ error: { code: 'INVALID_ARGUMENT', message: "Unsupported reasoning level 'invalid'" } });
+    expect(call.end).toHaveBeenCalled();
   });
 
   it('RegisterMcpServer requires token when consumers configured', async () => {

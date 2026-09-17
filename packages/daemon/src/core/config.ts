@@ -56,6 +56,8 @@ export interface ModelConfig {
   timeout?: number;
   /** Unified AI SDK reasoning effort (DR-042). */
   reasoning?: ReasoningLevel;
+  /** Explicit capability override for models whose API does not advertise vision support. */
+  supports_vision?: boolean;
   /**
    * Per-model override for OpenAI-compatible `/v1` tools passthrough.
    * When unset, inherits `openai_compat.tools` (default `off`).

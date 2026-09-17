@@ -220,7 +220,7 @@ export class CoreState {
     };
 
     if (options.baseUrl) {
-      const server = this.configLoader?.()?.server ?? loadConfig()?.server;
+      const server = this.configLoader ? this.configLoader().server : loadConfig()?.server;
       const policy = endpointPolicyFromServer(server);
       const endpoint = validateProviderEndpoint(options.baseUrl, policy);
       if (!endpoint.ok) {
@@ -489,8 +489,14 @@ export class CoreState {
         const compositeId = `${providerId}/${modelName}`;
         const discovered = discoveryMap.get(engineModelId);
 
-        const capabilities = discovered?.capabilities ?? {
+        const discoveredCapabilities = discovered?.capabilities ?? {
           supportsTools: engineInfo.supportsTools,
+        };
+        const capabilities = {
+          ...discoveredCapabilities,
+          ...(modelCfg.supports_vision !== undefined
+            ? { supportsVision: modelCfg.supports_vision }
+            : {}),
         };
 
         allModels.push({

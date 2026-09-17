@@ -413,6 +413,22 @@ describe('CoreState.listModels', () => {
     expect(models[0].engineModelId).toBeDefined();
   });
 
+  it('applies an explicit vision capability override', async () => {
+    const core = createCore({
+      config: {
+        providers: {
+          'my-mock': {
+            engine: 'mock',
+            models: { vision: { supports_vision: true } },
+          },
+        },
+      },
+    });
+
+    const models = await core.listModels();
+    expect(models.find((model) => model.id === 'my-mock/vision')?.capabilities.supportsVision).toBe(true);
+  });
+
   it('skips providers without keys when engine requires key', async () => {
     const core = createCore({ config: mockProviderConfig });
     const models = await core.listModels();

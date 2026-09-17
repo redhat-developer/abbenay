@@ -2,6 +2,23 @@
 
 Abbenay uses YAML configuration files and system keychain for secrets.
 
+## Reasoning overrides
+
+Models may define a durable `reasoning` default using one of `provider-default`,
+`none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. The Abbenay Chat
+sidebar exposes the same values as a transient per-session control. A sidebar
+selection applies to requests in the current chat session and does not rewrite
+the configuration file.
+
+The provider configuration UIs in both the VS Code extension and native
+dashboard expose an **Images** capability override for each enabled model.
+Enable it when the endpoint accepts image input but model discovery does not
+report vision support. The setting writes `supports_vision: true`; clearing the
+checkbox removes the override and returns to automatic capability discovery.
+
+When no override is selected, the configured model default is used.
+`provider-default` delegates the reasoning choice to the provider.
+
 ## Config File Locations
 
 ### User Level
@@ -30,6 +47,11 @@ providers:
       gpt-4o-mini:
         temperature: 0.3
         max_tokens: 4096
+
+      # Set this only when the endpoint accepts inline image/file input but
+      # does not expose reliable vision metadata from its /models endpoint.
+      gpt-5.6-luna:
+        supports_vision: true
   
   anthropic-work:
     engine: anthropic
@@ -47,6 +69,15 @@ providers:
       qwen2.5-coder:
         model_id: "qwen2.5-coder:7b"        # Map virtual name to actual model ID
 ```
+
+### Multimodal image input
+
+Models are advertised to VS Code with `imageInput: true` only when discovery
+reports vision support or the model explicitly sets `supports_vision: true`.
+For OpenAI-compatible endpoints with incomplete `/models` metadata, use the
+per-model override only after verifying that the endpoint accepts the image
+format and MIME types sent by the client. Image bytes are forwarded as inline
+content and are not written to session JSON files as a separate artifact.
 
 ### OpenAI-compatible tools (`openai_compat`) — DR-032
 

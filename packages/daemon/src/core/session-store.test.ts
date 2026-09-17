@@ -259,6 +259,24 @@ describe('SessionStore.appendMessage', () => {
     expect(loaded.messages[0].tool_calls).toBeDefined();
     expect(loaded.messages[1].tool_call_id).toBe('call_1');
   });
+
+  it('restores persisted multimodal bytes when loading a session', async () => {
+    const session = await store.create('openai/gpt-4o');
+    const encoded = Buffer.from([1, 2, 3]).toString('base64');
+    await store.appendMessage(session.id, {
+      role: 'user',
+      content: 'Describe this image',
+      contentParts: [{ type: 'image', mimeType: 'image/png', data: Uint8Array.from([1, 2, 3]) }],
+    });
+
+    const filePath = path.join(tmpDir, `${session.id}.json`);
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { messages: Array<{ contentParts: Array<{ data: string }> }> };
+    raw.messages[0].contentParts[0].data = encoded;
+    fs.writeFileSync(filePath, JSON.stringify(raw));
+
+    const loaded = await store.get(session.id);
+    expect(loaded.messages[0].contentParts?.[0].data).toEqual(Uint8Array.from([1, 2, 3]));
+  });
 });
 
 describe('SessionStore.updateTitle', () => {
