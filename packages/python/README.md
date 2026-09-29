@@ -17,7 +17,7 @@ pip install abbenay-client
 > from abbenay_grpc import AbbenayClient
 > ```
 
-Cross-platform: works on Linux, macOS, and Windows with Python 3.9+.
+Cross-platform: works on Linux, macOS, and Windows with Python 3.10+.
 
 ## Quick Start
 
@@ -89,7 +89,7 @@ deployment instructions and the `--insecure` escape hatch.
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.10+
 - Abbenay daemon running (`abbenay daemon`)
 
 ## License
