@@ -940,6 +940,31 @@ describe('createWebApp routes', () => {
     expect(res.statusCode).toBe(200);
     expect(String(res.body)).toContain('window.__ABBENAY_CSRF__');
   });
+
+  it('dashboard HTML exposes the per-model image capability override', async () => {
+    const res = await httpRequest(baseUrl, 'GET', '/index.html', { token: null });
+    const html = String(res.body);
+    expect(res.statusCode).toBe(200);
+    expect(html).toContain('Enable image input');
+    expect(html).toContain("setDraftParam('supports_vision'");
+    expect(html).toContain('automatic capability discovery');
+  });
+
+  it('dashboard HTML exposes the per-model reasoning setting', async () => {
+    const res = await httpRequest(baseUrl, 'GET', '/index.html', { token: null });
+    const html = String(res.body);
+    expect(res.statusCode).toBe(200);
+    expect(html).toContain('Reasoning effort');
+    expect(html).toContain("setDraftParam('reasoning'");
+    expect(html).toContain('Provider default');
+    expect(html).toContain('value="none"');
+    expect(html).toContain('value="minimal"');
+    expect(html).toContain('value="low"');
+    expect(html).toContain('value="medium"');
+    expect(html).toContain('value="high"');
+    expect(html).toContain('value="xhigh"');
+    expect(html).toContain('Extra high');
+  });
 });
 
 describe('dashboard login HTML flows', () => {

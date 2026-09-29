@@ -210,7 +210,27 @@ async function handleConfigureProvider(
         providers[message.providerId] = {};
       }
 
-      providers[message.providerId].models = message.models;
+      providers[message.providerId].models = Object.fromEntries(
+        Object.entries(message.models).map(([name, model]) => {
+          const modelConfig = {
+            modelId: model.model_id,
+            policy: model.policy,
+            systemPrompt: model.system_prompt,
+            systemPromptMode: model.system_prompt_mode,
+            temperature: model.temperature,
+            topP: model.top_p,
+            topK: model.top_k,
+            maxTokens: model.max_tokens,
+            timeout: model.timeout,
+            supportsVision: model.supports_vision,
+            reasoning: model.reasoning,
+            openaiCompatTools: model.openai_compat_tools,
+          };
+          return [name, Object.fromEntries(
+            Object.entries(modelConfig).filter(([, value]) => value !== undefined),
+          )];
+        }),
+      );
       (config as Record<string, unknown>).providers = providers;
 
       await client.updateConfig(config as unknown as proto.Config, location);

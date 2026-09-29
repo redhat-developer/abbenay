@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Several tests exercise process-wide native-module loading and module
+    // cache resets. Running files concurrently can let those test doubles
+    // observe each other's module state.
+    fileParallelism: false,
     server: {
       deps: {
         inline: ['keytar'],

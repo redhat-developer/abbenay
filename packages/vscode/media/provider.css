@@ -233,6 +233,28 @@ vscode-textfield {
   white-space: nowrap;
 }
 
+.enabled-model-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.model-capability-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.model-capability-toggle input {
+  margin: 0;
+  accent-color: var(--vscode-focusBorder);
+}
+
 .dual-list-item:last-child {
   border-bottom: none;
 }

@@ -76,6 +76,8 @@ export const ModelConfigSchema = z
     reasoning: z
       .enum(['provider-default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
       .optional(),
+    /** Explicitly declare whether the model accepts image input. */
+    supports_vision: z.boolean().optional(),
     openai_compat_tools: OpenAICompatToolsModeSchema.optional(),
   })
   .strict();

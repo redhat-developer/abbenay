@@ -14,7 +14,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ChatMessage } from './engines.js';
+import { normalizeChatMessages, type ChatMessage } from './engines.js';
 
 // ── Ownership ───────────────────────────────────────────────────────────
 
@@ -194,6 +194,7 @@ export class SessionStore {
     if (!includeMessages) {
       return { ...session, messages: [] };
     }
+    session.messages = normalizeChatMessages(session.messages || []);
     return session;
   }
 

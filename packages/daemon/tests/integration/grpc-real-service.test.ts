@@ -71,6 +71,7 @@ vi.mock('../../src/core/engines.js', () => ({
   },
   fetchModels: (...a: unknown[]) => mockFetchModels(...a),
   streamChat: (...a: unknown[]) => mockStreamChat(...a),
+  normalizeChatMessages: (messages: unknown[]) => messages,
   getProviderTemplates: () => [],
 }));
 

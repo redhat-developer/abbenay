@@ -27,6 +27,7 @@ function cliEnv(runtimeDir: string, extra: Record<string, string> = {}): Record<
   return {
     ...process.env,
     XDG_RUNTIME_DIR: runtimeDir,
+    XDG_CONFIG_HOME: runtimeDir,
     ABBENAY_DEBUG: '0',
     ...extra,
   };

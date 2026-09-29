@@ -146,6 +146,8 @@ describe('configFileToProto', () => {
               temperature: 0.7,
               max_tokens: 4096,
               policy: 'concise',
+              supports_vision: true,
+              openai_compat_tools: 'passthrough',
             },
           },
         },
@@ -166,11 +168,14 @@ describe('configFileToProto', () => {
       top_k: undefined,
       max_tokens: undefined,
       timeout: undefined,
+              supports_vision: undefined,
     });
     expect(proto.providers!['my-openai'].models!['fast'].model_id).toBe('gpt-4o-mini');
     expect(proto.providers!['my-openai'].models!['fast'].temperature).toBe(0.7);
     expect(proto.providers!['my-openai'].models!['fast'].max_tokens).toBe(4096);
     expect(proto.providers!['my-openai'].models!['fast'].policy).toBe('concise');
+    expect(proto.providers!['my-openai'].models!['fast'].supports_vision).toBe(true);
+    expect(proto.providers!['my-openai'].models!['fast'].openai_compat_tools).toBe('passthrough');
   });
 
   it('converts MCP server config', () => {
@@ -275,6 +280,8 @@ describe('protoToConfigFile', () => {
               model_id: 'gpt-4o-mini',
               temperature: 0.7,
               max_tokens: 4096,
+              supports_vision: true,
+              openai_compat_tools: 'passthrough',
             },
           },
         },
@@ -288,6 +295,32 @@ describe('protoToConfigFile', () => {
     expect(roundTripped.providers!['my-openai'].models!['fast'].model_id).toBe('gpt-4o-mini');
     expect(roundTripped.providers!['my-openai'].models!['fast'].temperature).toBe(0.7);
     expect(roundTripped.providers!['my-openai'].models!['fast'].max_tokens).toBe(4096);
+    expect(roundTripped.providers!['my-openai'].models!['fast'].supports_vision).toBe(true);
+    expect(roundTripped.providers!['my-openai'].models!['fast'].openai_compat_tools).toBe('passthrough');
+  });
+
+  it('rejects unsupported model enum values', () => {
+    expect(() => protoToConfigFile({
+      providers: {
+        provider: {
+          engine: 'openai',
+          models: {
+            model: { reasoning: 'unsupported' },
+          },
+        },
+      },
+    })).toThrow("Unsupported reasoning level 'unsupported'");
+
+    expect(() => protoToConfigFile({
+      providers: {
+        provider: {
+          engine: 'openai',
+          models: {
+            model: { openai_compat_tools: 'unsupported' },
+          },
+        },
+      },
+    })).toThrow("Unsupported OpenAI-compatible tools mode 'unsupported'");
   });
 
   it('round-trips MCP servers', () => {
@@ -880,6 +913,41 @@ describe('createAbbenayService handlers', () => {
       config: { providers: { bad: { engine: 'unknown' } } },
     });
     expect(badEngine.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+  });
+
+  it('UpdateConfig rejects unsupported model enum values', async () => {
+    const state = createMockState();
+    const service = createServiceHandlers(state);
+
+    const invalidReasoning = await invokeUnary(service.UpdateConfig, {
+      location: 'user',
+      config: {
+        providers: {
+          provider: {
+            engine: 'mock',
+            models: { model: { reasoning: 'unsupported' } },
+          },
+        },
+      },
+    });
+    expect(invalidReasoning.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+    expect(invalidReasoning.error?.message).toContain("Unsupported reasoning level 'unsupported'");
+
+    const invalidToolsMode = await invokeUnary(service.UpdateConfig, {
+      location: 'user',
+      config: {
+        providers: {
+          provider: {
+            engine: 'mock',
+            models: { model: { openai_compat_tools: 'unsupported' } },
+          },
+        },
+      },
+    });
+    expect(invalidToolsMode.error?.code).toBe(grpc.status.INVALID_ARGUMENT);
+    expect(invalidToolsMode.error?.message).toContain(
+      "Unsupported OpenAI-compatible tools mode 'unsupported'",
+    );
   });
 
   it('CreatePolicy and DeletePolicy manage custom policies', async () => {
@@ -1479,6 +1547,36 @@ describe('createAbbenayService handlers', () => {
     expect(written.some((c) => (c as { done?: unknown }).done)).toBe(true);
   });
 
+  it('Chat accepts camelCase multimodal fields and empty content-part defaults', async () => {
+    async function* chunks() {
+      yield { type: 'done' as const, finishReason: 'stop' };
+    }
+    const chat = vi.fn().mockReturnValue(chunks());
+    const service = createAbbenayService(createMockState({ chat }));
+    const call = {
+      request: {
+        model: 'mock/echo',
+        messages: [{
+          role: 'ROLE_USER',
+          contentParts: [
+            { type: '', text: '', mimeType: 'image/png', data: Buffer.alloc(0), uri: '' },
+          ],
+        }],
+      },
+      metadata: new grpc.Metadata(),
+      write: vi.fn(),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.Chat(call as never);
+    await vi.waitFor(() => expect(call.end).toHaveBeenCalled());
+    expect(chat.mock.calls[0]?.[1]).toEqual([expect.objectContaining({
+      contentParts: [{ type: '', text: undefined, mimeType: 'image/png', data: undefined, uri: undefined }],
+    })]);
+  });
+
   it('Chat denies inline policy without capability when consumers configured', async () => {
     mockLoadConfig.mockReturnValue({
       providers: {},
@@ -1639,6 +1737,114 @@ describe('createAbbenayService handlers', () => {
     expect(written.some((c) => (c as { text?: { text: string } }).text?.text === 'answer')).toBe(true);
     expect(sessionStore.updateTitle).toHaveBeenCalledWith('sess-1', 'First question here');
     expect(mockMaybeSummarize).toHaveBeenCalled();
+  });
+
+  it('SessionChat accepts an image-only message', async () => {
+    async function* chunks() {
+      yield { type: 'done' as const, finishReason: 'stop' };
+    }
+    const session = {
+      id: 'sess-image',
+      model: 'mock/echo',
+      title: 'New Session',
+      messages: [],
+      metadata: {},
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const sessionStore = {
+      getOwned: vi.fn().mockResolvedValue(session),
+      appendMessage: vi.fn().mockResolvedValue(undefined),
+      updateTitle: vi.fn().mockResolvedValue(undefined),
+    };
+    const chat = vi.fn().mockReturnValue(chunks());
+    const state = createMockState({ chat, sessionStore });
+    const service = createAbbenayService(state);
+    const call = {
+      request: {
+        session_id: 'sess-image',
+        message: {
+          role: 'ROLE_USER',
+          content_parts: [{ type: 'image', mime_type: 'image/png', data: Buffer.from([1, 2, 3]) }],
+        },
+      },
+      metadata: new grpc.Metadata(),
+      write: vi.fn(),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.SessionChat(call as never);
+    await vi.waitFor(() => expect(call.end).toHaveBeenCalled());
+    expect(chat.mock.calls[0]?.[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: '', contentParts: [expect.objectContaining({ type: 'image' })] }),
+    ]));
+  });
+
+  it('SessionChat forwards a valid reasoning override to state.chat', async () => {
+    async function* chunks() {
+      yield { type: 'done' as const, finishReason: 'stop' };
+    }
+    const session = {
+      id: 'sess-reasoning',
+      model: 'mock/echo',
+      title: 'Existing Session',
+      messages: [],
+      metadata: {},
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const sessionStore = {
+      getOwned: vi.fn().mockResolvedValue(session),
+      appendMessage: vi.fn().mockResolvedValue(undefined),
+      updateTitle: vi.fn().mockResolvedValue(undefined),
+    };
+    const chat = vi.fn().mockReturnValue(chunks());
+    const state = createMockState({ chat, sessionStore });
+    const service = createAbbenayService(state);
+    const call = {
+      request: {
+        session_id: 'sess-reasoning',
+        message: { role: 'ROLE_USER', content: 'Think carefully' },
+        options: { reasoning: 'high' },
+      },
+      metadata: new grpc.Metadata(),
+      write: vi.fn(),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.SessionChat(call as never);
+    await vi.waitFor(() => expect(call.end).toHaveBeenCalled());
+    const chatCall = chat.mock.calls[0] as unknown[];
+    expect(chatCall[0]).toBe('mock/echo');
+    expect(chatCall[1]).toEqual(expect.any(Array));
+    expect(chatCall[2]).toEqual(expect.objectContaining({ reasoning: 'high' }));
+  });
+
+  it('SessionChat rejects an invalid reasoning override', async () => {
+    const state = createMockState();
+    const service = createAbbenayService(state);
+    const written: unknown[] = [];
+    const call = {
+      request: {
+        session_id: 'sess-1',
+        message: { role: 'ROLE_USER', content: 'Hello' },
+        options: { reasoning: 'invalid' },
+      },
+      metadata: new grpc.Metadata(),
+      write: (msg: unknown) => written.push(msg),
+      end: vi.fn(),
+      on: vi.fn(),
+      emit: vi.fn(),
+    };
+
+    service.SessionChat(call as never);
+    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
+    expect(written[0]).toEqual({ error: { code: 'INVALID_ARGUMENT', message: "Unsupported reasoning level 'invalid'" } });
+    expect(call.end).toHaveBeenCalled();
   });
 
   it('RegisterMcpServer requires token when consumers configured', async () => {
@@ -1977,7 +2183,11 @@ describe('createAbbenayService handlers', () => {
       title: 'Topic',
       messages: [
         { role: 'system', content: 'sys' },
-        { role: 'user', content: 'hi' },
+        {
+          role: 'user',
+          content: 'hi',
+          contentParts: [{ type: 'image', mimeType: 'image/png', data: Uint8Array.from([1, 2, 3]) }],
+        },
         { role: 'assistant', content: 'yo', tool_calls: [{ id: 'tc1', name: 'search', arguments: '{}' }] },
         { role: 'tool', content: 'result', name: 'search', tool_call_id: 'tc1' },
         { role: 'unknown', content: 'fallback' },
@@ -2025,6 +2235,11 @@ describe('createAbbenayService handlers', () => {
     const got = await invokeUnary(service.GetSession, { session_id: 'sess-full', include_messages: true });
     expect(got.response?.id).toBe('sess-full');
     expect(rpcArray<{ role: number }>(got.response, 'messages').map((m) => m.role)).toEqual([1, 2, 3, 4, 2]);
+    expect(rpcArray<{ content_parts?: Array<{ type: string; mime_type: string; data: Buffer }> }>(got.response, 'messages')[1]?.content_parts?.[0]).toMatchObject({
+      type: 'image',
+      mime_type: 'image/png',
+      data: Buffer.from([1, 2, 3]),
+    });
 
     expect((await invokeUnary(service.GetSession, { session_id: 'missing' })).error?.code).toBe(grpc.status.NOT_FOUND);
     expect((await invokeUnary(service.DeleteSession, {})).error?.code).toBe(grpc.status.INVALID_ARGUMENT);

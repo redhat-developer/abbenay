@@ -9,6 +9,7 @@ import {
   SessionDetail,
   MessageInfo,
   ToolCallInfo,
+  type ReasoningLevel,
 } from '../shared/types';
 import { getLogger } from '../../utils/logger';
 
@@ -94,7 +95,7 @@ export async function handleChatMessage(
         break;
 
       case 'sendMessage':
-        await handleSendMessage(webview, client, message.sessionId, message.content);
+        await handleSendMessage(webview, client, message.sessionId, message.content, message.reasoning);
         break;
 
       case 'cancelStream':
@@ -145,6 +146,7 @@ async function handleListModels(
     provider: m.provider,
     name: m.name,
     engine: m.engine,
+    reasoning: m.params?.reasoning as ReasoningLevel | undefined,
   }));
 
   const response: HostToChatMessage = {
@@ -254,6 +256,7 @@ async function handleSendMessage(
   client: DaemonClient,
   sessionId: string,
   content: string,
+  reasoning?: ReasoningLevel,
 ): Promise<void> {
   let aborted = false;
 
@@ -274,6 +277,7 @@ async function handleSendMessage(
       },
       options: {
         toolMode: 'auto',
+        ...(reasoning && reasoning !== 'provider-default' ? { reasoning } : {}),
       },
     });
 

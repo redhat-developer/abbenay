@@ -35,7 +35,15 @@ vi.mock('ai', async (importOriginal) => {
   };
 });
 
-import { streamChat, toSdkTimeout, getEngine, splitSystemMessages } from './engines.js';
+import {
+  normalizeChatMessages,
+  streamChat,
+  toSdkTimeout,
+  getEngine,
+  splitSystemMessages,
+  sanitizeVertexRequestBody,
+  convertAnthropicJsonToSse,
+} from './engines.js';
 
 describe('toSdkTimeout', () => {
   it('maps flat ms to totalMs only (no step/tool halves)', () => {
@@ -83,6 +91,97 @@ describe('splitSystemMessages', () => {
     const result = splitSystemMessages([{ role: 'user', content: 'hi' }]);
     expect(result.instructions).toBeUndefined();
     expect(result.messages).toHaveLength(1);
+  });
+});
+
+describe('normalizeChatMessages', () => {
+  it('decodes persisted base64 multimodal data', () => {
+    const messages = normalizeChatMessages([{
+      role: 'user',
+      content: 'image',
+      contentParts: [{
+        type: 'image',
+        mimeType: 'image/png',
+        data: Buffer.from([1, 2, 3]).toString('base64') as unknown as Uint8Array,
+      }],
+    }]);
+
+    expect(messages[0]?.contentParts?.[0]?.data).toEqual(Uint8Array.from([1, 2, 3]));
+  });
+
+  it('decodes object-shaped multimodal byte arrays and preserves non-base64 payloads', () => {
+    const messages = normalizeChatMessages([{
+      role: 'user',
+      content: 'image',
+      contentParts: [{
+        type: 'image',
+        mimeType: 'image/png',
+        data: { 0: 4, 1: 5, 2: 6 } as unknown as Uint8Array,
+      }],
+    }]);
+
+    expect(messages[0]?.contentParts?.[0]?.data).toEqual(Uint8Array.from([4, 5, 6]));
+  });
+
+  it('preserves Uint8Array data and decodes persisted Buffer JSON', () => {
+    const bytes = Uint8Array.from([7, 8, 9]);
+    const messages = normalizeChatMessages([{
+      role: 'user',
+      content: 'images',
+      contentParts: [
+        { type: 'image', data: bytes },
+        { type: 'image', data: { type: 'Buffer', data: [10, 'invalid', 11] } as unknown as Uint8Array },
+        { type: 'text', text: 'no bytes' },
+      ],
+    }]);
+
+    expect(messages[0]?.contentParts?.[0]?.data).toBe(bytes);
+    expect(messages[0]?.contentParts?.[1]?.data).toEqual(Uint8Array.from([10, 11]));
+    expect(messages[0]?.contentParts?.[2]?.data).toBeUndefined();
+  });
+});
+
+describe('multimodal sanitization helpers', () => {
+  it('strips empty vertex message text blocks and stream options', () => {
+    const result = sanitizeVertexRequestBody(JSON.stringify({
+      messages: [
+        { role: 'user', content: '  ' },
+        { role: 'user', content: [{ type: 'text', text: '  ' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } }] },
+      ],
+      stream_options: { foo: 'bar' },
+    }));
+
+    expect(result).not.toBeNull();
+    const body = JSON.parse(result!.body);
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].content[0]).toMatchObject({ type: 'image' });
+    expect(result!.removed).toContain('stream_options');
+    expect(result!.removed).toContain('empty_text_blocks');
+  });
+
+  it('accepts valid Anthropic JSON and rejects unsupported non-text content', () => {
+    const valid = convertAnthropicJsonToSse(JSON.stringify({
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-test',
+      content: [{ type: 'text', text: 'hello' }],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 2 },
+    }));
+
+    expect(valid.ok).toBe(true);
+    expect(valid.body).toContain('hello');
+
+    const rejected = convertAnthropicJsonToSse(JSON.stringify({
+      id: 'msg_2',
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } }],
+    }));
+
+    expect(rejected).toEqual({ ok: false, reason: 'non-text-content' });
   });
 });
 
@@ -137,6 +236,98 @@ describe('streamText AI SDK 7 wiring', () => {
     const msgs = callArg.messages as Array<{ role: string; content: unknown }>;
     expect(msgs.every((m) => m.role !== 'system')).toBe(true);
     expect(msgs.some((m) => m.role === 'user')).toBe(true);
+  });
+
+  it('forwards inline image content as an AI SDK file part', async () => {
+    const openai = getEngine('openai');
+    expect(openai).toBeDefined();
+    const originalCreate = openai!.createModel;
+    openai!.createModel = vi.fn(async () => ({
+      modelId: 'gpt-test',
+      provider: 'openai',
+      specificationVersion: 'v3',
+      supportedUrls: {},
+      doGenerate: async () => ({
+        content: [],
+        finishReason: 'stop',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        warnings: [],
+      }),
+      doStream: async () => ({ stream: new ReadableStream() }),
+    })) as typeof originalCreate;
+
+    try {
+      for await (const _chunk of streamChat('openai', 'gpt-test', [{
+        role: 'user',
+        content: '',
+        contentParts: [{
+          type: 'image',
+          mimeType: 'image/png',
+          data: Uint8Array.from([1, 2, 3]),
+        }],
+      }], 'sk-test')) {
+        // drain
+      }
+    } finally {
+      openai!.createModel = originalCreate;
+    }
+
+    const callArg = streamTextMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    const messages = callArg.messages as Array<{ content: Array<Record<string, unknown>> }>;
+    expect(messages[0]?.content[0]).toMatchObject({
+      type: 'file',
+      mediaType: 'image/png',
+      data: Uint8Array.from([1, 2, 3]),
+    });
+  });
+
+  it('forwards text parts, URI files, and ignores empty or unsupported parts', async () => {
+    const openai = getEngine('openai');
+    expect(openai).toBeDefined();
+    const originalCreate = openai!.createModel;
+    openai!.createModel = vi.fn(async () => ({
+      modelId: 'gpt-test',
+      provider: 'openai',
+      specificationVersion: 'v3',
+      supportedUrls: {},
+      doGenerate: async () => ({
+        content: [],
+        finishReason: 'stop',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        warnings: [],
+      }),
+      doStream: async () => ({ stream: new ReadableStream() }),
+    })) as typeof originalCreate;
+
+    try {
+      for await (const _chunk of streamChat('openai', 'gpt-test', [{
+        role: 'user',
+        content: 'prompt',
+        contentParts: [
+          { type: 'text', text: 'additional context' },
+          { type: 'text', text: '' },
+          { type: 'image', uri: 'https://example.test/image.png' },
+          { type: 'image' },
+          { type: 'audio', data: Uint8Array.from([1]) },
+        ],
+      }], 'sk-test')) {
+        // drain
+      }
+    } finally {
+      openai!.createModel = originalCreate;
+    }
+
+    const callArg = streamTextMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    const messages = callArg.messages as Array<{ content: Array<Record<string, unknown>> }>;
+    expect(messages[0]?.content).toEqual([
+      { type: 'text', text: 'prompt' },
+      { type: 'text', text: 'additional context' },
+      {
+        type: 'file',
+        data: 'https://example.test/image.png',
+        mediaType: 'application/octet-stream',
+      },
+    ]);
   });
 
   it('forwards toolChoice to streamText when tools are present', async () => {
