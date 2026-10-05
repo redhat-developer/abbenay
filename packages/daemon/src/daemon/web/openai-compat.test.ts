@@ -662,6 +662,38 @@ describe('registerOpenAIRoutes', () => {
     vi.restoreAllMocks();
   });
 
+  it('GET /v1/models omits models that are not usable at runtime', async () => {
+    const state = createOpenAIState([], async () => ([
+      {
+        id: 'mock/echo',
+        name: 'echo',
+        engineModelId: 'echo',
+        provider: 'mock',
+        engine: 'mock',
+        contextWindow: 8192,
+        available: true,
+      } as ModelInfo,
+      {
+        id: 'or/missing',
+        name: 'missing',
+        engineModelId: 'missing',
+        provider: 'or',
+        engine: 'openrouter',
+        contextWindow: 0,
+        available: false,
+      } as ModelInfo,
+    ]));
+    const { server, baseUrl } = await startOpenAIApp(state);
+    try {
+      const res = await openaiRequest(baseUrl, 'GET', '/v1/models');
+      expect(res.statusCode).toBe(200);
+      const data = (res.body as { data: Array<{ id: string }> }).data;
+      expect(data.map((m) => m.id)).toEqual(['mock/echo']);
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
   it('GET /v1/models returns OpenAI-formatted models', async () => {
     const { server, baseUrl } = await startOpenAIApp(createOpenAIState([]));
     try {

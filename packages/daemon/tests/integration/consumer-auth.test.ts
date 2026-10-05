@@ -64,6 +64,7 @@ vi.mock('../../src/core/engines.js', () => ({
   },
   fetchModels: async () => [],
   streamChat: async function* () { yield { type: 'done', finishReason: 'stop' }; },
+  normalizeChatMessages: (messages: unknown[]) => messages,
   getProviderTemplates: () => [],
 }));
 

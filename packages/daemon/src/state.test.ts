@@ -182,7 +182,7 @@ describe('DaemonState.listModels', () => {
     expect(models[0].engine).toBe('openrouter');
   });
 
-  it('should skip provider without key when engine requires key', async () => {
+  it('should list saved models as unavailable when key is missing', async () => {
     const config: ConfigFile = {
       providers: {
         openrouter: {
@@ -198,7 +198,10 @@ describe('DaemonState.listModels', () => {
 
     const models = await state.listModels();
 
-    expect(models).toEqual([]);
+    expect(models).toHaveLength(1);
+    expect(models[0].id).toBe('openrouter/model-a');
+    expect(models[0].available).toBe(false);
+    expect(models[0].unavailableReason).toBeDefined();
     expect(mockFetchModels).not.toHaveBeenCalled();
   });
 

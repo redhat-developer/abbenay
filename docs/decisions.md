@@ -6,6 +6,70 @@ without archaeology.
 
 ---
 
+## DR-050: Multimodal message forwarding and vision capability overrides
+
+**Status:** Accepted
+
+**Decision:** Preserve the existing text-only `Message.content` field and add
+`content_parts` as a backward-compatible repeated field. Reuse the existing
+binary-capable `ToolContent` shape for inline text, image, and file content.
+The VS Code provider forwards `LanguageModelDataPart` bytes and MIME types;
+the daemon converts them to AI SDK file parts. Models advertise VS Code
+`imageInput` only when discovery reports vision support or a model explicitly
+sets `supports_vision: true`.
+
+**Rationale:** Generic OpenAI-compatible `/models` endpoints do not reliably
+describe multimodal support. Explicit opt-in avoids claiming capability before
+the transport path is implemented while retaining compatibility with older
+clients and daemons.
+
+**Consequences:** Existing text clients remain wire-compatible. Session JSON
+loads normalize persisted binary values before requests. Operators must only
+enable `supports_vision` after verifying endpoint support.
+
+---
+
+## DR-051: Reasoning controls and context ownership
+
+**Status:** Accepted
+
+**Decision:** Expose reasoning effort as a transient per-session/request override
+in the Abbenay VS Code sidebar, while retaining the configured model reasoning
+value as the durable default. The request override is validated against
+Abbenay's supported reasoning levels before it reaches a provider.
+
+Context-window values remain model capability metadata. They describe provider
+limits and are not exposed as a client-side capacity setting that could imply
+the limit has changed. Automatic compaction remains daemon-owned so clients can
+share consistent session behavior; Copilot Chat conversations remain host-owned
+and are not silently compacted by Abbenay.
+
+**Consequences:**
+
+- Users can adjust reasoning effort without mutating durable YAML configuration.
+- Model configuration continues to provide safe defaults for clients that do not send an override.
+- Unsupported reasoning values fail with an explicit invalid-argument error.
+- Future compaction work belongs in the daemon/session layer and must preserve session semantics.
+
+---
+
+## DR-052: Native VS Code chat view actions
+
+**Date:** 2026-09-17
+
+**Decision:** Contribute the Abbenay Chat New, Delete, and Settings actions to
+VS Code's stable native `view/title` menu for `abbenay.chatView` instead of
+rendering duplicate controls inside the webview.
+
+**Rationale:** The stable native view title bar keeps the controls in VS Code
+chrome without requiring a proposed API. New and Delete are forwarded to the
+chat webview so its session state remains authoritative; Settings invokes the
+existing provider configuration command. VS Code's first-row view-container
+title actions are proposal-only for third-party extensions, so Abbenay cannot
+legitimately place controls there in a normal installed extension.
+
+---
+
 ## DR-001: Project name "Abbenay"
 
 **Date:** 2026-02-28  

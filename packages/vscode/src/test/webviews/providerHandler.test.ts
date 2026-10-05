@@ -80,6 +80,73 @@ suite('Provider Handler', () => {
     assert.strictEqual(msg.path, '/home/user/.config/abbenay/config.yaml');
   });
 
+  test('configureProvider should preserve and persist model capability overrides', async () => {
+    const webview = createMockWebview();
+    let updatedConfig: any;
+    const client = createMockDaemonClient({
+      getConfig: async () => ({
+        config: {
+          providers: {
+            openai: { engine: 'openai' },
+          },
+        },
+        path: '/tmp/config.yaml',
+      }),
+      updateConfig: async (config: any) => {
+        updatedConfig = config;
+        return { config, path: '/tmp/config.yaml' };
+      },
+    });
+
+    await handleProviderMessage({
+      type: 'configureProvider',
+      providerId: 'openai',
+      engine: 'openai',
+      models: {
+        luna: { model_id: 'gpt-5.6-luna', supports_vision: true, policy: 'reasoning' },
+      },
+    }, webview, client);
+
+    assert.strictEqual(updatedConfig.providers.openai.models.luna.supportsVision, true);
+    assert.strictEqual(updatedConfig.providers.openai.models.luna.modelId, 'gpt-5.6-luna');
+    assert.strictEqual(updatedConfig.providers.openai.models.old, undefined);
+  });
+
+  test('configureProvider should serialize the complete model configuration for protobuf', async () => {
+    const webview = createMockWebview();
+    let updatedConfig: any;
+    const client = createMockDaemonClient({
+      getConfig: async () => ({ config: { providers: {} }, path: '/tmp/config.yaml' }),
+      updateConfig: async (config: any) => {
+        updatedConfig = config;
+        return { config, path: '/tmp/config.yaml' };
+      },
+    });
+
+    await handleProviderMessage({
+      type: 'configureProvider',
+      providerId: 'openai',
+      engine: 'openai',
+      models: {
+        luna: {
+          model_id: 'gpt-5.6-luna',
+          reasoning: 'high',
+          supports_vision: true,
+          system_prompt: 'Be concise',
+          openai_compat_tools: 'passthrough',
+        },
+      },
+    }, webview, client);
+
+    assert.deepStrictEqual(updatedConfig.providers.openai.models.luna, {
+      modelId: 'gpt-5.6-luna',
+      reasoning: 'high',
+      supportsVision: true,
+      systemPrompt: 'Be concise',
+      openaiCompatTools: 'passthrough',
+    });
+  });
+
   test('error in handler should send error message to webview', async () => {
     const webview = createMockWebview();
     const client = createMockDaemonClient({

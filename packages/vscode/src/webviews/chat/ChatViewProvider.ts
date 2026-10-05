@@ -34,7 +34,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       webviewView.webview,
       this._extensionUri,
       'chat',
-      'Abbenay Chat',
+      'Chat',
     );
 
     webviewView.webview.onDidReceiveMessage(async (message: { type: string }) => {
@@ -81,6 +81,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this._view.show(true);
     }
+  }
+
+  public newSession(): void {
+    this._view?.webview.postMessage({ type: 'topBarAction', action: 'newSession' });
+  }
+
+  public deleteSession(): void {
+    this._view?.webview.postMessage({ type: 'topBarAction', action: 'deleteSession' });
   }
 
   // Inject a prompt into the chat panel.

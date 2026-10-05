@@ -60,6 +60,24 @@
         "icon": "$(gear)"
       },
       {
+        "command": "abbenay.chat.newSession",
+        "title": "New Chat Session",
+        "category": "Abbenay",
+        "icon": "$(add)"
+      },
+      {
+        "command": "abbenay.chat.deleteSession",
+        "title": "Delete Chat Session",
+        "category": "Abbenay",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "abbenay.chat.settings",
+        "title": "Chat Settings",
+        "category": "Abbenay",
+        "icon": "$(gear)"
+      },
+      {
         "command": "abbenay.chat.send",
         "title": "Send Message to Chat",
         "category": "Abbenay"
@@ -90,6 +108,28 @@
           "type": "webview",
           "id": "abbenay.chatView",
           "name": "Chat"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "abbenay.chat.newSession",
+          "when": "view == abbenay.chatView",
+          "group": "navigation@1",
+          "icon": "$(add)"
+        },
+        {
+          "command": "abbenay.chat.deleteSession",
+          "when": "view == abbenay.chatView",
+          "group": "navigation@2",
+          "icon": "$(trash)"
+        },
+        {
+          "command": "abbenay.chat.settings",
+          "when": "view == abbenay.chatView",
+          "group": "navigation@3",
+          "icon": "$(gear)"
         }
       ]
     },

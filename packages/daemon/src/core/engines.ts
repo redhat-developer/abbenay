@@ -13,7 +13,7 @@
  */
 
 import { streamText, jsonSchema, tool, isStepCount, Output } from 'ai';
-import type { AssistantModelMessage, JSONSchema7, LanguageModel, ModelMessage, ToolSet } from 'ai';
+import type { AssistantModelMessage, FilePart, JSONSchema7, LanguageModel, ModelMessage, TextPart, ToolSet } from 'ai';
 
 /** Unified AI SDK reasoning effort levels (DR-042). */
 export type ReasoningLevel =
@@ -932,9 +932,47 @@ async function fetchGeminiModels(
 export interface ChatMessage {
   role: string;
   content: string;
+  contentParts?: ChatContentPart[];
   name?: string;
   tool_call_id?: string;
   tool_calls?: unknown[];
+}
+
+/** Inline multimodal content carried from a transport client. */
+export interface ChatContentPart {
+  type: string;
+  text?: string;
+  mimeType?: string;
+  data?: Uint8Array;
+  uri?: string;
+}
+
+function normalizeContentPartData(data: unknown): Uint8Array | undefined {
+  if (typeof data === 'string') {
+    return Uint8Array.from(Buffer.from(data, 'base64'));
+  }
+  if (data instanceof Uint8Array) {
+    return data;
+  }
+  if (data && typeof data === 'object') {
+    const persistedBuffer = data as { type?: unknown; data?: unknown };
+    if (persistedBuffer.type === 'Buffer' && Array.isArray(persistedBuffer.data)) {
+      return Uint8Array.from(persistedBuffer.data.filter((value): value is number => typeof value === 'number'));
+    }
+    return Uint8Array.from(Object.values(data as Record<string, number>));
+  }
+  return undefined;
+}
+
+/** Convert persisted JSON/base64 values back into transport-ready bytes. */
+export function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    contentParts: message.contentParts?.map((part) => ({
+      ...part,
+      data: normalizeContentPartData(part.data),
+    })),
+  }));
 }
 
 export async function* streamChat(
@@ -1230,7 +1268,7 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
         return { role: 'user' as const, content: m.content };
 
       case 'user':
-        return { role: 'user' as const, content: m.content };
+        return { role: 'user' as const, content: toUserContent(m) };
 
       case 'assistant': {
         const parts: AssistantModelMessage['content'] = [];
@@ -1274,4 +1312,31 @@ function convertMessages(messages: ChatMessage[]): ModelMessage[] {
         return { role: 'user' as const, content: m.content };
     }
   });
+}
+
+function toUserContent(message: ChatMessage): string | Array<TextPart | FilePart> {
+  if (!message.contentParts || message.contentParts.length === 0) {
+    return message.content;
+  }
+
+  const parts: Array<TextPart | FilePart> = [];
+  if (message.content) {
+    parts.push({ type: 'text', text: message.content });
+  }
+
+  for (const part of message.contentParts) {
+    if (part.type === 'text') {
+      if (part.text) parts.push({ type: 'text', text: part.text });
+      continue;
+    }
+    if ((part.type === 'image' || part.type === 'file') && (part.data || part.uri)) {
+      parts.push({
+        type: 'file',
+        data: part.data ?? part.uri!,
+        mediaType: part.mimeType || 'application/octet-stream',
+      });
+    }
+  }
+
+  return parts.length > 0 ? parts : message.content;
 }

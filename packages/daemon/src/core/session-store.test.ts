@@ -141,6 +141,24 @@ describe('SessionStore.get', () => {
     expect(session.messages).toEqual([]);
   });
 
+  it('does not decode persisted payloads while returning the empty-message view', async () => {
+    const created = await store.create('openai/gpt-4o');
+    const filePath = path.join(tmpDir, `${created.id}.json`);
+
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { messages: Array<{ contentParts: Array<{ data: string }> }> };
+    raw.messages = [{
+      role: 'user',
+      content: 'Describe this image',
+      contentParts: [{ type: 'image', mimeType: 'image/png', data: Buffer.from([1, 2, 3]).toString('base64') }],
+    }];
+    fs.writeFileSync(filePath, JSON.stringify(raw));
+
+    const session = await store.get(created.id, false);
+    expect(session.messages).toEqual([]);
+    const persisted = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { messages: Array<{ contentParts: Array<{ data: string }> }> };
+    expect(persisted.messages[0].contentParts[0].data).toBe(Buffer.from([1, 2, 3]).toString('base64'));
+  });
+
   it('throws for invalid ID', async () => {
     await expect(store.get('nonexistent-id')).rejects.toThrow('Invalid session ID');
   });
@@ -258,6 +276,38 @@ describe('SessionStore.appendMessage', () => {
     const loaded = await store.get(session.id);
     expect(loaded.messages[0].tool_calls).toBeDefined();
     expect(loaded.messages[1].tool_call_id).toBe('call_1');
+  });
+
+  it('restores persisted multimodal bytes when loading a session', async () => {
+    const session = await store.create('openai/gpt-4o');
+    const encoded = Buffer.from([1, 2, 3]).toString('base64');
+    await store.appendMessage(session.id, {
+      role: 'user',
+      content: 'Describe this image',
+      contentParts: [{ type: 'image', mimeType: 'image/png', data: Uint8Array.from([1, 2, 3]) }],
+    });
+
+    const filePath = path.join(tmpDir, `${session.id}.json`);
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { messages: Array<{ contentParts: Array<{ data: string }> }> };
+    raw.messages[0].contentParts[0].data = encoded;
+    fs.writeFileSync(filePath, JSON.stringify(raw));
+
+    const loaded = await store.get(session.id);
+    expect(loaded.messages[0].contentParts?.[0].data).toEqual(Uint8Array.from([1, 2, 3]));
+  });
+
+  it('round-trips Buffer image data through the session file', async () => {
+    const session = await store.create('openai/gpt-4o');
+    const bytes = Buffer.from([4, 5, 6]);
+
+    await store.appendMessage(session.id, {
+      role: 'user',
+      content: 'Describe this image',
+      contentParts: [{ type: 'image', mimeType: 'image/png', data: bytes }],
+    });
+
+    const loaded = await store.get(session.id);
+    expect(loaded.messages[0]?.contentParts?.[0]?.data).toEqual(Uint8Array.from(bytes));
   });
 });
 

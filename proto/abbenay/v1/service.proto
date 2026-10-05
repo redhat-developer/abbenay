@@ -453,10 +453,12 @@ message ChatOptions {
   repeated string tool_filter = 7;      // Only use these tools (empty = all)
   optional int32 top_k = 8;            // Top-k sampling
   optional int32 timeout = 9;          // Request timeout in ms
-  optional string tool_mode = 10;      // "auto" (default) | "passthrough" | "none"
-                                        //   auto: daemon owns tool loop, executes tools
-                                        //   passthrough: stream tool_call chunks to caller, no execution
-                                        //   none: no tools sent to LLM
+  // "auto" (default) | "passthrough" | "none"
+  // auto: daemon owns tool loop, executes tools
+  // passthrough: stream tool_call chunks to caller, no execution
+  // none: no tools sent to LLM
+  optional string tool_mode = 10;
+  optional string reasoning = 11;      // provider-defined reasoning effort override
 }
 
 message ChatChunk {
@@ -520,6 +522,7 @@ message Message {
   repeated ToolCall tool_calls = 3;     // For assistant messages
   string tool_call_id = 4;              // For tool messages
   string name = 5;                      // Optional name
+  repeated ToolContent content_parts = 6; // Multimodal user content
 }
 
 enum Role {
@@ -735,6 +738,7 @@ message ModelParams {
   optional string system_prompt_mode = 5; // "prepend" | "replace"
   optional int32 top_k = 6;
   optional int32 timeout = 7;           // Request timeout in ms
+  optional string reasoning = 8;         // Configured reasoning effort default
 }
 
 message ModelCapabilities {
@@ -872,6 +876,9 @@ message ModelParamConfig {
   optional int32 top_k = 7;
   optional int32 max_tokens = 8;
   optional int32 timeout = 9;           // Request timeout in ms
+  optional bool supports_vision = 10;    // Explicit image-input capability override
+  optional string reasoning = 11;        // Configured reasoning effort default
+  optional string openai_compat_tools = 12; // Per-model OpenAI-compatible tools mode
 }
 
 message McpServerConfigMsg {
