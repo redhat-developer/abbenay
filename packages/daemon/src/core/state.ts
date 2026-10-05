@@ -640,7 +640,15 @@ export class CoreState {
     }
 
     const enabledModels = providerCfg.models;
-    if (enabledModels && Object.keys(enabledModels).length > 0 && !enabledModels[modelName]) {
+    const matchesEngineModelId = Object.entries(enabledModels || {}).some(
+      ([name, cfg]) => resolveEngineModelId(name, cfg) === modelName,
+    );
+    if (
+      enabledModels
+      && Object.keys(enabledModels).length > 0
+      && !enabledModels[modelName]
+      && !matchesEngineModelId
+    ) {
       console.error(`[State] Model not enabled in config: ${compositeModelId}`);
       yield {
         type: 'error',

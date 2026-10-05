@@ -121,6 +121,7 @@ interface MockStateOptions {
     config?: { transport?: string; enabled?: boolean };
   }>;
   throwOnListProviders?: boolean;
+  listProvidersSpy?: (workspacePaths: string[]) => void;
 }
 
 function createMockState(opts: MockStateOptions): DaemonState {
@@ -143,6 +144,7 @@ function createMockState(opts: MockStateOptions): DaemonState {
     toolRegistryTools = [],
     mcpPoolStatuses = [],
     throwOnListProviders = false,
+    listProvidersSpy,
   } = opts;
 
   let running = mcpRunning;
@@ -162,8 +164,9 @@ function createMockState(opts: MockStateOptions): DaemonState {
     },
     notifyModelsChanged() {},
     async refreshMcpConnections() {},
-    async listProviders() {
+    async listProviders(workspacePaths: string[] = []) {
       if (throwOnListProviders) throw new Error('provider list failed');
+      listProvidersSpy?.(workspacePaths);
       return providers;
     },
     async listModels() { return models; },
@@ -521,6 +524,24 @@ describe('createWebApp routes', () => {
     const res = await httpRequest(baseUrl, 'GET', '/api/providers');
     expect(res.statusCode).toBe(200);
     expect((res.body as { providers: ProviderInfo[] }).providers[0].id).toBe('openai');
+  });
+
+  it('GET /api/providers passes workspace query to listProviders', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-providers-ws-'));
+    const workspacePaths: string[][] = [];
+    const state = createMockState({
+      sessionsDir: dir,
+      listProvidersSpy: (paths) => { workspacePaths.push([...paths]); },
+    });
+    const started = await startTestApp(state);
+    try {
+      const res = await httpRequest(started.baseUrl, 'GET', '/api/providers?workspace=%2Ftmp%2Fmy-ws');
+      expect(res.statusCode).toBe(200);
+      expect(workspacePaths).toEqual([['/tmp/my-ws']]);
+    } finally {
+      await stopTestApp(started.httpServer);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('GET /api/models returns model list', async () => {

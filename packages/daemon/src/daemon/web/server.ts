@@ -671,7 +671,9 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
    */
   app.get('/api/providers', async (req, res) => {
     try {
-      const providers = await state.listProviders();
+      const workspace = req.query.workspace as string | undefined;
+      const workspacePaths = workspace ? [workspace] : [];
+      const providers = await state.listProviders(workspacePaths);
       res.json({
         providers: providers.map((p) => ({
           id: p.id,

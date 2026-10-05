@@ -1842,10 +1842,11 @@ function dashboard() {
         const loc = this.getConfigLocation();
         const wsParam = this.workspacePath ? `?workspace=${encodeURIComponent(this.workspacePath)}` : '';
         const modelsUrl = (loc === 'all' || loc !== 'user') ? `/api/models${wsParam}` : '/api/models';
+        const providersUrl = (loc === 'all' || loc !== 'user') ? `/api/providers${wsParam}` : '/api/providers';
         const [statusRes, modelsRes, providersRes] = await Promise.all([
           apiFetch('/api/status'),
           apiFetch(modelsUrl),
-          apiFetch('/api/providers'),
+          apiFetch(providersUrl),
         ]);
         this.status = await statusRes.json();
         const modelsData = await modelsRes.json();

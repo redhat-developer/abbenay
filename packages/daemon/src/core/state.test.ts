@@ -557,6 +557,22 @@ describe('CoreState.chat', () => {
     expect(chunks.some((c) => c.type === 'error' && c.error?.includes('not enabled'))).toBe(true);
   });
 
+  it('allows chat when modelName matches a configured model_id alias', async () => {
+    const core = createCore({
+      config: {
+        providers: {
+          'my-mock': {
+            engine: 'mock',
+            models: { 'claude-precise': { model_id: 'echo' } },
+          },
+        },
+      },
+    });
+    const chunks = await collectChat(core, 'my-mock/echo');
+    expect(chunks.some((c) => c.type === 'error' && c.error?.includes('not enabled'))).toBe(false);
+    expect(mockStreamChat).toHaveBeenCalled();
+  });
+
   it('errors when provider or api key missing', async () => {
     const core = createCore({ config: mockProviderConfig });
     const missingProvider = await collectChat(core, 'missing/echo');
