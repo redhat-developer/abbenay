@@ -382,7 +382,7 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
    */
   app.get('/v1/models', async (_req: Request, res: Response) => {
     try {
-      const models = await state.listModels();
+      const models = (await state.listModels()).filter((m) => m.available !== false);
       res.json({
         object: 'list',
         data: models.map(mapModelToOpenAI),

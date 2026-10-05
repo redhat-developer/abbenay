@@ -96,6 +96,46 @@ export interface ModelInfo {
   };
   /** Per-model parameter overrides from config */
   params?: ModelConfig;
+  /** False when config exists but credentials cannot be resolved at runtime */
+  available?: boolean;
+  /** Human-readable reason when available is false */
+  unavailableReason?: string;
+}
+
+/** Models that can be selected for chat / OpenAI-compatible listing */
+export function isModelUsable(model: ModelInfo): boolean {
+  return model.available !== false;
+}
+
+/**
+ * Explain why a provider's API key could not be resolved (for UI and listModels).
+ */
+export function credentialUnavailableReason(
+  providerCfg: ProviderConfig,
+  engineInfo: { defaultEnvVar?: string },
+): string {
+  const source = providerCredentialSource(providerCfg);
+  if (source?.kind === 'env') {
+    return (
+      `Environment variable "${source.name}" is not set in the daemon process. ` +
+      'Set it in the shell before starting the daemon, or use Keychain/File and enter the key in the provider wizard.'
+    );
+  }
+  if (source?.kind === 'store') {
+    const storeLabel =
+      source.backend === 'file' ? 'file secrets' : source.backend === 'memory' ? 'memory' : 'keychain';
+    return (
+      `API key "${source.name}" is not available in ${storeLabel}. ` +
+      'Re-enter the API key in the provider settings, or fix secret storage.'
+    );
+  }
+  if (engineInfo.defaultEnvVar) {
+    return (
+      `No API key found (expected env "${engineInfo.defaultEnvVar}" or a saved secret). ` +
+      'Complete provider setup in the dashboard.'
+    );
+  }
+  return 'No API key available for this provider. Add credentials via the provider wizard.';
 }
 
 // ── Chat tool options ──────────────────────────────────────────────────
@@ -468,15 +508,15 @@ export class CoreState {
       }
 
       const apiKey = await this.resolveApiKey(providerId, providerCfg);
-      if (engineInfo.requiresKey && !apiKey) {
-        continue;
-      }
+      const keyMissing = engineInfo.requiresKey && !apiKey;
 
       let discoveredModels: DiscoveredModel[] = [];
-      try {
-        discoveredModels = await fetchModels(providerCfg.engine, apiKey || undefined, providerCfg.base_url);
-      } catch (error) {
-        console.error(`[State] Failed to fetch models for provider ${providerId}:`, error);
+      if (!keyMissing) {
+        try {
+          discoveredModels = await fetchModels(providerCfg.engine, apiKey || undefined, providerCfg.base_url);
+        } catch (error) {
+          console.error(`[State] Failed to fetch models for provider ${providerId}:`, error);
+        }
       }
 
       const discoveryMap = new Map<string, DiscoveredModel>();
@@ -508,6 +548,10 @@ export class CoreState {
           contextWindow: discovered?.contextWindow || 0,
           capabilities,
           params: Object.keys(modelCfg).length > 0 ? modelCfg : undefined,
+          available: !keyMissing,
+          unavailableReason: keyMissing
+            ? credentialUnavailableReason(providerCfg, engineInfo)
+            : undefined,
         });
       }
     }
@@ -591,6 +635,25 @@ export class CoreState {
     if (!engineInfo) {
       console.error(`[State] Unknown engine "${providerCfg.engine}" for provider "${providerId}"`);
       yield { type: 'error', error: `Unknown engine "${providerCfg.engine}" for provider "${providerId}"` };
+      yield { type: 'done', finishReason: 'error' };
+      return;
+    }
+
+    const enabledModels = providerCfg.models;
+    const matchesEngineModelId = Object.entries(enabledModels || {}).some(
+      ([name, cfg]) => resolveEngineModelId(name, cfg) === modelName,
+    );
+    if (
+      enabledModels
+      && Object.keys(enabledModels).length > 0
+      && !enabledModels[modelName]
+      && !matchesEngineModelId
+    ) {
+      console.error(`[State] Model not enabled in config: ${compositeModelId}`);
+      yield {
+        type: 'error',
+        error: `Model "${compositeModelId}" is not enabled. Add it in the provider settings or pick a listed model.`,
+      };
       yield { type: 'done', finishReason: 'error' };
       return;
     }

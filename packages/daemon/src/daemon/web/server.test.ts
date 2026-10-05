@@ -121,6 +121,7 @@ interface MockStateOptions {
     config?: { transport?: string; enabled?: boolean };
   }>;
   throwOnListProviders?: boolean;
+  listProvidersSpy?: (workspacePaths: string[]) => void;
 }
 
 function createMockState(opts: MockStateOptions): DaemonState {
@@ -143,6 +144,7 @@ function createMockState(opts: MockStateOptions): DaemonState {
     toolRegistryTools = [],
     mcpPoolStatuses = [],
     throwOnListProviders = false,
+    listProvidersSpy,
   } = opts;
 
   let running = mcpRunning;
@@ -162,8 +164,9 @@ function createMockState(opts: MockStateOptions): DaemonState {
     },
     notifyModelsChanged() {},
     async refreshMcpConnections() {},
-    async listProviders() {
+    async listProviders(workspacePaths: string[] = []) {
       if (throwOnListProviders) throw new Error('provider list failed');
+      listProvidersSpy?.(workspacePaths);
       return providers;
     },
     async listModels() { return models; },
@@ -523,10 +526,56 @@ describe('createWebApp routes', () => {
     expect((res.body as { providers: ProviderInfo[] }).providers[0].id).toBe('openai');
   });
 
+  it('GET /api/providers passes workspace query to listProviders', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-providers-ws-'));
+    const workspacePaths: string[][] = [];
+    const state = createMockState({
+      sessionsDir: dir,
+      listProvidersSpy: (paths) => { workspacePaths.push([...paths]); },
+    });
+    const started = await startTestApp(state);
+    try {
+      const res = await httpRequest(started.baseUrl, 'GET', '/api/providers?workspace=%2Ftmp%2Fmy-ws');
+      expect(res.statusCode).toBe(200);
+      expect(workspacePaths).toEqual([['/tmp/my-ws']]);
+    } finally {
+      await stopTestApp(started.httpServer);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('GET /api/models returns model list', async () => {
     const res = await httpRequest(baseUrl, 'GET', '/api/models');
     expect(res.statusCode).toBe(200);
     expect((res.body as { models: ModelInfo[] }).models[0].id).toBe('openai/gpt-4o');
+  });
+
+  it('GET /api/models exposes availability metadata for unavailable models', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-models-avail-'));
+    const state = createMockState({
+      sessionsDir: dir,
+      models: [{
+        id: 'or/m1',
+        name: 'm1',
+        engineModelId: 'm1',
+        provider: 'or',
+        engine: 'openrouter',
+        contextWindow: 0,
+        available: false,
+        unavailableReason: 'API key missing',
+      } as ModelInfo],
+    });
+    const started = await startTestApp(state);
+    try {
+      const res = await httpRequest(started.baseUrl, 'GET', '/api/models');
+      expect(res.statusCode).toBe(200);
+      const model = (res.body as { models: Array<{ available: boolean; unavailableReason?: string }> }).models[0];
+      expect(model.available).toBe(false);
+      expect(model.unavailableReason).toBe('API key missing');
+    } finally {
+      await stopTestApp(started.httpServer);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('GET /api/workspaces falls back to client workspace paths', async () => {

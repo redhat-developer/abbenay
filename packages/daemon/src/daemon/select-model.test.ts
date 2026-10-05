@@ -74,7 +74,30 @@ describe('selectModel', () => {
     expect(result!.model).toBe('anthropic/claude-sonnet');
     expect(result!.state).toBeDefined();
     expect(result!.state.listModels).toBeDefined();
-    expect(promptModelPicker).toHaveBeenCalledWith(models, expect.anything());
+    expect(promptModelPicker).toHaveBeenCalledWith(
+      models.filter((m) => (m as { available?: boolean }).available !== false),
+      expect.anything(),
+    );
+  });
+
+  it('returns null when saved models exist but none are usable', async () => {
+    const models = [
+      { id: 'openrouter/m1', name: 'm1', provider: 'openrouter', available: false },
+    ];
+    const { DaemonState } = await import('./state.js');
+    vi.mocked(DaemonState).mockImplementation(function () {
+      return mockDaemonState(models);
+    });
+
+    const { promptModelPicker } = await import('./chat.js');
+    const { selectModel } = await import('./model-picker.js');
+    const result = await selectModel();
+
+    expect(result).toBeNull();
+    expect(promptModelPicker).not.toHaveBeenCalled();
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join('');
+    expect(output).toContain('No usable models');
+    expect(output).toContain('API keys are missing');
   });
 
   it('returns null when user cancels the picker (Ctrl+C)', async () => {

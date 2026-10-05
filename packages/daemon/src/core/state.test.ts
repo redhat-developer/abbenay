@@ -23,7 +23,11 @@ vi.mock('./engines.js', async (importOriginal) => {
   };
 });
 
-import { CoreState } from './state.js';
+import {
+  CoreState,
+  credentialUnavailableReason,
+  isModelUsable,
+} from './state.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -405,12 +409,68 @@ describe('CoreState.listEngines', () => {
   });
 });
 
+describe('credentialUnavailableReason', () => {
+  it('describes missing env credentials', () => {
+    const msg = credentialUnavailableReason(
+      { engine: 'openrouter', secret_store: 'env', api_key_env_var_name: 'OR_KEY', models: {} },
+      { defaultEnvVar: 'OPENROUTER_API_KEY' },
+    );
+    expect(msg).toContain('OR_KEY');
+    expect(msg).toContain('daemon process');
+  });
+
+  it('describes missing store credentials per backend', () => {
+    expect(
+      credentialUnavailableReason(
+        { engine: 'openrouter', secret_store: 'keychain', secret_name: 'K', models: {} },
+        {},
+      ),
+    ).toMatch(/keychain/i);
+
+    expect(
+      credentialUnavailableReason(
+        { engine: 'openrouter', secret_store: 'file', secret_name: 'F', models: {} },
+        {},
+      ),
+    ).toMatch(/file secrets/i);
+
+    expect(
+      credentialUnavailableReason(
+        { engine: 'openrouter', secret_store: 'memory', secret_name: 'M', models: {} },
+        {},
+      ),
+    ).toMatch(/memory/i);
+  });
+
+  it('falls back to engine default env or generic message', () => {
+    expect(
+      credentialUnavailableReason({ engine: 'openrouter', models: {} }, { defaultEnvVar: 'OPENROUTER_API_KEY' }),
+    ).toContain('OPENROUTER_API_KEY');
+
+    expect(credentialUnavailableReason({ engine: 'mock', models: {} }, {})).toContain('provider wizard');
+  });
+});
+
+describe('isModelUsable', () => {
+  it('treats undefined available as usable', () => {
+    expect(isModelUsable({ id: 'p/m', name: 'm', engineModelId: 'm', provider: 'p', engine: 'mock', contextWindow: 0 })).toBe(true);
+  });
+
+  it('rejects explicitly unavailable models', () => {
+    expect(isModelUsable({
+      id: 'p/m', name: 'm', engineModelId: 'm', provider: 'p', engine: 'mock', contextWindow: 0, available: false,
+    })).toBe(false);
+  });
+});
+
 describe('CoreState.listModels', () => {
   it('returns composite model ids for configured mock provider', async () => {
     const core = createCore({ config: mockProviderConfig });
     const models = await core.listModels();
-    expect(models.map((m) => m.id).sort()).toEqual(['my-mock/echo', 'my-mock/fixed']);
-    expect(models[0].engineModelId).toBeDefined();
+    const mockModels = models.filter((m) => m.provider === 'my-mock');
+    expect(mockModels.map((m) => m.id).sort()).toEqual(['my-mock/echo', 'my-mock/fixed']);
+    expect(mockModels[0].engineModelId).toBeDefined();
+    expect(mockModels.every((m) => m.available !== false)).toBe(true);
   });
 
   it('applies an explicit vision capability override', async () => {
@@ -429,10 +489,17 @@ describe('CoreState.listModels', () => {
     expect(models.find((model) => model.id === 'my-mock/vision')?.capabilities.supportsVision).toBe(true);
   });
 
-  it('skips providers without keys when engine requires key', async () => {
+  it('lists saved models as unavailable when engine requires key but key is missing', async () => {
+    mockFetchModels.mockClear();
     const core = createCore({ config: mockProviderConfig });
     const models = await core.listModels();
-    expect(models.every((m) => m.provider !== 'openrouter')).toBe(true);
+    const orModels = models.filter((m) => m.provider === 'openrouter');
+    expect(orModels.length).toBeGreaterThan(0);
+    expect(orModels.every((m) => m.available === false)).toBe(true);
+    expect(orModels[0].unavailableReason).toMatch(/keychain|API key/i);
+    // fetchModels should have been called for mock (no key needed) but NOT for openrouter
+    const calls = mockFetchModels.mock.calls;
+    expect(calls.every((c: unknown[]) => c[0] !== 'openrouter')).toBe(true);
   });
 
   it('continues when fetchModels throws for one provider', async () => {
@@ -482,6 +549,28 @@ describe('CoreState.chat', () => {
     const chunks = await collectChat(core, 'no-slash-id');
     expect(chunks.some((c) => c.type === 'error')).toBe(true);
     expect(chunks.at(-1)?.finishReason).toBe('error');
+  });
+
+  it('errors when model is not in the provider enabled list', async () => {
+    const core = createCore({ config: mockProviderConfig });
+    const chunks = await collectChat(core, 'my-mock/not-in-config');
+    expect(chunks.some((c) => c.type === 'error' && c.error?.includes('not enabled'))).toBe(true);
+  });
+
+  it('allows chat when modelName matches a configured model_id alias', async () => {
+    const core = createCore({
+      config: {
+        providers: {
+          'my-mock': {
+            engine: 'mock',
+            models: { 'claude-precise': { model_id: 'echo' } },
+          },
+        },
+      },
+    });
+    const chunks = await collectChat(core, 'my-mock/echo');
+    expect(chunks.some((c) => c.type === 'error' && c.error?.includes('not enabled'))).toBe(false);
+    expect(mockStreamChat).toHaveBeenCalled();
   });
 
   it('errors when provider or api key missing', async () => {

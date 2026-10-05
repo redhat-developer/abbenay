@@ -187,6 +187,16 @@ describe('HTTP auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rejects unauthenticated GET /api/models', async () => {
+    const res = await httpRequest('GET', '/api/models', { token: null });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects unauthenticated GET /api/providers', async () => {
+    const res = await httpRequest('GET', '/api/providers', { token: null });
+    expect(res.statusCode).toBe(401);
+  });
+
   it('rejects unauthenticated POST /mcp', async () => {
     const res = await httpRequest('POST', '/mcp', {
       token: null,

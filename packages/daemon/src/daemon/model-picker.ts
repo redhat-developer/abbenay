@@ -26,10 +26,18 @@ export async function selectModel(): Promise<ModelPickerResult | null> {
   }
 
   const models = await state.listModels();
-  if (models.length === 0) {
-    console.error(
-      `${YELLOW}No models configured.${RESET} Run: ${DIM}aby start${RESET} -> open the web UI to add a provider.`,
-    );
+  const usable = models.filter((m) => m.available !== false);
+  if (usable.length === 0) {
+    if (models.length > 0) {
+      console.error(
+        `${YELLOW}No usable models — saved models exist but API keys are missing in the daemon.${RESET} ` +
+          `Open the web UI to fix provider credentials.`,
+      );
+    } else {
+      console.error(
+        `${YELLOW}No models configured.${RESET} Run: ${DIM}aby start${RESET} -> open the web UI to add a provider.`,
+      );
+    }
     return null;
   }
 
@@ -40,7 +48,7 @@ export async function selectModel(): Promise<ModelPickerResult | null> {
   });
 
   try {
-    const model = await promptModelPicker(models, rl);
+    const model = await promptModelPicker(usable, rl);
     if (!model) return null;
     return { model, state };
   } finally {

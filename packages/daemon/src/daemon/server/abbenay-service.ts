@@ -644,8 +644,9 @@ export function createAbbenayService(
     ): void {
       const workspacePaths = call.request.workspace_paths || call.request.workspacePaths || [];
       state.listModels(workspacePaths).then((models) => {
+        const usable = models.filter((m) => m.available !== false);
         callback(null, {
-          models: models.map((m) => ({
+          models: usable.map((m) => ({
             id: m.id,
             name: m.name,
             engine_model_id: m.engineModelId,

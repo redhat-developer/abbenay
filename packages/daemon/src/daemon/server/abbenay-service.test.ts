@@ -801,6 +801,36 @@ describe('createAbbenayService handlers', () => {
     expect(response?.workspaces).toEqual(['/ws/a']);
   });
 
+  it('ListModels omits models that are not usable at runtime', async () => {
+    const state = createMockState({
+      listModels: vi.fn().mockResolvedValue([
+        {
+          id: 'mock/echo',
+          name: 'echo',
+          engineModelId: 'echo',
+          provider: 'mock',
+          engine: 'mock',
+          contextWindow: 8192,
+          available: true,
+        },
+        {
+          id: 'or/missing-key',
+          name: 'missing-key',
+          engineModelId: 'missing-key',
+          provider: 'or',
+          engine: 'openrouter',
+          contextWindow: 0,
+          available: false,
+          unavailableReason: 'API key missing',
+        },
+      ]),
+    });
+    const service = createServiceHandlers(state);
+    const models = await invokeUnary(service.ListModels, {});
+    const ids = rpcArray<{ id?: string }>(models.response, 'models').map((m) => m.id);
+    expect(ids).toEqual(['mock/echo']);
+  });
+
   it('ListProviders and ListModels map response fields', async () => {
     const state = createMockState({
       listModels: vi.fn().mockResolvedValue([{
