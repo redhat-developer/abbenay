@@ -119,6 +119,8 @@
     .status-tag { display: inline-block; padding: 2px 8px; font-size: 12px; font-weight: 500; border-radius: 3px; }
     .status-tag.configured { background: #e7f1e4; color: #1e4f18; border: 1px solid #3e8635; }
     .status-tag.not-configured { background: #f0f0f0; color: #151515; border: 1px solid #d2d2d2; }
+    tr.model-unavailable td { color: #6a6e73; background: #fafafa; }
+    .model-unavailable-tag { background: #fdf7e7; color: #795600; border: 1px solid #f4c145; font-size: 0.75rem; padding: 2px 8px; border-radius: 3px; }
     .status-tag.key-missing { background: #fdf7e7; color: #795600; border: 1px solid #f0ab00; }
     .engine-badge { display: inline-block; padding: 1px 6px; font-size: 11px; font-weight: 500; border-radius: 3px; background: #e7f1fa; color: #0066cc; border: 1px solid #b8daff; }
     .source-pill { display: inline-block; padding: 1px 6px; font-size: 10px; font-weight: 500; border-radius: 3px; }
@@ -483,6 +485,11 @@
           <template x-if="models.length === 0">
             <div class="empty-state"><p>No models enabled. Add a provider and select models.</p></div>
           </template>
+          <template x-if="models.length > 0 && usableModels.length === 0">
+            <div class="empty-state" style="margin-bottom: 12px; background: #fdf7e7; border: 1px solid #f4c145;">
+              <p><strong>Saved models cannot be used yet.</strong> API keys are not available to the daemon. Fix credentials on the Providers tab (re-enter key, or set the env var and restart the daemon).</p>
+            </div>
+          </template>
           <template x-if="models.length > 0">
             <table style="width: 100%; border-collapse: collapse; background: #fff; border-radius: 3px;">
               <thead>
@@ -490,6 +497,7 @@
                   <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Composite ID</th>
                   <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Provider</th>
                   <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Engine</th>
+                  <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Status</th>
                   <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Params</th>
                   <th style="text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid #d2d2d2;">Capabilities</th>
                   <th style="width: 48px; padding: 0.75rem 0.5rem; border-bottom: 1px solid #d2d2d2;"></th>
@@ -497,10 +505,17 @@
               </thead>
               <tbody>
                 <template x-for="model in models" :key="model.id">
-                  <tr style="border-bottom: 1px solid #f0f0f0;">
+                  <tr style="border-bottom: 1px solid #f0f0f0;" :class="{ 'model-unavailable': model.available === false }">
                     <td style="padding: 0.5rem 1rem; font-family: 'Red Hat Mono', monospace; font-size: 0.8rem;" x-text="model.id"></td>
                     <td style="padding: 0.5rem 1rem;" x-text="model.provider"></td>
                     <td style="padding: 0.5rem 1rem;"><span class="engine-badge" x-text="model.engine"></span></td>
+                    <td style="padding: 0.5rem 1rem; font-size: 0.8rem;">
+                      <template x-if="model.available !== false"><span class="status-tag configured">Ready</span></template>
+                      <template x-if="model.available === false">
+                        <span class="model-unavailable-tag" :title="model.unavailableReason || ''">Unavailable</span>
+                        <div style="font-size: 0.75rem; color: #795600; margin-top: 4px; max-width: 28rem;" x-text="model.unavailableReason"></div>
+                      </template>
+                    </td>
                     <td style="padding: 0.5rem 1rem; font-size: 0.8rem; color: #6a6e73;" x-text="formatParams(model.params)"></td>
                     <td style="padding: 0.5rem 1rem;">
                       <span x-show="model.capabilities?.tools" class="cap-tag tools">Tools</span>
@@ -527,7 +542,7 @@
               <label>Model</label>
               <select x-model="selectedModel">
                 <option value="">Select a model...</option>
-                <template x-for="model in models" :key="model.id">
+                <template x-for="model in usableModels" :key="model.id">
                   <option :value="model.id" x-text="model.id"></option>
                 </template>
               </select>
@@ -537,8 +552,8 @@
           <div class="chat-container" id="chat-messages">
             <template x-if="chatMessages.length === 0">
               <div class="empty-state">
-                <template x-if="models.length === 0"><p>Enable some models first, then start chatting!</p></template>
-                <template x-if="models.length > 0"><p>Select a model and start chatting!</p></template>
+                <template x-if="usableModels.length === 0"><p>Enable some models first, then start chatting!</p></template>
+                <template x-if="usableModels.length > 0"><p>Select a model and start chatting!</p></template>
               </div>
             </template>
             <template x-for="(msg, i) in chatMessages" :key="i">
@@ -998,6 +1013,7 @@
                     <label>Environment Variable</label>
                     <input type="text" x-model="wizardEnvVar" :placeholder="getEngineDefaultEnvVar(wizardEngine)">
                   </div>
+                  <p class="rh-helper-text" style="margin-top: -8px;">Only the variable name is saved in config. The variable must already be set in the environment of the process that starts the Abbenay daemon (then restart the daemon after exporting it).</p>
                 </template>
               </div>
             </template>
@@ -1605,6 +1621,7 @@ function dashboard() {
     status: {},
     engines: [],
     models: [],
+    providerRuntime: {},  // providerId -> { configured, requiresKey, ... } from GET /api/providers
     providerConfig: {},  // Full config: { providerId: { engine, models: {...}, ... } }
     
     // Config location
@@ -1825,28 +1842,53 @@ function dashboard() {
         const loc = this.getConfigLocation();
         const wsParam = this.workspacePath ? `?workspace=${encodeURIComponent(this.workspacePath)}` : '';
         const modelsUrl = (loc === 'all' || loc !== 'user') ? `/api/models${wsParam}` : '/api/models';
-        const [statusRes, modelsRes] = await Promise.all([apiFetch('/api/status'), fetch(modelsUrl)]);
+        const [statusRes, modelsRes, providersRes] = await Promise.all([
+          apiFetch('/api/status'),
+          apiFetch(modelsUrl),
+          apiFetch('/api/providers'),
+        ]);
         this.status = await statusRes.json();
         const modelsData = await modelsRes.json();
         this.models = modelsData.models || [];
+        const providersData = await providersRes.json();
+        const runtime = {};
+        for (const p of providersData.providers || []) runtime[p.id] = p;
+        this.providerRuntime = runtime;
       } catch (e) { console.error('Refresh failed:', e); }
       this.loading = false;
+    },
+
+    get usableModels() {
+      return this.models.filter((m) => m.available !== false);
     },
     
     // ── Provider status helpers ──
     getProviderStatus(provId) {
       const cfg = this.providerConfig[provId];
       if (!cfg) return 'not-configured';
+      const runtime = this.providerRuntime[provId];
+      if (runtime) {
+        if (!runtime.requiresKey) return 'configured';
+        return runtime.configured ? 'configured' : 'key-missing';
+      }
       const engine = this.engines.find(e => e.id === cfg.engine);
       if (engine && !engine.requiresKey) return 'configured';
-      if (cfg.secret_name || cfg.api_key_keychain_name || cfg.api_key_env_var_name) return 'configured';
-      return 'key-missing';
+      if (cfg.secret_name || cfg.api_key_keychain_name || cfg.api_key_env_var_name) return 'key-missing';
+      return 'not-configured';
     },
     getProviderStatusText(provId) {
       const s = this.getProviderStatus(provId);
       if (s === 'configured') return 'Ready';
-      if (s === 'key-missing') return 'Key missing';
+      if (s === 'key-missing') return 'Key unavailable';
       return 'Not configured';
+    },
+    buildCredentialWarning(provId) {
+      const cfg = this.providerConfig[provId] || {};
+      if (cfg.secret_store === 'env' || cfg.api_key_env_var_name) {
+        const envName = cfg.api_key_env_var_name || cfg.secret_name || this.getEngineDefaultEnvVar(cfg.engine);
+        return `Configuration saved, but the daemon cannot use this provider yet: environment variable "${envName}" is not set in the daemon process. Export it before starting the daemon, or switch to Keychain/File and enter the key here.`;
+      }
+      return 'Configuration saved, but the daemon cannot read the API key from secret storage. Re-enter the API key and save again, or check keychain/file permissions.';
     },
     
     // ── Engine helpers ──
@@ -2098,6 +2140,11 @@ function dashboard() {
         return;
       }
       await this.refresh();
+      const runtime = this.providerRuntime[name];
+      if (this.engineRequiresKey(this.wizardEngine) && (!runtime || !runtime.configured)) {
+        this.wizardError = this.buildCredentialWarning(name);
+        return;
+      }
       this.wizardOpen = false;
     },
     

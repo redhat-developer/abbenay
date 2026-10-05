@@ -819,6 +819,8 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
             vision: m.capabilities?.supportsVision || false,
           },
           params: m.params,
+          available: m.available !== false,
+          unavailableReason: m.unavailableReason,
         })),
       });
     } catch (err: unknown) {
