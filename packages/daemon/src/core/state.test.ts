@@ -23,7 +23,11 @@ vi.mock('./engines.js', async (importOriginal) => {
   };
 });
 
-import { CoreState } from './state.js';
+import {
+  CoreState,
+  credentialUnavailableReason,
+  isModelUsable,
+} from './state.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -402,6 +406,60 @@ describe('CoreState.listEngines', () => {
     const engines = core.listEngines();
     expect(engines.some((e) => e.id === 'mock')).toBe(true);
     expect(engines.some((e) => e.id === 'openai')).toBe(true);
+  });
+});
+
+describe('credentialUnavailableReason', () => {
+  it('describes missing env credentials', () => {
+    const msg = credentialUnavailableReason(
+      { engine: 'openrouter', secret_store: 'env', api_key_env_var_name: 'OR_KEY', models: {} },
+      { defaultEnvVar: 'OPENROUTER_API_KEY' },
+    );
+    expect(msg).toContain('OR_KEY');
+    expect(msg).toContain('daemon process');
+  });
+
+  it('describes missing store credentials per backend', () => {
+    expect(
+      credentialUnavailableReason(
+        { engine: 'openrouter', secret_store: 'keychain', secret_name: 'K', models: {} },
+        {},
+      ),
+    ).toMatch(/keychain/i);
+
+    expect(
+      credentialUnavailableReason(
+        { engine: 'openrouter', secret_store: 'file', secret_name: 'F', models: {} },
+        {},
+      ),
+    ).toMatch(/file secrets/i);
+
+    expect(
+      credentialUnavailableReason(
+        { engine: 'openrouter', secret_store: 'memory', secret_name: 'M', models: {} },
+        {},
+      ),
+    ).toMatch(/memory/i);
+  });
+
+  it('falls back to engine default env or generic message', () => {
+    expect(
+      credentialUnavailableReason({ engine: 'openrouter', models: {} }, { defaultEnvVar: 'OPENROUTER_API_KEY' }),
+    ).toContain('OPENROUTER_API_KEY');
+
+    expect(credentialUnavailableReason({ engine: 'mock', models: {} }, {})).toContain('provider wizard');
+  });
+});
+
+describe('isModelUsable', () => {
+  it('treats undefined available as usable', () => {
+    expect(isModelUsable({ id: 'p/m', name: 'm', engineModelId: 'm', provider: 'p', engine: 'mock', contextWindow: 0 })).toBe(true);
+  });
+
+  it('rejects explicitly unavailable models', () => {
+    expect(isModelUsable({
+      id: 'p/m', name: 'm', engineModelId: 'm', provider: 'p', engine: 'mock', contextWindow: 0, available: false,
+    })).toBe(false);
   });
 });
 

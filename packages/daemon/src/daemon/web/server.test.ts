@@ -529,6 +529,34 @@ describe('createWebApp routes', () => {
     expect((res.body as { models: ModelInfo[] }).models[0].id).toBe('openai/gpt-4o');
   });
 
+  it('GET /api/models exposes availability metadata for unavailable models', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-models-avail-'));
+    const state = createMockState({
+      sessionsDir: dir,
+      models: [{
+        id: 'or/m1',
+        name: 'm1',
+        engineModelId: 'm1',
+        provider: 'or',
+        engine: 'openrouter',
+        contextWindow: 0,
+        available: false,
+        unavailableReason: 'API key missing',
+      } as ModelInfo],
+    });
+    const started = await startTestApp(state);
+    try {
+      const res = await httpRequest(started.baseUrl, 'GET', '/api/models');
+      expect(res.statusCode).toBe(200);
+      const model = (res.body as { models: Array<{ available: boolean; unavailableReason?: string }> }).models[0];
+      expect(model.available).toBe(false);
+      expect(model.unavailableReason).toBe('API key missing');
+    } finally {
+      await stopTestApp(started.httpServer);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('GET /api/workspaces falls back to client workspace paths', async () => {
     const res = await httpRequest(baseUrl, 'GET', '/api/workspaces');
     expect(res.statusCode).toBe(200);
