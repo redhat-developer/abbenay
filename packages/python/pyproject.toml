@@ -8,7 +8,7 @@ version = "0.0.0-dev"
 description = "Abbenay gRPC client for Python"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["abbenay", "llm", "grpc", "ai", "client"]
 authors = [
     { name = "Abbenay Contributors" }
@@ -18,7 +18,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -26,12 +25,12 @@ classifiers = [
 ]
 dependencies = [
     "grpcio>=1.83.1",
-    "protobuf>=4.25.8",
+    "protobuf>=7.35.1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "grpcio-tools>=1.60.0",
+    "grpcio-tools>=1.83.1",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
