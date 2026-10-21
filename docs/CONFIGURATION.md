@@ -575,11 +575,11 @@ rejected with no file write.
 ## VS Code Extension
 
 The VS Code extension:
-- Connects to the daemon automatically
+- Connects to the daemon selected by `abbenay.daemonMode` (`auto`, `embedded`, `standalone`, `remote`, or `disabled`; default: `auto`)
 - Provides workspace paths for workspace-level config
 - Registers configured models with VS Code's Language Model API
 
-No configuration is stored in the extension itself.
+`auto` preserves existing behavior: a configured `abbenay.daemonAddress` selects a remote daemon; otherwise the extension connects to a local daemon and starts one if needed. `embedded` uses the extension-bundled daemon and an isolated local IPC runtime. `standalone` connects to an already-running local daemon without starting one. `remote` requires `abbenay.daemonAddress` and never starts a local process. `disabled` skips daemon connection/startup and Language Model API registration; the Abbenay extension view and commands remain available but disconnected. Changes to the mode reconnect the extension to the selected instance.
 
 ## CLI Configuration
 

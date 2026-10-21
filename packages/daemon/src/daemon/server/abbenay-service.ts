@@ -1347,10 +1347,18 @@ export function createAbbenayService(
       callback: grpc.sendUnaryData<object>
     ): void {
       if (!requireCapability(call, 'config', authContext, callback)) return;
-      const port = call.request.port || DEFAULT_WEB_PORT;
+      const requestedPort = call.request.port || undefined;
+      const port = requestedPort ?? DEFAULT_WEB_PORT;
       
       if (isWebServerRunning()) {
         const currentPort = getWebServerPort();
+        if (requestedPort !== undefined && currentPort !== requestedPort) {
+          callback({
+            code: grpc.status.ALREADY_EXISTS,
+            message: `Dashboard is already running on port ${currentPort}, not requested port ${requestedPort}.`,
+          });
+          return;
+        }
         callback(null, {
           started: false,
           already_running: true,

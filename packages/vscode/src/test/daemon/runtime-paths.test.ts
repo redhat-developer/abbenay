@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import {
   getRuntimeDir,
+  getRuntimeDirectoryForMode,
   getAddressFilePath,
   parseDaemonAddress,
   getBundledSeaBinaryName,
@@ -13,6 +14,24 @@ suite('runtime-paths', () => {
   test('getRuntimeDir uses tmpdir on win32', () => {
     const dir = getRuntimeDir('win32', {}, '/tmp/fake-temp');
     assert.strictEqual(dir, path.join('/tmp/fake-temp', 'abbenay'));
+  });
+
+  test('getRuntimeDir prefers ABBENAY_RUNTIME_DIR when set', () => {
+    const dir = getRuntimeDir('linux', {
+      ABBENAY_RUNTIME_DIR: '/run/user/1000/abbenay-isolated',
+      XDG_RUNTIME_DIR: '/run/user/1000',
+    }, '/unused');
+    assert.strictEqual(dir, '/run/user/1000/abbenay-isolated');
+  });
+
+  test('getRuntimeDirectoryForMode isolates embedded mode and preserves other modes', () => {
+    const runtimeDir = path.join('/run/user/1000', 'abbenay');
+    assert.strictEqual(
+      getRuntimeDirectoryForMode('embedded', runtimeDir),
+      path.join('/run/user/1000', 'abbenay-embedded', 'abbenay'),
+    );
+    assert.strictEqual(getRuntimeDirectoryForMode('auto', runtimeDir), runtimeDir);
+    assert.strictEqual(getRuntimeDirectoryForMode('standalone', runtimeDir), runtimeDir);
   });
 
   test('getRuntimeDir uses XDG_RUNTIME_DIR when set', () => {

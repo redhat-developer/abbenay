@@ -8,6 +8,25 @@ import * as path from 'path';
 
 const APP_NAME = 'abbenay';
 
+export type DaemonMode = 'auto' | 'embedded' | 'standalone' | 'remote' | 'disabled';
+
+/**
+ * Get the isolated runtime directory for the extension-bundled daemon.
+ */
+export function getEmbeddedRuntimeDir(runtimeDir: string = getRuntimeDir()): string {
+  const baseDir = path.basename(runtimeDir) === APP_NAME ? path.dirname(runtimeDir) : runtimeDir;
+  return path.join(baseDir, `${APP_NAME}-embedded`, APP_NAME);
+}
+
+/** XDG_RUNTIME_DIR value that makes the daemon use the embedded runtime directory. */
+export function getEmbeddedXdgRuntimeDir(runtimeDir: string = getRuntimeDir()): string {
+  return path.dirname(getEmbeddedRuntimeDir(runtimeDir));
+}
+
+export function getRuntimeDirectoryForMode(mode: DaemonMode, runtimeDir: string = getRuntimeDir()): string {
+  return mode === 'embedded' ? getEmbeddedRuntimeDir(runtimeDir) : runtimeDir;
+}
+
 /**
  * Get the platform runtime directory (for ephemeral files: PID, socket/address).
  */
@@ -16,6 +35,10 @@ export function getRuntimeDir(
   env: NodeJS.ProcessEnv = process.env,
   tmpdir: string = os.tmpdir(),
 ): string {
+  if (env.ABBENAY_RUNTIME_DIR) {
+    return env.ABBENAY_RUNTIME_DIR;
+  }
+
   if (env.XDG_RUNTIME_DIR) {
     return path.join(env.XDG_RUNTIME_DIR, APP_NAME);
   }

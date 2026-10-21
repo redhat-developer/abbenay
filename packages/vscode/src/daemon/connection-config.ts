@@ -3,14 +3,47 @@
  */
 
 import * as vscode from 'vscode';
+import type { DaemonMode } from './runtime-paths';
 
 /** Default CN for daemon auto-generated TLS certs (matches packages/daemon grpc-tls). */
 export const GRPC_TLS_DEFAULT_CN = 'abbenay-grpc';
+export const DEFAULT_DASHBOARD_PORT = 8787;
+export const EMBEDDED_DASHBOARD_PORT = 8788;
+
+/** Select an HTTP dashboard port; zero asks the daemon to reuse or choose its default. */
+export function dashboardPortForMode(mode: DaemonMode): number {
+  return mode === 'embedded' ? EMBEDDED_DASHBOARD_PORT : 0;
+}
+
+export function dashboardUrlForConnection(
+  config: Pick<DaemonConnectionConfig, 'isRemote' | 'address'>,
+  daemonUrl: string,
+): string {
+  if (!config.isRemote) {
+    return daemonUrl;
+  }
+  try {
+    const reportedUrl = new URL(daemonUrl);
+    const remoteDashboard = dashboardUrlFromDaemonAddress(config.address);
+    if (!remoteDashboard) {
+      return daemonUrl;
+    }
+    const url = new URL(remoteDashboard);
+    url.protocol = reportedUrl.protocol;
+    const reportedPort = reportedUrl.port || (reportedUrl.protocol === 'https:' ? '443' : '80');
+    url.port = reportedPort;
+    return url.origin;
+  } catch {
+    return daemonUrl;
+  }
+}
 
 /** SecretStorage key for the consumer token (never stored in settings.json). */
 export const DAEMON_TOKEN_SECRET_KEY = 'abbenay.daemonToken';
 
 export interface DaemonConnectionConfig {
+  /** How the extension locates or starts the daemon. */
+  mode: DaemonMode;
   /** When set, connect to this gRPC host:port and skip local auto-start. */
   address: string | undefined;
   /** Whether this is a remote (configured) address. */
@@ -121,7 +154,7 @@ export function dashboardUrlFromDaemonAddress(address: string | undefined): stri
   if (!host) {
     return undefined;
   }
-  return `http://${host.includes(':') ? `[${host}]` : host}:8787`;
+  return `http://${host.includes(':') ? `[${host}]` : host}:${DEFAULT_DASHBOARD_PORT}`;
 }
 
 /**
@@ -130,8 +163,13 @@ export function dashboardUrlFromDaemonAddress(address: string | undefined): stri
 export function readDaemonConnectionConfig(
   config: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration('abbenay'),
 ): DaemonConnectionConfig {
+  const modeSetting = config.get<string>('daemonMode');
+  const mode: DaemonMode =
+    modeSetting === 'embedded' || modeSetting === 'standalone' || modeSetting === 'remote' || modeSetting === 'disabled'
+      ? modeSetting
+      : 'auto';
   const address = normalizeDaemonAddress(config.get<string>('daemonAddress'));
-  const isRemote = !!address;
+  const isRemote = mode === 'remote' || (mode === 'auto' && !!address);
 
   const tlsSetting = config.get<boolean>('daemonTls');
   // Default true for remote (container --grpc-tls); false when unset/local.
@@ -147,6 +185,7 @@ export function readDaemonConnectionConfig(
   const tokenEnv = tokenEnvRaw || undefined;
 
   return {
+    mode,
     address,
     isRemote,
     tls,
@@ -185,15 +224,19 @@ export async function resolveDaemonToken(
  * Human-readable connection mode for status/logs (never includes token).
  */
 export function describeConnectionMode(config: DaemonConnectionConfig): string {
-  if (!config.isRemote || !config.address) {
-    return 'local';
+  if (config.isRemote) {
+    if (!config.address) {
+      return 'remote (missing daemonAddress)';
+    }
+    const tlsLabel = config.tls ? 'tls' : 'plaintext';
+    return `remote:${config.address} (${tlsLabel})`;
   }
-  const tlsLabel = config.tls ? 'tls' : 'plaintext';
-  return `remote:${config.address} (${tlsLabel})`;
+  return config.mode === 'auto' ? 'local:auto' : config.mode === 'disabled' ? 'disabled' : `local:${config.mode}`;
 }
 
 /** Setting keys that require a daemon reconnect when changed. */
 export const DAEMON_CONNECTION_SETTING_KEYS = [
+  'abbenay.daemonMode',
   'abbenay.daemonAddress',
   'abbenay.daemonTls',
   'abbenay.daemonCaPath',

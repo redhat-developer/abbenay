@@ -42,13 +42,21 @@ describe('getRuntimeDir', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
+  it('prefers ABBENAY_RUNTIME_DIR when set', () => {
+    process.env.ABBENAY_RUNTIME_DIR = '/run/user/1000/abbenay-isolated';
+    process.env.XDG_RUNTIME_DIR = '/run/user/1000';
+    expect(getRuntimeDir()).toBe('/run/user/1000/abbenay-isolated');
+  });
+
   it('should use XDG_RUNTIME_DIR when set', () => {
+    delete process.env.ABBENAY_RUNTIME_DIR;
     process.env.XDG_RUNTIME_DIR = '/run/user/1000';
     const result = getRuntimeDir();
     expect(result).toBe('/run/user/1000/abbenay');
   });
 
   it('should use tmpdir on darwin when XDG_RUNTIME_DIR is unset', () => {
+    delete process.env.ABBENAY_RUNTIME_DIR;
     delete process.env.XDG_RUNTIME_DIR;
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const result = getRuntimeDir();
@@ -57,6 +65,7 @@ describe('getRuntimeDir', () => {
   });
 
   it('should try /run/user/<uid> on linux without XDG_RUNTIME_DIR', () => {
+    delete process.env.ABBENAY_RUNTIME_DIR;
     delete process.env.XDG_RUNTIME_DIR;
     Object.defineProperty(process, 'platform', { value: 'linux' });
     const result = getRuntimeDir();
@@ -64,6 +73,7 @@ describe('getRuntimeDir', () => {
   });
 
   it('should use os.tmpdir() on win32 when XDG_RUNTIME_DIR is unset', () => {
+    delete process.env.ABBENAY_RUNTIME_DIR;
     delete process.env.XDG_RUNTIME_DIR;
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const result = getRuntimeDir();

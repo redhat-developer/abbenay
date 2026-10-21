@@ -24,6 +24,7 @@
     "ci:smoke-win32-ipc": "node scripts/smoke-win32-ipc.js"
   },
   "devDependencies": {
+    "@vscode/test-cli": "^0.0.15",
     "typescript": "^5.3.3"
   },
   "engines": {
@@ -37,5 +38,13 @@
     "nice-grpc-common": "^2.0.2",
     "protobufjs": "^8.6.6",
     "ts-proto": "^2.11.2"
+  },
+  "overrides": {
+    "@vscode/test-cli": {
+      "mocha": {
+        "diff": "^9.0.0",
+        "serialize-javascript": "^7.0.5"
+      }
+    }
   }
 }

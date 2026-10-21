@@ -8,6 +8,7 @@
  *   Linux/macOS: Unix domain socket at <runtimeDir>/daemon.sock
  *   Windows:     loopback TCP; host:port from <runtimeDir>/daemon.addr
  *
+ * `abbenay.daemonMode` selects auto, embedded, standalone, or remote.
  * Remote / container:
  *   Set abbenay.daemonAddress (host:port). TLS + CA + consumer token optional.
  *   Skips local PID/socket discovery and auto-start.
@@ -29,7 +30,8 @@ import * as os from 'os';
 import * as net from 'net';
 import { getLogger } from '../utils/logger';
 import {
-  getRuntimeDir,
+  getRuntimeDirectoryForMode,
+  getEmbeddedXdgRuntimeDir,
   getPidFilePath,
   getSocketFilePath,
   getAddressFilePath,
@@ -37,8 +39,11 @@ import {
   getBundledSeaBinaryName,
   getUnixDaemonAddress,
 } from './runtime-paths';
+import type { DaemonMode } from './runtime-paths';
 import {
-  DaemonConnectionConfig,
+  dashboardPortForMode,
+  DEFAULT_DASHBOARD_PORT,
+  type DaemonConnectionConfig,
   describeConnectionMode,
   readDaemonConnectionConfig,
   resolveDaemonToken,
@@ -48,29 +53,54 @@ import {
 export * from '../proto/abbenay/v1/service';
 export {
   getBundledSeaBinaryName,
+  getEmbeddedRuntimeDir,
+  getEmbeddedXdgRuntimeDir,
+  getRuntimeDirectoryForMode,
   parseDaemonAddress,
   getAddressFilePath,
+  type DaemonMode,
 } from './runtime-paths';
 export {
   DAEMON_TOKEN_SECRET_KEY,
   GRPC_TLS_DEFAULT_CN,
+  DEFAULT_DASHBOARD_PORT,
+  EMBEDDED_DASHBOARD_PORT,
   affectsDaemonConnection,
   dashboardUrlFromDaemonAddress,
+  dashboardPortForMode,
+  dashboardUrlForConnection,
   describeConnectionMode,
   normalizeDaemonAddress,
   readDaemonConnectionConfig,
   resolveDaemonToken,
 } from './connection-config';
 
-// Daemon paths — PID + socket/address in runtime dir (matches daemon's paths.ts)
-const RUNTIME_DIR = getRuntimeDir();
-const PID_FILE = getPidFilePath(RUNTIME_DIR);
-const SOCKET_FILE = getSocketFilePath(RUNTIME_DIR);
-const ADDRESS_FILE = getAddressFilePath(RUNTIME_DIR);
 const IS_WIN32 = process.platform === 'win32';
 
+interface LocalDaemonPaths {
+  runtimeDir: string;
+  pidFile: string;
+  socketFile: string;
+  addressFile: string;
+  defaultAddress: string;
+  xdgRuntimeDir: string | undefined;
+}
+
+function getLocalDaemonPaths(mode: DaemonMode): LocalDaemonPaths {
+  const runtimeDir = getRuntimeDirectoryForMode(mode);
+  const socketFile = getSocketFilePath(runtimeDir);
+  return {
+    runtimeDir,
+    pidFile: getPidFilePath(runtimeDir),
+    socketFile,
+    addressFile: getAddressFilePath(runtimeDir),
+    defaultAddress: IS_WIN32 ? '' : getUnixDaemonAddress(socketFile),
+    xdgRuntimeDir: mode === 'embedded' ? getEmbeddedXdgRuntimeDir(runtimeDir) : process.env.XDG_RUNTIME_DIR,
+  };
+}
+
 // gRPC address for Unix Domain Socket (Windows resolves from daemon.addr at connect time)
-const DEFAULT_DAEMON_ADDRESS = IS_WIN32 ? '' : getUnixDaemonAddress(SOCKET_FILE);
+const DEFAULT_DAEMON_ADDRESS = IS_WIN32 ? '' : getLocalDaemonPaths('auto').defaultAddress;
 
 // Extension path for finding bundled binaries (set during activation)
 let extensionPath: string | undefined;
@@ -96,12 +126,12 @@ export function setDaemonSecretStorage(secrets: vscode.SecretStorage): void {
 /**
  * Read Windows loopback TCP address from daemon.addr.
  */
-function readDaemonTcpAddress(): { host: string; port: number } | null {
+function readDaemonTcpAddress(paths: LocalDaemonPaths): { host: string; port: number } | null {
   try {
-    if (!fs.existsSync(ADDRESS_FILE)) {
+    if (!fs.existsSync(paths.addressFile)) {
       return null;
     }
-    return parseDaemonAddress(fs.readFileSync(ADDRESS_FILE, 'utf-8'));
+    return parseDaemonAddress(fs.readFileSync(paths.addressFile, 'utf-8'));
   } catch {
     return null;
   }
@@ -110,11 +140,12 @@ function readDaemonTcpAddress(): { host: string; port: number } | null {
 /**
  * Resolve the gRPC channel address for the current platform.
  */
-export function resolveDaemonChannelAddress(): string | null {
+export function resolveDaemonChannelAddress(mode: DaemonMode = 'auto'): string | null {
+  const paths = getLocalDaemonPaths(mode);
   if (!IS_WIN32) {
-    return DEFAULT_DAEMON_ADDRESS;
+    return paths.defaultAddress;
   }
-  const addr = readDaemonTcpAddress();
+  const addr = readDaemonTcpAddress(paths);
   return addr ? `${addr.host}:${addr.port}` : null;
 }
 
@@ -146,13 +177,14 @@ function probeTcp(host: string, port: number, timeoutMs = 500): Promise<boolean>
  * On Windows this is async-friendly via waitForDaemon (TCP probe); the sync
  * check requires PID + address file.
  */
-export function isDaemonRunning(): boolean {
+export function isDaemonRunning(mode: DaemonMode = 'auto'): boolean {
+  const paths = getLocalDaemonPaths(mode);
   try {
-    if (!fs.existsSync(PID_FILE)) {
+    if (!fs.existsSync(paths.pidFile)) {
       return false;
     }
 
-    const pidStr = fs.readFileSync(PID_FILE, 'utf-8').trim();
+    const pidStr = fs.readFileSync(paths.pidFile, 'utf-8').trim();
     const pid = parseInt(pidStr, 10);
 
     if (isNaN(pid)) {
@@ -163,11 +195,11 @@ export function isDaemonRunning(): boolean {
     process.kill(pid, 0);
 
     if (IS_WIN32) {
-      return fs.existsSync(ADDRESS_FILE) && readDaemonTcpAddress() !== null;
+      return fs.existsSync(paths.addressFile) && readDaemonTcpAddress(paths) !== null;
     }
 
     // Also verify socket exists
-    return fs.existsSync(SOCKET_FILE);
+    return fs.existsSync(paths.socketFile);
   } catch (_e) {
     // process.kill throws if process doesn't exist
     return false;
@@ -177,14 +209,14 @@ export function isDaemonRunning(): boolean {
 /**
  * Async liveness: PID + TCP connect on Windows, PID + socket on Unix.
  */
-export async function isDaemonReady(): Promise<boolean> {
-  if (!isDaemonRunning()) {
+export async function isDaemonReady(mode: DaemonMode = 'auto'): Promise<boolean> {
+  if (!isDaemonRunning(mode)) {
     return false;
   }
   if (!IS_WIN32) {
     return true;
   }
-  const addr = readDaemonTcpAddress();
+  const addr = readDaemonTcpAddress(getLocalDaemonPaths(mode));
   if (!addr) {
     return false;
   }
@@ -199,10 +231,11 @@ export class DaemonClient {
   private client: proto.AbbenayClient | null = null;
   private clientId: string | null = null;
   private address: string;
-  private connectionMode = 'local';
+  private connectionMode = 'local:auto';
+  private localMode: DaemonMode = 'auto';
 
-  constructor(address: string = DEFAULT_DAEMON_ADDRESS) {
-    this.address = address;
+  constructor(address?: string) {
+    this.address = address ?? DEFAULT_DAEMON_ADDRESS;
   }
 
   /** Human-readable mode for status (e.g. local or remote:host:port (tls)). */
@@ -219,6 +252,16 @@ export class DaemonClient {
    * @param options.timeout - Timeout waiting for daemon to start (default: 15000ms)
    */
   async connect(options: { autoStart?: boolean; timeout?: number } = {}): Promise<void> {
+    const logger = getLogger();
+    const { timeout = 15000 } = options;
+    const config = readDaemonConnectionConfig();
+    this.connectionMode = describeConnectionMode(config);
+
+    if (config.mode === 'disabled') {
+      await this.disposeTransport();
+      throw new Error('Abbenay is disabled by the abbenay.daemonMode setting.');
+    }
+
     if (this.channel && this.client) {
       return; // Already connected
     }
@@ -228,27 +271,29 @@ export class DaemonClient {
       await this.closeChannelOnly();
     }
 
-    const logger = getLogger();
-    const { timeout = 15000 } = options;
-    const config = readDaemonConnectionConfig();
-    this.connectionMode = describeConnectionMode(config);
-
     try {
-      if (config.isRemote && config.address) {
+      if (config.isRemote) {
+        if (!config.address) {
+          throw new Error('Remote daemon mode requires a valid `abbenay.daemonAddress` host:port.');
+        }
         await this.connectRemote(config);
         return;
       }
 
-      const { autoStart = true } = options;
+      this.localMode = config.mode;
+      const paths = getLocalDaemonPaths(this.localMode);
+      const autoStart = this.localMode === 'auto' || this.localMode === 'embedded'
+        ? options.autoStart !== false
+        : false;
 
       // Always re-resolve local address (never keep a sticky remote host).
-      this.address = resolveDaemonChannelAddress() || DEFAULT_DAEMON_ADDRESS;
+      this.address = resolveDaemonChannelAddress(this.localMode) || paths.defaultAddress;
 
-      // Check if daemon is running
-      const running = await isDaemonReady();
+      // Check if the selected local daemon is running.
+      const running = await isDaemonReady(this.localMode);
       logger.info(
-        `[Daemon] mode=${this.connectionMode}, isDaemonReady=${running}, PID_FILE=${PID_FILE}, ` +
-        `SOCKET=${SOCKET_FILE}, ADDRESS_FILE=${ADDRESS_FILE}`,
+        `[Daemon] mode=${this.connectionMode}, isDaemonReady=${running}, PID_FILE=${paths.pidFile}, ` +
+        `SOCKET=${paths.socketFile}, ADDRESS_FILE=${paths.addressFile}`,
       );
 
       if (!running) {
@@ -259,20 +304,19 @@ export class DaemonClient {
           await this.waitForDaemon(timeout);
           logger.info('[Daemon] Daemon started and ready');
         } else {
-          const endpoint = IS_WIN32 ? ADDRESS_FILE : SOCKET_FILE;
-          throw new Error(
-            `Abbenay daemon is not running. ` +
-            `Expected endpoint via ${endpoint}. ` +
-            `Start the daemon with: abbenay daemon`,
-          );
+          const endpoint = IS_WIN32 ? paths.addressFile : paths.socketFile;
+          const action = this.localMode === 'standalone'
+            ? 'Start it with: abbenay daemon'
+            : `Expected endpoint via ${endpoint}.`;
+          throw new Error(`Abbenay ${this.localMode} daemon is not running. ${action}`);
         }
       }
 
       // Windows: address file appears after start — re-resolve.
-      const address = resolveDaemonChannelAddress() || this.address;
+      const address = resolveDaemonChannelAddress(this.localMode) || this.address;
       if (!address) {
         throw new Error(
-          `Abbenay daemon address not found. Expected ${ADDRESS_FILE} with host:port.`,
+          `Abbenay daemon address not found. Expected ${paths.addressFile} with host:port.`,
         );
       }
       this.address = address;
@@ -285,7 +329,8 @@ export class DaemonClient {
       // Keep connectionMode from settings so status/errors still say remote:… after a failed attach.
       this.address = config.isRemote && config.address
         ? config.address
-        : (DEFAULT_DAEMON_ADDRESS || resolveDaemonChannelAddress() || '');
+        : (getLocalDaemonPaths(this.localMode).defaultAddress ||
+          resolveDaemonChannelAddress(this.localMode) || '');
       throw err;
     }
   }
@@ -365,11 +410,7 @@ export class DaemonClient {
 
   /**
    * Start the daemon process.
-   *
-   * The daemon is a TypeScript/Node.js application.
-   * Priority: 1) `abbenay` in PATH (global install or SEA binary)
-   *           2) Workspace monorepo packages/daemon/dist/index.js
-   *           3) Bundled daemon JS in extension's bin/ directory
+   * Embedded mode always starts the extension-bundled daemon; auto mode prefers PATH.
    *
    * Note: For browser-based VS Code (vscode.dev, Codespaces), the daemon must
    * already be running as a remote service. Process spawning only works on desktop.
@@ -377,13 +418,14 @@ export class DaemonClient {
   private async startDaemon(): Promise<void> {
     const { spawn } = await import('child_process');
     const logger = getLogger();
+    const paths = getLocalDaemonPaths(this.localMode);
 
     // Ensure runtime directory exists (PID + socket/address live here)
-    if (!fs.existsSync(RUNTIME_DIR)) {
-      fs.mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 });
+    if (!fs.existsSync(paths.runtimeDir)) {
+      fs.mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
     }
 
-    const { cmd, args } = await this.findDaemonCommand();
+    const { cmd, args } = await this.findDaemonCommand(this.localMode);
 
     logger.info(`[Daemon] Spawning: ${cmd} ${[...args, 'daemon'].join(' ')}`);
 
@@ -397,8 +439,10 @@ export class DaemonClient {
       stdio: ['ignore', logFd, logFd],
       env: {
         ...process.env,
-        ABBENAY_SOCKET: SOCKET_FILE,
-        ABBENAY_PID_FILE: PID_FILE,
+        ABBENAY_RUNTIME_DIR: paths.runtimeDir,
+        ...(this.localMode === 'embedded' && paths.xdgRuntimeDir
+          ? { XDG_RUNTIME_DIR: paths.xdgRuntimeDir }
+          : {}),
       },
       // On Windows, hide console window for the detached daemon process
       windowsHide: true,
@@ -419,23 +463,23 @@ export class DaemonClient {
    *   1) `abbenay` in PATH (global install or SEA binary)
    *   2) Bundled SEA binary in extension's bin/
    */
-  private async findDaemonCommand(): Promise<{ cmd: string; args: string[] }> {
+  private async findDaemonCommand(mode: DaemonMode): Promise<{ cmd: string; args: string[] }> {
     const { execSync } = await import('child_process');
     const logger = getLogger();
-
-    // 1) Try to find abbenay in PATH (global npm install, npm link, or SEA binary)
-    try {
-      const cmd = process.platform === 'win32' ? 'where abbenay' : 'which abbenay';
-      const result = execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
-      if (result && fs.existsSync(result)) {
-        logger.info(`[Daemon] Found abbenay in PATH: ${result}`);
-        return { cmd: result, args: [] };
+    if (mode !== 'embedded') {
+      try {
+        const cmd = process.platform === 'win32' ? 'where abbenay' : 'which abbenay';
+        const result = execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
+        if (result && fs.existsSync(result)) {
+          logger.info(`[Daemon] Found abbenay in PATH: ${result}`);
+          return { cmd: result, args: [] };
+        }
+      } catch {
+        logger.info('[Daemon] abbenay not found in PATH');
       }
-    } catch {
-      logger.info('[Daemon] abbenay not found in PATH');
     }
 
-    // 2) Bundled SEA binary — self-contained, no node dependency
+    // Embedded mode always uses the bundled SEA; auto falls back to it.
     if (extensionPath) {
       const seaBinary = path.join(
         extensionPath,
@@ -463,7 +507,7 @@ export class DaemonClient {
     const pollInterval = 100;
 
     while (Date.now() - start < timeout) {
-      if (await isDaemonReady()) {
+      if (await isDaemonReady(this.localMode)) {
         // Give it a moment to accept connections
         await new Promise(r => setTimeout(r, 100));
         return;
@@ -565,7 +609,8 @@ export class DaemonClient {
    */
   async close(): Promise<void> {
     await this.disposeTransport();
-    this.connectionMode = 'local';
+    this.connectionMode = 'local:auto';
+    this.localMode = 'auto';
     this.address = DEFAULT_DAEMON_ADDRESS;
   }
 
@@ -829,9 +874,20 @@ export class DaemonClient {
    * Start the embedded web server (dashboard) via gRPC.
    * Returns the URL to open in the browser.
    */
-  async startWebServer(port: number = 8787): Promise<proto.StartWebServerResponse> {
+  async startWebServer(port?: number): Promise<proto.StartWebServerResponse> {
     const client = this.getClient();
-    return client.startWebServer({ port });
+    const config = readDaemonConnectionConfig();
+    const requestedPort = port ?? dashboardPortForMode(config.mode);
+    const response = await client.startWebServer({ port: requestedPort });
+    if (response.port > 0 && response.url) {
+      return response;
+    }
+    const resolvedPort = response.port || DEFAULT_DASHBOARD_PORT;
+    return {
+      ...response,
+      port: resolvedPort,
+      url: response.url || `http://localhost:${resolvedPort}`,
+    };
   }
 
   /**

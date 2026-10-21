@@ -39,8 +39,14 @@ const APP_NAME = 'abbenay';
  * - macOS:   os.tmpdir()      → /var/folders/...
  * - Windows: os.tmpdir()      → %TEMP%
  * - Other:   /tmp
+ *
+ * `ABBENAY_RUNTIME_DIR` overrides the runtime directory for isolated daemon instances.
  */
 export function getRuntimeDir(): string {
+    if (process.env.ABBENAY_RUNTIME_DIR) {
+        return process.env.ABBENAY_RUNTIME_DIR;
+    }
+
     // 1. Respect XDG_RUNTIME_DIR (standard on Linux)
     if (process.env.XDG_RUNTIME_DIR) {
         return path.join(process.env.XDG_RUNTIME_DIR, APP_NAME);

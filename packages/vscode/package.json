@@ -147,6 +147,18 @@
           "default": "info",
           "description": "Logging level for the extension"
         },
+        "abbenay.daemonMode": {
+          "type": "string",
+          "enum": [
+            "disabled",
+            "auto",
+            "embedded",
+            "standalone",
+            "remote"
+          ],
+          "default": "auto",
+          "description": "How the extension connects to Abbenay: auto preserves address-based remote connection and local auto-start, embedded uses the bundled daemon with isolated local IPC, standalone connects to an already-running local daemon, remote requires abbenay.daemonAddress, and disabled does not connect to or start a daemon."
+        },
         "abbenay.daemonAddress": {
           "type": "string",
           "default": "",
@@ -211,9 +223,9 @@
     "@types/mocha": "^10.0.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.99.0",
-    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^2.4.0",
-    "@vscode/vsce": "^3.9.2",
+    "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^9",
     "globals": "^16",

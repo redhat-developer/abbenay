@@ -1022,10 +1022,18 @@ describe('createAbbenayService handlers', () => {
     expect(mockStartEmbeddedWebServer).toHaveBeenCalledWith(state, 3000);
 
     mockIsWebServerRunning.mockReturnValue(true);
-    mockGetWebServerPort.mockReturnValue(3001);
-    const running = await invokeUnary(service.StartWebServer, {});
+    mockGetWebServerPort.mockReturnValue(3000);
+    const running = await invokeUnary(service.StartWebServer, { port: 3000 });
     expect(running.response?.already_running).toBe(true);
-    expect(running.response?.port).toBe(3001);
+    expect(running.response?.port).toBe(3000);
+
+    const defaultPortRequest = await invokeUnary(service.StartWebServer, {});
+    expect(defaultPortRequest.response?.already_running).toBe(true);
+    expect(defaultPortRequest.response?.port).toBe(3000);
+
+    const conflictingPort = await invokeUnary(service.StartWebServer, { port: 3001 });
+    expect(conflictingPort.error?.code).toBe(grpc.status.ALREADY_EXISTS);
+    expect(conflictingPort.error?.message).toMatch(/already running on port 3000/);
   });
 
   it('StopWebServer stops embedded server', async () => {

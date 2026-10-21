@@ -970,3 +970,34 @@ CLI namespace. Fail-closed on unrecognized tokens closes that hole without
 breaking no-token local DX. Tracked as
 [issue #71](https://github.com/redhat-developer/abbenay/issues/71).
 
+---
+
+## DR-053: VS Code daemon connection modes
+
+**Date:** 2026-10-21
+**Decision:** Add an `abbenay.daemonMode` VS Code setting with `auto`, `embedded`,
+`standalone`, and `remote` options; default to `auto` to preserve current behavior.
+`embedded` starts/attaches to the bundled daemon using isolated local IPC,
+`standalone` only attaches to a running local daemon, and `remote` requires a
+configured gRPC address. `disabled` leaves extension commands and views visible
+but skips daemon connection, startup, and Language Model API registration. Changing
+the mode reconnects the extension.
+**Rationale:** Users need to explicitly select which Abbenay instance the VS Code
+extension uses, especially to test the bundled daemon without accidentally
+attaching to an existing system daemon or silently starting a local process. A
+disabled mode lets dependent extensions ship Abbenay without forcing users to
+activate its daemon or language-model provider.
+
+---
+
+## DR-054: Patch VS Code test-tool transitive vulnerabilities
+
+**Date:** 2026-10-21
+**Decision:** Upgrade the VS Code test CLI and VSCE to releases compatible with
+the repository's Node.js 22.12+ floor, and apply npm overrides for patched
+`diff` and `serialize-javascript` versions scoped only to the test CLI's Mocha
+subtree.
+**Rationale:** The prior test-tool dependency tree included known vulnerable
+versions, including high-severity serialization and denial-of-service issues.
+The scoped overrides preserve the runtime API surface of Mocha and avoid
+upgrading unrelated consumers, while allowing the repository audit hook to pass.
