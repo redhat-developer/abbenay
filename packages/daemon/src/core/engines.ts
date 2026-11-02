@@ -14,7 +14,7 @@
 
 import { streamText, jsonSchema, tool, isStepCount, Output } from 'ai';
 import type { AssistantModelMessage, FilePart, JSONSchema7, LanguageModel, ModelMessage, TextPart, ToolSet } from 'ai';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { VERSION } from '../version.js';
 
 /** Unified AI SDK reasoning effort levels (DR-042). */
@@ -1007,6 +1007,9 @@ function toOpenCodeSessionId(sessionId?: string): string {
   const candidate = sessionId?.trim();
   if (candidate && /^[A-Za-z0-9._:-]{1,240}$/.test(candidate)) {
     return candidate.startsWith('ses_') ? candidate : `ses_${candidate}`;
+  }
+  if (candidate) {
+    return `ses_${createHash('sha256').update(candidate).digest('hex')}`;
   }
   return `ses_${randomUUID()}`;
 }

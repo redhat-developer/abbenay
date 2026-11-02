@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createHash } from 'node:crypto';
 
 const streamTextMock = vi.hoisted(() =>
   vi.fn(() => ({
@@ -276,21 +277,45 @@ describe('streamText AI SDK 7 wiring', () => {
     }));
   });
 
-  it('generates a valid OpenCode Go session header for an invalid session ID', async () => {
+  it('maps an invalid OpenCode Go session ID deterministically across requests', async () => {
+    const invalidSessionId = 'invalid/session/id';
+    const expectedHeader = `ses_${createHash('sha256').update(invalidSessionId).digest('hex')}`;
+
+    for (let request = 0; request < 2; request++) {
+      for await (const _chunk of streamChat(
+        'opencode',
+        'kimi-k3',
+        [{ role: 'user', content: 'hello' }],
+        'oc-test-key',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        10,
+        false,
+        undefined,
+        invalidSessionId,
+      )) {
+        // drain
+      }
+    }
+
+    expect(createOpenAICompatibleMock).toHaveBeenCalledTimes(2);
+    expect(createOpenAICompatibleMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      headers: expect.objectContaining({ 'x-opencode-session': expectedHeader }),
+    }));
+    expect(createOpenAICompatibleMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      headers: expect.objectContaining({ 'x-opencode-session': expectedHeader }),
+    }));
+  });
+
+  it('creates a session ID when an OpenCode Go request has none', async () => {
     for await (const _chunk of streamChat(
       'opencode',
       'kimi-k3',
       [{ role: 'user', content: 'hello' }],
       'oc-test-key',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      10,
-      false,
-      undefined,
-      'invalid/session/id',
     )) {
       // drain
     }
