@@ -12,6 +12,7 @@
  */
 
 import * as readline from 'node:readline';
+import * as crypto from 'node:crypto';
 import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { DaemonState } from './state.js';
@@ -132,6 +133,7 @@ async function runInteractiveMode(
   store?: SessionStore,
 ): Promise<void> {
   const sessionApproved = new Set<string>();
+  const providerSessionId = sessionId || crypto.randomUUID();
   let isFirstTurn = sessionId ? messages.filter(m => m.role === 'user').length === 0 : false;
 
   const prompt = (): Promise<string | null> => {
@@ -160,6 +162,8 @@ async function runInteractiveMode(
 
     const toolOptions: ChatToolOptions = {
       toolMode: options.tools === false ? 'none' : 'auto',
+      sessionId,
+      providerSessionId,
       onToolApprovalNeeded: async (_requestId: string, toolName: string, args: unknown, _namespacedName?: string): Promise<'allow' | 'deny' | 'abort'> => {
         if (sessionApproved.has(toolName)) {
           return 'allow';

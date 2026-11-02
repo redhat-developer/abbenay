@@ -27,7 +27,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 
 ## Supported Engines
 
-20 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
+21 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
 
 | Engine | ID | Tool Calling | SDK Package |
 |--------|----|-------------|-------------|
@@ -50,6 +50,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` |
 | Red Hat AI | `redhat` | Yes | `@ai-sdk/openai-compatible` |
+| OpenCode Go | `opencode` | Yes | `@ai-sdk/openai-compatible` |
 | Mock | `mock` | No | *(built-in)* |
 
 **Notes:** 

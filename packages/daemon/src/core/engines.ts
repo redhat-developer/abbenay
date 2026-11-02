@@ -14,6 +14,8 @@
 
 import { streamText, jsonSchema, tool, isStepCount, Output } from 'ai';
 import type { AssistantModelMessage, FilePart, JSONSchema7, LanguageModel, ModelMessage, TextPart, ToolSet } from 'ai';
+import { randomUUID } from 'node:crypto';
+import { VERSION } from '../version.js';
 
 /** Unified AI SDK reasoning effort levels (DR-042). */
 export type ReasoningLevel =
@@ -45,6 +47,7 @@ import { debug } from './debug.js';
 interface ProviderFactoryConfig {
   apiKey?: string;
   baseURL?: string;
+  headers?: Record<string, string>;
 }
 
 // ── Engine metadata (actual layer) ─────────────────────────────────────
@@ -163,6 +166,7 @@ async function openaiCompatibleProvider(
     name,
     baseURL: config.baseURL || defaultBaseURL,
     ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+    ...(config.headers ? { headers: config.headers } : {}),
   });
   return provider.chatModel(modelId);
 }
@@ -552,6 +556,16 @@ const ENGINES: Record<string, EngineInfo> = {
     createModel: (modelId, config) =>
       openaiCompatibleProvider('redhat', 'http://127.0.0.1:8000/v1', config, modelId),
   },
+  opencode: {
+    id: 'opencode',
+    displayName: 'OpenCode Go',
+    requiresKey: true,
+    defaultBaseUrl: 'https://opencode.ai/inference/go/openai/v1',
+    defaultEnvVar: 'OPENCODE_GO_API_KEY',
+    supportsTools: true,
+    createModel: (modelId, config) =>
+      openaiCompatibleProvider('opencode', 'https://opencode.ai/inference/go/openai/v1', config, modelId),
+  },
 };
 
 /** Index for O(1) lookup by engine ID */
@@ -787,15 +801,24 @@ async function fetchModelsFromApi(
   // OpenAI-compatible: GET /models (or /v1/models)
   if (!effectiveBaseUrl) return [];
 
-  const modelsUrl = effectiveBaseUrl.endsWith('/v1')
-    ? `${effectiveBaseUrl}/models`
-    : effectiveBaseUrl.endsWith('/')
-      ? `${effectiveBaseUrl}models`
-      : `${effectiveBaseUrl}/models`;
+  const openCodeModelsRoot = engineId === 'opencode'
+    ? effectiveBaseUrl.replace(/\/openai\/v1\/?$/, '')
+    : effectiveBaseUrl;
+  const modelsUrl = engineId === 'opencode' && openCodeModelsRoot !== effectiveBaseUrl
+    ? `${openCodeModelsRoot}/v1/models`
+    : effectiveBaseUrl.endsWith('/v1')
+      ? `${effectiveBaseUrl}/models`
+      : effectiveBaseUrl.endsWith('/')
+        ? `${effectiveBaseUrl}models`
+        : `${effectiveBaseUrl}/models`;
 
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };
+  if (engineId === 'opencode') {
+    headers['User-Agent'] = `Abbenay/${VERSION}`;
+    headers['x-opencode-session'] = 'ses_abbenay_model_discovery';
+  }
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
@@ -975,6 +998,15 @@ export function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
   }));
 }
 
+/** OpenCode Go requires a stable, `ses_`-prefixed session identifier. */
+function toOpenCodeSessionId(sessionId?: string): string {
+  const candidate = sessionId?.trim();
+  if (candidate && /^[A-Za-z0-9._:-]{1,240}$/.test(candidate)) {
+    return candidate.startsWith('ses_') ? candidate : `ses_${candidate}`;
+  }
+  return `ses_${randomUUID()}`;
+}
+
 export async function* streamChat(
   engineId: string,
   engineModelId: string,
@@ -988,6 +1020,7 @@ export async function* streamChat(
   maxSteps: number = 10,
   jsonMode: boolean = false,
   toolChoice?: ChatToolChoice,
+  sessionId?: string,
 ): AsyncGenerator<ChatChunk> {
   // Mock engine — no network, no key, deterministic
   if (engineId === 'mock') {
@@ -1006,10 +1039,17 @@ export async function* streamChat(
   debug(`[Adapter] streamChat: engine="${engineId}", model="${engineModelId}", messages=${messages.length}, tools=${tools?.length || 0}`);
 
   try {
+    const headers = engineId === 'opencode'
+      ? {
+          'User-Agent': `Abbenay/${VERSION}`,
+          'x-opencode-session': toOpenCodeSessionId(sessionId),
+        }
+      : undefined;
     // Create the Vercel AI SDK model instance (async — loads provider package on demand)
     const model = await engineInfo.createModel(engineModelId, {
       apiKey,
       baseURL: baseUrl,
+      headers,
     });
 
     // AI SDK 7 rejects role=system in messages/prompt — peel them into instructions.

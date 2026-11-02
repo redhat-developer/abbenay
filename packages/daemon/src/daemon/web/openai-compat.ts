@@ -462,6 +462,7 @@ export function registerOpenAIRoutes(app: Express, state: DaemonState): void {
     }
 
     const chatId = generateChatId();
+    toolOptions.providerSessionId = req.get('x-opencode-session')?.trim() || chatId;
     const created = Math.floor(Date.now() / 1000);
 
     if (stream) {
