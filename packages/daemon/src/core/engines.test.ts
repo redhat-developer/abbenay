@@ -13,6 +13,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { sanitizeVertexRequestBody, convertAnthropicJsonToSse, fetchModels, getEngines, getEngine, isKnownEngineId, validateConfigProviderEngines, getProviderTemplates } from './engines.js';
+import { VERSION } from '../version.js';
 
 const ENGINES_SRC = fs.readFileSync(
   path.join(__dirname, 'engines.ts'),
@@ -339,6 +340,17 @@ describe('engine registry accessors', () => {
     expect(isKnownEngineId('not-registered')).toBe(false);
   });
 
+  it('should register OpenCode Go as a keyed OpenAI-compatible engine', () => {
+    expect(getEngine('opencode')).toMatchObject({
+      id: 'opencode',
+      displayName: 'OpenCode Go',
+      requiresKey: true,
+      defaultBaseUrl: 'https://opencode.ai/inference/go/openai/v1',
+      defaultEnvVar: 'OPENCODE_GO_API_KEY',
+      supportsTools: true,
+    });
+  });
+
   it('should validate provider engine references in config', () => {
     expect(validateConfigProviderEngines({ providers: {} })).toEqual({ ok: true });
     expect(validateConfigProviderEngines({
@@ -397,6 +409,32 @@ describe('fetchModels', () => {
     });
   });
 
+  it('should discover OpenCode Go models with its endpoint and required headers', async () => {
+    let capturedUrl = '';
+    let capturedHeaders: HeadersInit | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(input);
+      capturedHeaders = init?.headers;
+      return new Response(JSON.stringify({
+        data: [{ id: 'kimi-k3', context_length: 262144 }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const models = await fetchModels('opencode', 'oc_test_key');
+
+    expect(capturedUrl).toBe('https://opencode.ai/inference/go/v1/models');
+    const headers = new Headers(capturedHeaders);
+    expect(headers.get('Authorization')).toBe('Bearer oc_test_key');
+    expect(headers.get('User-Agent')).toBe(`Abbenay/${VERSION}`);
+    expect(headers.get('x-opencode-session')).toBe('ses_abbenay_model_discovery');
+    expect(models).toMatchObject([{
+      id: 'kimi-k3',
+      engine: 'opencode',
+      contextWindow: 262144,
+      capabilities: { supportsTools: true, supportsVision: false },
+    }]);
+  });
+
   it('should build models URL for trailing-slash base paths', async () => {
     let capturedUrl = '';
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -411,6 +449,21 @@ describe('fetchModels', () => {
     const models = await fetchModels('ollama', 'local-key', 'http://127.0.0.1:11434/');
     expect(capturedUrl).toBe('http://127.0.0.1:11434/models');
     expect(models[0].id).toBe('llama3');
+  });
+
+  it('should append /models to a base URL without a path suffix', async () => {
+    let capturedUrl = '';
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      capturedUrl = String(input);
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    await fetchModels('ollama', 'local-key', 'http://127.0.0.1:11434');
+
+    expect(capturedUrl).toBe('http://127.0.0.1:11434/models');
   });
 
   it('should fetch Anthropic models with x-api-key header', async () => {
@@ -450,6 +503,15 @@ describe('fetchModels', () => {
 
     expect(await fetchModels('openrouter', 'sk-test')).toEqual([]);
     expect(errSpy).toHaveBeenCalled();
+  });
+
+  it('should return empty when a compatible provider response has no model list', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })));
+
+    expect(await fetchModels('openrouter', 'sk-test')).toEqual([]);
   });
 
   it('should return empty when OpenAI-compatible provider has no base URL', async () => {

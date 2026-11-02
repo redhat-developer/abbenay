@@ -118,7 +118,7 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
   console.error(`${DIM}Type your message, then press Enter. Ctrl+D to exit.${RESET}\n`);
 
   if (options.json) {
-    await runJsonMode(state, { ...options, model }, messages, rl);
+    await runJsonMode(state, { ...options, model }, messages, rl, sessionId);
   } else {
     await runInteractiveMode(state, { ...options, model }, messages, rl, sessionId, store);
   }
@@ -248,6 +248,7 @@ async function runJsonMode(
   options: ChatOptions & { model: string },
   messages: Array<{ role: string; content: string }>,
   rl: readline.Interface,
+  sessionId?: string,
 ): Promise<void> {
   // In JSON mode, read all of stdin as a single message
   const chunks: string[] = [];
@@ -263,6 +264,8 @@ async function runJsonMode(
 
   const toolOptions: ChatToolOptions = {
     toolMode: options.tools === false ? 'none' : 'auto',
+    sessionId,
+    providerSessionId: sessionId,
   };
 
   for await (const chunk of state.chat(options.model, messages, undefined, toolOptions)) {

@@ -22,6 +22,9 @@ const isStepCountMock = vi.hoisted(() => vi.fn((n: number) => () => n <= 1));
 const toolMock = vi.hoisted(() => vi.fn((def: unknown) => def));
 const jsonSchemaMock = vi.hoisted(() => vi.fn((s: unknown) => s));
 const outputJsonMock = vi.hoisted(() => vi.fn(() => ({ name: 'json' })));
+const createOpenAICompatibleMock = vi.hoisted(() => vi.fn(() => ({
+  chatModel: vi.fn((modelId: string) => ({ modelId })),
+})));
 
 vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>();
@@ -34,6 +37,10 @@ vi.mock('ai', async (importOriginal) => {
     Output: { ...actual.Output, json: outputJsonMock },
   };
 });
+
+vi.mock('@ai-sdk/openai-compatible', () => ({
+  createOpenAICompatible: createOpenAICompatibleMock,
+}));
 
 import {
   normalizeChatMessages,
@@ -192,6 +199,7 @@ describe('streamText AI SDK 7 wiring', () => {
     toolMock.mockClear();
     jsonSchemaMock.mockClear();
     outputJsonMock.mockClear();
+    createOpenAICompatibleMock.mockClear();
   });
 
   it('passes system messages via instructions, not messages', async () => {
@@ -236,6 +244,62 @@ describe('streamText AI SDK 7 wiring', () => {
     const msgs = callArg.messages as Array<{ role: string; content: unknown }>;
     expect(msgs.every((m) => m.role !== 'system')).toBe(true);
     expect(msgs.some((m) => m.role === 'user')).toBe(true);
+  });
+
+  it('sends OpenCode Go the stable session and client identification headers', async () => {
+    for await (const _chunk of streamChat(
+      'opencode',
+      'kimi-k3',
+      [{ role: 'user', content: 'hello' }],
+      'oc-test-key',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      10,
+      false,
+      undefined,
+      'conversation_123',
+    )) {
+      // drain
+    }
+
+    expect(createOpenAICompatibleMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'opencode',
+      baseURL: 'https://opencode.ai/inference/go/openai/v1',
+      apiKey: 'oc-test-key',
+      headers: expect.objectContaining({
+        'User-Agent': expect.stringMatching(/^Abbenay\//),
+        'x-opencode-session': 'ses_conversation_123',
+      }),
+    }));
+  });
+
+  it('generates a valid OpenCode Go session header for an invalid session ID', async () => {
+    for await (const _chunk of streamChat(
+      'opencode',
+      'kimi-k3',
+      [{ role: 'user', content: 'hello' }],
+      'oc-test-key',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      10,
+      false,
+      undefined,
+      'invalid/session/id',
+    )) {
+      // drain
+    }
+
+    expect(createOpenAICompatibleMock).toHaveBeenCalledWith(expect.objectContaining({
+      headers: expect.objectContaining({
+        'x-opencode-session': expect.stringMatching(/^ses_[0-9a-f-]{36}$/),
+      }),
+    }));
   });
 
   it('forwards inline image content as an AI SDK file part', async () => {

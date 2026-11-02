@@ -27,7 +27,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 
 ## Supported Engines
 
-21 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
+22 engines via the [Vercel AI SDK](https://sdk.vercel.ai/) with dynamically loaded `@ai-sdk/*` packages.
 
 | Engine | ID | Tool Calling | SDK Package |
 |--------|----|-------------|-------------|
@@ -40,6 +40,7 @@ The project implements a **TypeScript daemon** with **gRPC API**, a **web dashbo
 | Groq | `groq` | Yes | `@ai-sdk/groq` |
 | Cohere | `cohere` | Yes | `@ai-sdk/cohere` |
 | Amazon Bedrock | `bedrock` | Yes | `@ai-sdk/amazon-bedrock` |
+| Vertex Anthropic | `vertex-anthropic` | Yes | `@ai-sdk/google-vertex` |
 | Fireworks | `fireworks` | Yes | `@ai-sdk/fireworks` |
 | Together AI | `togetherai` | Yes | `@ai-sdk/togetherai` |
 | Perplexity | `perplexity` | No | `@ai-sdk/perplexity` |

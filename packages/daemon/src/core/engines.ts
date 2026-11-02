@@ -778,72 +778,76 @@ async function fetchModelsFromApi(
 ): Promise<DiscoveredModel[]> {
   const effectiveBaseUrl = baseUrl || engine.defaultBaseUrl;
 
-  // Anthropic uses a different API format
-  if (engineId === 'anthropic') {
-    return fetchAnthropicModels(engineId, apiKey, effectiveBaseUrl);
+  switch (engineId) {
+    case 'anthropic':
+      return fetchAnthropicModels(engineId, apiKey, effectiveBaseUrl);
+    case 'gemini':
+      return fetchGeminiModels(engineId, apiKey, effectiveBaseUrl);
+    case 'bedrock':
+    case 'vertex-anthropic':
+      return [];
+    default:
+      return fetchOpenAICompatibleModels(engineId, engine, apiKey, effectiveBaseUrl);
   }
+}
 
-  // Google Gemini uses a different API format
-  if (engineId === 'gemini') {
-    return fetchGeminiModels(engineId, apiKey, effectiveBaseUrl);
-  }
+async function fetchOpenAICompatibleModels(
+  engineId: string,
+  engine: EngineInfo,
+  apiKey: string | undefined,
+  baseUrl: string | undefined,
+): Promise<DiscoveredModel[]> {
+  if (!baseUrl) return [];
 
-  // AWS Bedrock - skip for now (requires AWS SDK auth)
-  if (engineId === 'bedrock') {
-    return [];
-  }
-
-  // Vertex Anthropic - no standard models discovery API
-  if (engineId === 'vertex-anthropic') {
-    return [];
-  }
-
-  // OpenAI-compatible: GET /models (or /v1/models)
-  if (!effectiveBaseUrl) return [];
-
-  const openCodeModelsRoot = engineId === 'opencode'
-    ? effectiveBaseUrl.replace(/\/openai\/v1\/?$/, '')
-    : effectiveBaseUrl;
-  const modelsUrl = engineId === 'opencode' && openCodeModelsRoot !== effectiveBaseUrl
-    ? `${openCodeModelsRoot}/v1/models`
-    : effectiveBaseUrl.endsWith('/v1')
-      ? `${effectiveBaseUrl}/models`
-      : effectiveBaseUrl.endsWith('/')
-        ? `${effectiveBaseUrl}models`
-        : `${effectiveBaseUrl}/models`;
-
-  const headers: Record<string, string> = {
-    'Accept': 'application/json',
-  };
-  if (engineId === 'opencode') {
-    headers['User-Agent'] = `Abbenay/${VERSION}`;
-    headers['x-opencode-session'] = 'ses_abbenay_model_discovery';
-  }
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  }
-
+  const modelsUrl = getOpenAICompatibleModelsUrl(engineId, baseUrl);
+  const headers = getModelDiscoveryHeaders(engineId, apiKey);
   const resp = await fetch(modelsUrl, { headers, signal: AbortSignal.timeout(15000) });
   if (!resp.ok) {
     throw new Error(`HTTP ${resp.status}: ${await resp.text().catch(() => 'unknown')}`);
   }
 
-  const data = await resp.json() as unknown;
-  const obj = data && typeof data === 'object' ? data as Record<string, unknown> : {};
-  const models = Array.isArray(obj.data) ? obj.data : Array.isArray(obj.models) ? obj.models : [];
-
-  return models.map((m: unknown) => {
-    const item = m && typeof m === 'object' ? m as Record<string, unknown> : {};
+  const modelList = getModelList(await resp.json());
+  return modelList.map((model) => {
+    const item = model && typeof model === 'object' ? model as Record<string, unknown> : {};
     return {
       id: String(item.id ?? item.name ?? ''),
-    engine: engineId,
-    contextWindow: Number(item.context_length ?? item.context_window ?? 0),
-    capabilities: {
-      supportsTools: engine.supportsTools,
-      supportsVision: false,
-    },
-  };
+      engine: engineId,
+      contextWindow: Number(item.context_length ?? item.context_window ?? 0),
+      capabilities: {
+        supportsTools: engine.supportsTools,
+        supportsVision: false,
+      },
+    };
   });
+}
+
+function getOpenAICompatibleModelsUrl(engineId: string, baseUrl: string): string {
+  if (engineId === 'opencode') {
+    const modelsRoot = baseUrl.replace(/\/openai\/v1\/?$/, '');
+    if (modelsRoot !== baseUrl) return `${modelsRoot}/v1/models`;
+  }
+
+  if (baseUrl.endsWith('/v1')) return `${baseUrl}/models`;
+  if (baseUrl.endsWith('/')) return `${baseUrl}models`;
+  return `${baseUrl}/models`;
+}
+
+function getModelDiscoveryHeaders(engineId: string, apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (engineId === 'opencode') {
+    headers['User-Agent'] = `Abbenay/${VERSION}`;
+    headers['x-opencode-session'] = 'ses_abbenay_model_discovery';
+  }
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  return headers;
+}
+
+function getModelList(data: unknown): unknown[] {
+  if (!data || typeof data !== 'object') return [];
+  const obj = data as Record<string, unknown>;
+  if (Array.isArray(obj.data)) return obj.data;
+  if (Array.isArray(obj.models)) return obj.models;
+  return [];
 }
 
 /** Fetch models from Anthropic's /v1/models API */

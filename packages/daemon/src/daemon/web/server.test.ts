@@ -288,6 +288,7 @@ function postSSE(
   baseUrl: string,
   urlPath: string,
   body: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ statusCode: number; events: unknown[]; headers: http.IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, baseUrl);
@@ -300,6 +301,7 @@ function postSSE(
           authorization: `Bearer ${TEST_TOKEN}`,
           'content-type': 'application/json',
           'content-length': Buffer.byteLength(postData),
+          ...extraHeaders,
         },
       },
       (res) => {
@@ -423,10 +425,11 @@ describe('createWebApp routes', () => {
   let sessionsDir: string;
   let httpServer: http.Server;
   let baseUrl: string;
+  let state: DaemonState;
 
   beforeAll(async () => {
     sessionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abbenay-web-app-'));
-    const state = createMockState({
+    state = createMockState({
       sessionsDir,
       providers: [{
         id: 'openai',
@@ -840,13 +843,19 @@ describe('createWebApp routes', () => {
   });
 
   it('POST /api/chat streams SSE events', async () => {
-    const { statusCode, events } = await postSSE(baseUrl, '/api/chat', {
-      model: 'openai/gpt-4o',
-      messages: [{ role: 'user', content: 'Hi' }],
-    });
-    expect(statusCode).toBe(200);
-    expect(events.some((e) => (e as { type: string }).type === 'chat_started')).toBe(true);
-    expect(events.some((e) => (e as { type: string }).type === 'done')).toBe(true);
+    const chatSpy = vi.spyOn(state, 'chat');
+    try {
+      const { statusCode, events } = await postSSE(baseUrl, '/api/chat', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }, { 'x-opencode-session': 'ses_web_chat_conversation' });
+      expect(statusCode).toBe(200);
+      expect(events.some((e) => (e as { type: string }).type === 'chat_started')).toBe(true);
+      expect(events.some((e) => (e as { type: string }).type === 'done')).toBe(true);
+      expect(chatSpy.mock.calls[0]?.[3]?.providerSessionId).toBe('ses_web_chat_conversation');
+    } finally {
+      chatSpy.mockRestore();
+    }
   });
 
   it('POST /api/chat streams tool chunks when provided', async () => {
@@ -885,6 +894,7 @@ describe('createWebApp routes', () => {
         { type: 'done', finishReason: 'stop' },
       ],
     });
+    const chatSpy = vi.spyOn(chatState, 'chat');
     const { httpServer: chatServer, baseUrl: chatBase } = await startTestApp(chatState);
     try {
       const created = await httpRequest(chatBase, 'POST', '/api/sessions', {
@@ -896,10 +906,12 @@ describe('createWebApp routes', () => {
       });
       expect(statusCode).toBe(200);
       expect(events.some((e) => (e as { type: string }).type === 'text')).toBe(true);
+      expect(chatSpy.mock.calls[0]?.[3]?.providerSessionId).toBe(id);
 
       const summary = await httpRequest(chatBase, 'GET', `/api/sessions/${id}/summary`);
       expect(summary.statusCode).toBe(200);
     } finally {
+      chatSpy.mockRestore();
       await stopTestApp(chatServer);
     }
   });
