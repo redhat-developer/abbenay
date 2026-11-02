@@ -14,6 +14,8 @@
 
 import { streamText, jsonSchema, tool, isStepCount, Output } from 'ai';
 import type { AssistantModelMessage, FilePart, JSONSchema7, LanguageModel, ModelMessage, TextPart, ToolSet } from 'ai';
+import { createHash, randomUUID } from 'node:crypto';
+import { VERSION } from '../version.js';
 
 /** Unified AI SDK reasoning effort levels (DR-042). */
 export type ReasoningLevel =
@@ -45,6 +47,7 @@ import { debug } from './debug.js';
 interface ProviderFactoryConfig {
   apiKey?: string;
   baseURL?: string;
+  headers?: Record<string, string>;
 }
 
 // ── Engine metadata (actual layer) ─────────────────────────────────────
@@ -163,6 +166,7 @@ async function openaiCompatibleProvider(
     name,
     baseURL: config.baseURL || defaultBaseURL,
     ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+    ...(config.headers ? { headers: config.headers } : {}),
   });
   return provider.chatModel(modelId);
 }
@@ -552,6 +556,16 @@ const ENGINES: Record<string, EngineInfo> = {
     createModel: (modelId, config) =>
       openaiCompatibleProvider('redhat', 'http://127.0.0.1:8000/v1', config, modelId),
   },
+  opencode: {
+    id: 'opencode',
+    displayName: 'OpenCode Go',
+    requiresKey: true,
+    defaultBaseUrl: 'https://opencode.ai/inference/go/openai/v1',
+    defaultEnvVar: 'OPENCODE_GO_API_KEY',
+    supportsTools: true,
+    createModel: (modelId, config) =>
+      openaiCompatibleProvider('opencode', 'https://opencode.ai/inference/go/openai/v1', config, modelId),
+  },
 };
 
 /** Index for O(1) lookup by engine ID */
@@ -764,63 +778,76 @@ async function fetchModelsFromApi(
 ): Promise<DiscoveredModel[]> {
   const effectiveBaseUrl = baseUrl || engine.defaultBaseUrl;
 
-  // Anthropic uses a different API format
-  if (engineId === 'anthropic') {
-    return fetchAnthropicModels(engineId, apiKey, effectiveBaseUrl);
+  switch (engineId) {
+    case 'anthropic':
+      return fetchAnthropicModels(engineId, apiKey, effectiveBaseUrl);
+    case 'gemini':
+      return fetchGeminiModels(engineId, apiKey, effectiveBaseUrl);
+    case 'bedrock':
+    case 'vertex-anthropic':
+      return [];
+    default:
+      return fetchOpenAICompatibleModels(engineId, engine, apiKey, effectiveBaseUrl);
   }
+}
 
-  // Google Gemini uses a different API format
-  if (engineId === 'gemini') {
-    return fetchGeminiModels(engineId, apiKey, effectiveBaseUrl);
-  }
+async function fetchOpenAICompatibleModels(
+  engineId: string,
+  engine: EngineInfo,
+  apiKey: string | undefined,
+  baseUrl: string | undefined,
+): Promise<DiscoveredModel[]> {
+  if (!baseUrl) return [];
 
-  // AWS Bedrock - skip for now (requires AWS SDK auth)
-  if (engineId === 'bedrock') {
-    return [];
-  }
-
-  // Vertex Anthropic - no standard models discovery API
-  if (engineId === 'vertex-anthropic') {
-    return [];
-  }
-
-  // OpenAI-compatible: GET /models (or /v1/models)
-  if (!effectiveBaseUrl) return [];
-
-  const modelsUrl = effectiveBaseUrl.endsWith('/v1')
-    ? `${effectiveBaseUrl}/models`
-    : effectiveBaseUrl.endsWith('/')
-      ? `${effectiveBaseUrl}models`
-      : `${effectiveBaseUrl}/models`;
-
-  const headers: Record<string, string> = {
-    'Accept': 'application/json',
-  };
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  }
-
+  const modelsUrl = getOpenAICompatibleModelsUrl(engineId, baseUrl);
+  const headers = getModelDiscoveryHeaders(engineId, apiKey);
   const resp = await fetch(modelsUrl, { headers, signal: AbortSignal.timeout(15000) });
   if (!resp.ok) {
     throw new Error(`HTTP ${resp.status}: ${await resp.text().catch(() => 'unknown')}`);
   }
 
-  const data = await resp.json() as unknown;
-  const obj = data && typeof data === 'object' ? data as Record<string, unknown> : {};
-  const models = Array.isArray(obj.data) ? obj.data : Array.isArray(obj.models) ? obj.models : [];
-
-  return models.map((m: unknown) => {
-    const item = m && typeof m === 'object' ? m as Record<string, unknown> : {};
+  const modelList = getModelList(await resp.json());
+  return modelList.map((model) => {
+    const item = model && typeof model === 'object' ? model as Record<string, unknown> : {};
     return {
       id: String(item.id ?? item.name ?? ''),
-    engine: engineId,
-    contextWindow: Number(item.context_length ?? item.context_window ?? 0),
-    capabilities: {
-      supportsTools: engine.supportsTools,
-      supportsVision: false,
-    },
-  };
+      engine: engineId,
+      contextWindow: Number(item.context_length ?? item.context_window ?? 0),
+      capabilities: {
+        supportsTools: engine.supportsTools,
+        supportsVision: false,
+      },
+    };
   });
+}
+
+function getOpenAICompatibleModelsUrl(engineId: string, baseUrl: string): string {
+  if (engineId === 'opencode') {
+    const modelsRoot = baseUrl.replace(/\/openai\/v1\/?$/, '');
+    if (modelsRoot !== baseUrl) return `${modelsRoot}/v1/models`;
+  }
+
+  if (baseUrl.endsWith('/v1')) return `${baseUrl}/models`;
+  if (baseUrl.endsWith('/')) return `${baseUrl}models`;
+  return `${baseUrl}/models`;
+}
+
+function getModelDiscoveryHeaders(engineId: string, apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (engineId === 'opencode') {
+    headers['User-Agent'] = `Abbenay/${VERSION}`;
+    headers['x-opencode-session'] = 'ses_abbenay_model_discovery';
+  }
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  return headers;
+}
+
+function getModelList(data: unknown): unknown[] {
+  if (!data || typeof data !== 'object') return [];
+  const obj = data as Record<string, unknown>;
+  if (Array.isArray(obj.data)) return obj.data;
+  if (Array.isArray(obj.models)) return obj.models;
+  return [];
 }
 
 /** Fetch models from Anthropic's /v1/models API */
@@ -975,6 +1002,18 @@ export function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
   }));
 }
 
+/** OpenCode Go requires a stable, `ses_`-prefixed session identifier. */
+function toOpenCodeSessionId(sessionId?: string): string {
+  const candidate = sessionId?.trim();
+  if (candidate && /^[A-Za-z0-9._:-]{1,240}$/.test(candidate)) {
+    return candidate.startsWith('ses_') ? candidate : `ses_${candidate}`;
+  }
+  if (candidate) {
+    return `ses_${createHash('sha256').update(candidate).digest('hex')}`;
+  }
+  return `ses_${randomUUID()}`;
+}
+
 export async function* streamChat(
   engineId: string,
   engineModelId: string,
@@ -988,6 +1027,7 @@ export async function* streamChat(
   maxSteps: number = 10,
   jsonMode: boolean = false,
   toolChoice?: ChatToolChoice,
+  sessionId?: string,
 ): AsyncGenerator<ChatChunk> {
   // Mock engine — no network, no key, deterministic
   if (engineId === 'mock') {
@@ -1006,10 +1046,17 @@ export async function* streamChat(
   debug(`[Adapter] streamChat: engine="${engineId}", model="${engineModelId}", messages=${messages.length}, tools=${tools?.length || 0}`);
 
   try {
+    const headers = engineId === 'opencode'
+      ? {
+          'User-Agent': `Abbenay/${VERSION}`,
+          'x-opencode-session': toOpenCodeSessionId(sessionId),
+        }
+      : undefined;
     // Create the Vercel AI SDK model instance (async — loads provider package on demand)
     const model = await engineInfo.createModel(engineModelId, {
       apiKey,
       baseURL: baseUrl,
+      headers,
     });
 
     // AI SDK 7 rejects role=system in messages/prompt — peel them into instructions.

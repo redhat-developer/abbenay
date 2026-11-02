@@ -70,6 +70,13 @@ providers:
       llama3.2: {}
       qwen2.5-coder:
         model_id: "qwen2.5-coder:7b"        # Map virtual name to actual model ID
+
+  opencode:
+    engine: opencode
+    secret_name: "OPENCODE_GO_API_KEY"
+    secret_store: env
+    models:
+      kimi-k3: {}
 ```
 
 ### Multimodal image input
@@ -523,7 +530,22 @@ If neither option is set, the engine's default environment variable is checked
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` | Yes |
 | Meta (Llama) | `meta` | `META_API_KEY` | Yes |
 | Red Hat AI | `redhat` | `REDHAT_AI_API_KEY` | No |
+| OpenCode Go | `opencode` | `OPENCODE_GO_API_KEY` | Yes |
 | Mock (Testing) | `mock` | *(none needed)* | No |
+
+### OpenCode Go
+
+OpenCode Go uses the OpenAI-compatible chat endpoint at
+`https://opencode.ai/inference/go/openai/v1`. Abbenay sends the required
+`x-opencode-session: ses_...` header on model requests and identifies itself
+with an Abbenay user agent. Saved sessions and interactive CLI chats reuse a
+stable session ID. For `/v1/chat/completions`, Abbenay forwards an incoming
+`x-opencode-session` header; if one is absent, it generates a request ID.
+
+Set `OPENCODE_GO_API_KEY` to the API key from your OpenCode Go account before
+starting Abbenay, then choose a model exposed by the OpenCode Go account.
+The engine's default model discovery uses OpenCode's `/inference/go/v1/models`
+endpoint.
 
 ## Per-Model Configuration
 

@@ -9,6 +9,7 @@
  */
 
 import { isNamespacedSecretStore, type SecretStore } from './secrets.js';
+import { randomUUID } from 'node:crypto';
 import { debug } from './debug.js';
 import {
   loadConfig,
@@ -154,6 +155,8 @@ export interface ChatToolOptions {
   toolFilter?: string[];
   /** Session ID for session-scoped tool visibility */
   sessionId?: string;
+  /** Stable provider-side conversation ID for APIs such as OpenCode Go */
+  providerSessionId?: string;
   /**
    * AI SDK toolChoice (DR-046). Used by `/v1` passthrough when OpenAI
    * `tool_choice` is present; ignored when no tools are registered.
@@ -768,6 +771,9 @@ export class CoreState {
     const shouldRetryJson = isJsonStrict && flatPolicy?.retryOnInvalidJson;
 
     const toolChoice = toolOptions?.toolChoice;
+    const providerSessionId = providerCfg.engine === 'opencode'
+      ? toolOptions?.providerSessionId || toolOptions?.sessionId || `ses_${randomUUID()}`
+      : undefined;
 
     if (isJsonStrict && !shouldRetryJson) {
       yield* streamChat(
@@ -776,6 +782,7 @@ export class CoreState {
         tools, resolvedExecutor, toolValidator, maxSteps,
         true,
         toolChoice,
+        providerSessionId,
       );
     } else if (shouldRetryJson) {
       yield* streamChatWithJsonRetry(
@@ -783,6 +790,7 @@ export class CoreState {
         apiKey || undefined, providerCfg.base_url, mergedParams,
         tools, resolvedExecutor, toolValidator, maxSteps,
         toolChoice,
+        providerSessionId,
       );
     } else {
       yield* streamChat(
@@ -791,6 +799,7 @@ export class CoreState {
         tools, resolvedExecutor, toolValidator, maxSteps,
         false,
         toolChoice,
+        providerSessionId,
       );
     }
   }
@@ -976,12 +985,13 @@ async function* streamChatWithJsonRetry(
   toolValidator: ToolValidationCallback | undefined,
   maxSteps: number,
   toolChoice?: ChatToolChoice,
+  sessionId?: string,
 ): AsyncGenerator<ChatChunk> {
   let fullText = '';
   let finishReason = 'stop';
   const buffered: ChatChunk[] = [];
 
-  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice)) {
+  for await (const chunk of streamChat(engine, engineModelId, messages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice, sessionId)) {
     buffered.push(chunk);
     if (chunk.type === 'text') {
       fullText += chunk.text;
@@ -1033,5 +1043,5 @@ async function* streamChatWithJsonRetry(
     { role: 'user', content: retryPrompt },
   ];
 
-  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice);
+  yield* streamChat(engine, engineModelId, retryMessages, apiKey, baseUrl, params, tools, toolExecutor, toolValidator, maxSteps, true, toolChoice, sessionId);
 }

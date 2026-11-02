@@ -555,6 +555,7 @@ describe('createCorsMiddleware', () => {
     } as Partial<Request>);
     expect(res.nextCalled).toBe(false);
     expect(res.statusCode).toBe(204);
+    expect(res.headers['access-control-allow-headers']).toContain('x-opencode-session');
   });
 
   it('allows requests without Origin header (non-browser clients)', () => {

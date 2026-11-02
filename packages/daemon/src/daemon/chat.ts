@@ -12,6 +12,7 @@
  */
 
 import * as readline from 'node:readline';
+import * as crypto from 'node:crypto';
 import { startDaemon } from './daemon.js';
 import { isDaemonRunningSync } from './transport.js';
 import { DaemonState } from './state.js';
@@ -117,7 +118,7 @@ export async function runInteractiveChat(options: ChatOptions): Promise<void> {
   console.error(`${DIM}Type your message, then press Enter. Ctrl+D to exit.${RESET}\n`);
 
   if (options.json) {
-    await runJsonMode(state, { ...options, model }, messages, rl);
+    await runJsonMode(state, { ...options, model }, messages, rl, sessionId);
   } else {
     await runInteractiveMode(state, { ...options, model }, messages, rl, sessionId, store);
   }
@@ -132,6 +133,7 @@ async function runInteractiveMode(
   store?: SessionStore,
 ): Promise<void> {
   const sessionApproved = new Set<string>();
+  const providerSessionId = sessionId || crypto.randomUUID();
   let isFirstTurn = sessionId ? messages.filter(m => m.role === 'user').length === 0 : false;
 
   const prompt = (): Promise<string | null> => {
@@ -160,6 +162,8 @@ async function runInteractiveMode(
 
     const toolOptions: ChatToolOptions = {
       toolMode: options.tools === false ? 'none' : 'auto',
+      sessionId,
+      providerSessionId,
       onToolApprovalNeeded: async (_requestId: string, toolName: string, args: unknown, _namespacedName?: string): Promise<'allow' | 'deny' | 'abort'> => {
         if (sessionApproved.has(toolName)) {
           return 'allow';
@@ -244,6 +248,7 @@ async function runJsonMode(
   options: ChatOptions & { model: string },
   messages: Array<{ role: string; content: string }>,
   rl: readline.Interface,
+  sessionId?: string,
 ): Promise<void> {
   // In JSON mode, read all of stdin as a single message
   const chunks: string[] = [];
@@ -259,6 +264,8 @@ async function runJsonMode(
 
   const toolOptions: ChatToolOptions = {
     toolMode: options.tools === false ? 'none' : 'auto',
+    sessionId,
+    providerSessionId: sessionId,
   };
 
   for await (const chunk of state.chat(options.model, messages, undefined, toolOptions)) {

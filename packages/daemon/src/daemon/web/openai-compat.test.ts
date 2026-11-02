@@ -600,6 +600,7 @@ function openaiRequest(
   method: string,
   urlPath: string,
   body?: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ statusCode: number; body: unknown; raw: string }> {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, baseUrl);
@@ -608,12 +609,13 @@ function openaiRequest(
       url,
       {
         method,
-        headers: postData
-          ? {
+        headers: {
+          ...(postData ? {
               'content-type': 'application/json',
               'content-length': Buffer.byteLength(postData),
-            }
-          : undefined,
+            } : {}),
+          ...extraHeaders,
+        },
       },
       (res) => {
         let raw = '';
@@ -738,6 +740,23 @@ describe('registerOpenAIRoutes', () => {
       expect(res.statusCode).toBe(200);
       expect((res.body as { choices: Array<{ message: { content: string } }> }).choices[0].message.content)
         .toBe('Hello');
+    } finally {
+      await stopOpenAIApp(server);
+    }
+  });
+
+  it('forwards x-opencode-session to the provider chat options', async () => {
+    const state = createOpenAIState([{ type: 'done', finishReason: 'stop' }]);
+    const chatSpy = vi.spyOn(state, 'chat');
+    const { server, baseUrl } = await startOpenAIApp(state);
+    try {
+      const res = await openaiRequest(baseUrl, 'POST', '/v1/chat/completions', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }, { 'x-opencode-session': 'ses_openai_compat_conversation' });
+
+      expect(res.statusCode).toBe(200);
+      expect(chatSpy.mock.calls[0]?.[3]?.providerSessionId).toBe('ses_openai_compat_conversation');
     } finally {
       await stopOpenAIApp(server);
     }

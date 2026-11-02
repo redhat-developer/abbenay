@@ -176,7 +176,7 @@ client trust and insecure tradeoffs.
 
 | Command | What it shows | Network? |
 |---------|--------------|----------|
-| `list-engines` | All 20 supported engines with auth, tool support, and base URL | No |
+| `list-engines` | All supported engines with auth, tool support, and base URL | No |
 | `list-models` | Configured provider/model pairs from your config (usable with `chat -m`) | No |
 | `list-models --discover <engine>` | All models available from an engine's API | Yes |
 
