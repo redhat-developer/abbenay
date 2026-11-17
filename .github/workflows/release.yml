@@ -245,6 +245,9 @@ jobs:
     needs: [build, release]
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
 
@@ -274,7 +277,4 @@ jobs:
           path: vsix-staging/
 
       - name: Publish to VS Code Marketplace and OpenVSX
-        env:
-          VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
-          OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
         run: npm run ci:publish-vscode -- vsix-staging

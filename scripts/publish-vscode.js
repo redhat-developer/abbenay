@@ -7,9 +7,11 @@
  *
  * Finds all .vsix files in <vsix-dir> (recursively) and publishes them.
  *
+ * Authentication is via OIDC trusted publishing (no PATs):
+ *   - VS Code Marketplace: `vsce publish --oidc`
+ *   - OpenVSX Registry:    `ovsx publish --trusted-publishing`
+ *
  * Environment variables:
- *   VSCODE_MARKETPLACE_TOKEN  — PAT for VS Code Marketplace (required)
- *   OVSX_MARKETPLACE_TOKEN    — PAT for OpenVSX Registry (optional, skipped if unset)
  *   GITHUB_REF_NAME           — used to detect pre-release tags (alpha/beta/rc)
  *
  * Pre-release versions (tags containing alpha/beta/rc) are published with --pre-release.
@@ -23,11 +25,6 @@ import { join } from 'node:path';
 const dir = process.argv[2];
 if (!dir) {
   console.error('Usage: node scripts/publish-vscode.js <vsix-dir>');
-  process.exit(1);
-}
-
-if (!process.env.VSCODE_MARKETPLACE_TOKEN) {
-  console.error('ERROR: VSCODE_MARKETPLACE_TOKEN environment variable is required');
   process.exit(1);
 }
 
@@ -52,8 +49,6 @@ if (vsixFiles.length === 0) {
 
 const isPreRelease = (process.env.GITHUB_REF_NAME || '').match(/(alpha|beta|rc)/);
 const preReleaseFlag = isPreRelease ? ' --pre-release' : '';
-const vsceToken = process.env.VSCODE_MARKETPLACE_TOKEN;
-const ovsxToken = process.env.OVSX_MARKETPLACE_TOKEN;
 
 console.log(
   `Publishing ${vsixFiles.length} VSIX file(s)${isPreRelease ? ' (pre-release)' : ''}:\n`,
@@ -64,19 +59,15 @@ for (const vsix of vsixFiles) {
 
   console.log('     VS Code Marketplace...');
   execSync(
-    `npx vsce publish -p "${vsceToken}" --packagePath "${vsix}"${preReleaseFlag}`,
+    `npx vsce publish --oidc --packagePath "${vsix}"${preReleaseFlag}`,
     { stdio: 'inherit' },
   );
 
-  if (ovsxToken) {
-    console.log('     OpenVSX Registry...');
-    execSync(
-      `npx ovsx publish -p "${ovsxToken}" --packagePath "${vsix}"${preReleaseFlag}`,
-      { stdio: 'inherit' },
-    );
-  } else {
-    console.log('     OpenVSX skipped (OVSX_MARKETPLACE_TOKEN not set)');
-  }
+  console.log('     OpenVSX Registry...');
+  execSync(
+    `npx ovsx publish --trusted-publishing --packagePath "${vsix}"${preReleaseFlag}`,
+    { stdio: 'inherit' },
+  );
 
   console.log('     done\n');
 }
