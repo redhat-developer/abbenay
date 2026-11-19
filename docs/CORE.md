@@ -1,12 +1,12 @@
 # @abbenay/core
 
-A lightweight, transport-agnostic library for integrating 20 LLM engines into your applications. Use it in agents, web apps, CLI tools, or any Node.js project that needs multi-provider LLM access.
+A lightweight, transport-agnostic library for integrating 21 LLM engines into your applications. Use it in agents, web apps, CLI tools, or any Node.js project that needs multi-provider LLM access.
 
 ## What is it?
 
 `@abbenay/core` is the reusable library extracted from the Abbenay daemon. It provides:
 
-- **Multi-engine abstraction** over 20 LLM providers via the Vercel AI SDK 7
+- **Multi-engine abstraction** over 21 LLM providers via the Vercel AI SDK 7
   (requires Node.js 22.12+)
 - **Streaming chat** with tool calling; optional `reasoning` effort pass-through
   to the model (reasoning deltas are not streamed to clients yet); flat
@@ -317,6 +317,7 @@ bridged to Abbenay's secure-by-default policy (DR-019 / DR-042).
 | Cerebras | `cerebras` | Yes | `@ai-sdk/openai-compatible` | Fast inference |
 | Meta (Llama) | `meta` | Yes | `@ai-sdk/openai-compatible` | Llama API |
 | Red Hat AI | `redhat` | No | `@ai-sdk/openai-compatible` | Red Hat AI Inference or OpenShift AI MaaS |
+| OpenCode Go | `opencode` | Yes | `@ai-sdk/openai-compatible` | OpenCode Console Go inference |
 | Mock | `mock` | No | *(built-in)* | Testing only |
 
 ## Policies

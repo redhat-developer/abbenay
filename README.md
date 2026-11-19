@@ -20,8 +20,9 @@ Abbenay produces two packages from a single source tree:
 
 ## Features
 
-- **20 LLM engines** via [Vercel AI SDK 7](https://sdk.vercel.ai/) with dynamic provider loading (Node.js 22.12+ required for npm/`tsx` development; SEA binaries bundle their own runtime)
+- **21 LLM engines** via [Vercel AI SDK 7](https://sdk.vercel.ai/) with dynamic provider loading (Node.js 22.12+ required for npm/`tsx` development; SEA binaries bundle their own runtime)
 - **Red Hat AI** — Inference or OpenShift AI MaaS via dedicated `redhat` engine
+- **OpenCode Go** — OpenAI-compatible inference with automatic session headers
 - **OpenAI-compatible API**: Drop-in `/v1/chat/completions` for Cursor, Continue, aider, etc.
 - **CLI chat**: Interactive terminal chat with tool approval and session persistence
 - **Session management**: Persistent conversations with periodic LLM-generated summaries
@@ -208,6 +209,7 @@ See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for a complete walkthroug
 | Groq | `groq` | Yes | Yes | `@ai-sdk/groq` |
 | Cohere | `cohere` | Yes | Yes | `@ai-sdk/cohere` |
 | Amazon Bedrock | `bedrock` | No* | Yes | `@ai-sdk/amazon-bedrock` |
+| Vertex Anthropic | `vertex-anthropic` | No* | Yes | `@ai-sdk/google-vertex` |
 | Fireworks | `fireworks` | Yes | Yes | `@ai-sdk/fireworks` |
 | Together AI | `togetherai` | Yes | Yes | `@ai-sdk/togetherai` |
 | Perplexity | `perplexity` | Yes | No | `@ai-sdk/perplexity` |
@@ -218,6 +220,7 @@ See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for a complete walkthroug
 | Cerebras | `cerebras` | Yes | Yes | `@ai-sdk/openai-compatible` |
 | Meta (Llama) | `meta` | Yes | Yes | `@ai-sdk/openai-compatible` |
 | Red Hat AI | `redhat` | No | Yes | `@ai-sdk/openai-compatible` |
+| OpenCode Go | `opencode` | Yes | Yes | `@ai-sdk/openai-compatible` |
 | Mock | `mock` | No | No | *(built-in)* |
 
 \* Amazon Bedrock uses AWS credential chain, not an API key.

@@ -11,6 +11,7 @@
 #   podman run -d \
 #     -v ./config.yaml:/home/abbenay/.config/abbenay/config.yaml:ro \
 #     -e OPENROUTER_API_KEY=sk-or-... \
+#     -e OPENCODE_GO_API_KEY=oc_sk_... \
 #     -p 8787:8787 \
 #     abbenay:latest
 #
@@ -41,6 +42,16 @@ providers:
   #   models:
   #     gpt-4o: {}
   #     gpt-4o-mini: {}
+
+  # ── OpenCode Go ───────────────────────────────────────────────────────
+  # Uses the OpenAI-compatible Go endpoint and automatically sends the
+  # required x-opencode-session header.
+
+  # opencode:
+  #   engine: opencode
+  #   api_key_env_var_name: "OPENCODE_GO_API_KEY"
+  #   models:
+  #     kimi-k3: {}
 
   # ── Red Hat AI ────────────────────────────────────────────────────────
   # Inference Server (local/OpenShift vLLM) or OpenShift AI MaaS.

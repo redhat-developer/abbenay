@@ -95,6 +95,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.OR_KEY;
   delete process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENCODE_GO_API_KEY;
 });
 
 // ── addProvider endpoint policy (DR-040 / A3) ────────────────────────────────
@@ -544,6 +545,100 @@ describe('CoreState.discoverModels', () => {
 // ── chat ─────────────────────────────────────────────────────────────────────
 
 describe('CoreState.chat', () => {
+  it('forwards a stable provider session ID for OpenCode Go', async () => {
+    process.env.OPENCODE_GO_API_KEY = 'oc-test-key';
+    const core = createCore({
+      config: { providers: { opencode: { engine: 'opencode', models: { 'kimi-k3': {} } } } },
+    });
+
+    await collectChat(core, 'opencode/kimi-k3', undefined, undefined, {
+      toolMode: 'none',
+      providerSessionId: 'ses_stable_conversation_id',
+    });
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    expect(mockStreamChat.mock.calls[0]?.[3]).toBe('oc-test-key');
+    expect(mockStreamChat.mock.calls[0]?.[12]).toBe('ses_stable_conversation_id');
+  });
+
+  it('generates an OpenCode Go provider session ID when the caller has none', async () => {
+    process.env.OPENCODE_GO_API_KEY = 'oc-test-key';
+    const core = createCore({
+      config: { providers: { opencode: { engine: 'opencode', models: { 'kimi-k3': {} } } } },
+    });
+
+    await collectChat(core, 'opencode/kimi-k3', undefined, undefined, { toolMode: 'none' });
+
+    expect(mockStreamChat.mock.calls[0]?.[12]).toMatch(/^ses_[0-9a-f-]{36}$/);
+  });
+
+  it('uses the chat session ID when no provider-specific ID is supplied', async () => {
+    process.env.OPENCODE_GO_API_KEY = 'oc-test-key';
+    const core = createCore({
+      config: { providers: { opencode: { engine: 'opencode', models: { 'kimi-k3': {} } } } },
+    });
+
+    await collectChat(core, 'opencode/kimi-k3', undefined, undefined, {
+      toolMode: 'none',
+      sessionId: 'persisted_session_123',
+    });
+
+    expect(mockStreamChat.mock.calls[0]?.[12]).toBe('persisted_session_123');
+  });
+
+  it('forwards OpenCode Go session IDs through JSON-only streaming', async () => {
+    process.env.OPENCODE_GO_API_KEY = 'oc-test-key';
+    const core = createCore({
+      config: { providers: { opencode: { engine: 'opencode', models: { 'kimi-k3': {} } } } },
+    });
+
+    await collectChat(
+      core,
+      'opencode/kimi-k3',
+      undefined,
+      undefined,
+      { toolMode: 'none', providerSessionId: 'ses_json_session' },
+      undefined,
+      { output: { format: 'json_only' } },
+    );
+
+    expect(mockStreamChat.mock.calls[0]?.[10]).toBe(true);
+    expect(mockStreamChat.mock.calls[0]?.[12]).toBe('ses_json_session');
+  });
+
+  it('forwards OpenCode Go session IDs through JSON-only streaming and retries', async () => {
+    process.env.OPENCODE_GO_API_KEY = 'oc-test-key';
+    let streamCount = 0;
+    mockStreamChat.mockImplementation(() => (async function* () {
+      streamCount++;
+      yield { type: 'text', text: streamCount === 1 ? 'not json' : '{"ok":true}' };
+      yield { type: 'done', finishReason: 'stop' };
+    })());
+    const core = createCore({
+      config: { providers: { opencode: { engine: 'opencode', models: { 'kimi-k3': {} } } } },
+    });
+
+    await collectChat(
+      core,
+      'opencode/kimi-k3',
+      undefined,
+      undefined,
+      { toolMode: 'none', providerSessionId: 'ses_json_session' },
+      undefined,
+      {
+        output: { format: 'json_only' },
+        reliability: { retry_on_invalid_json: true },
+      },
+    );
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(2);
+    expect(mockStreamChat.mock.calls.map((call) => call[10])).toEqual([true, true]);
+    expect(mockStreamChat.mock.calls.map((call) => call[12])).toEqual([
+      'ses_json_session',
+      'ses_json_session',
+    ]);
+  });
+
   it('errors on invalid composite model id', async () => {
     const core = createCore({ config: mockProviderConfig });
     const chunks = await collectChat(core, 'no-slash-id');

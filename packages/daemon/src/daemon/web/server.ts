@@ -1337,6 +1337,7 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
     const toolOptions: ChatToolOptions = {
       toolMode: tool_mode || 'auto',
       tools: toolDefs && toolDefs.length > 0 ? toolDefs : undefined,
+      providerSessionId: req.get('x-opencode-session')?.trim() || chatId,
       onToolApprovalNeeded: async (requestId: string, toolName: string, args: unknown, namespacedName?: string): Promise<'allow' | 'deny' | 'abort'> => {
         safeWrite(`data: ${JSON.stringify({ type: 'approval_request', chatId, requestId, toolName, namespacedName, args })}\n\n`);
         return new Promise((resolve) => {
@@ -2034,7 +2035,11 @@ export function createWebApp(state: DaemonState, options?: WebSecurityOptions): 
         const allMessages = [...session.messages, chatMessage];
         let fullText = '';
 
-        const toolOptions: ChatToolOptions = { toolMode: 'none' };
+        const toolOptions: ChatToolOptions = {
+          toolMode: 'none',
+          sessionId,
+          providerSessionId: sessionId,
+        };
         for await (const chunk of state.chat(session.model, allMessages, undefined, toolOptions)) {
           if (ended) break;
           if (chunk.type === 'text' && chunk.text) {
